@@ -1,9 +1,11 @@
-# mopro
+# mopro msm gpu-acceleration
 
-Mopro is a toolkit for ZK app development on mobile. Mopro makes client-side proving on mobile simple.
+We are researching the methods and implement the methods that can accelerate multi-scalar multiplication (MSM) on IOS mobile device.
 
-For an overview of Mopro, please see [overview](https://zkmopro.org/docs/intro).
+## mopro-msm
 
-To get started, please see [getting started](https://zkmopro.org/docs/getting-started).
+This is the crate that possess various of implementation of MSM functions, which are integrated in `mopro-core`. 
 
-(The website is a WIP; if above links don't work, please see [docs folder](https://github.com/zkmopro/mopro/tree/main/mopro-web/docs)).
+## gpu-exploration-app
+
+This is a benchmark app to compare the performance of different algorithm on IOS device.

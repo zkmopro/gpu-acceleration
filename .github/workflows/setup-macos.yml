@@ -18,12 +18,6 @@ jobs:
             override: true
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.3
-      - name: Install circom
-        run: |
-            sudo wget -O ~/.cargo/bin/circom https://github.com/iden3/circom/releases/download/v2.1.9/circom-macos-amd64
-            sudo chmod +x ~/.cargo/bin/circom
-      - name: Prepare CI for Core and FFI
-        run: ./scripts/prepare_ci.sh
       - name: Build
         run: cargo build
       - name: Cache build
@@ -32,5 +26,4 @@ jobs:
           key: ${{ github.sha }}-setup-macos
           path: |
             ~/.cargo
-            ./mopro-core/examples
-
+  
