@@ -1,14 +1,15 @@
+use crate::{
+    msm::utils::{
+        benchmark::BenchmarkResult, precomputation::precompute_points_from_instances, preprocess,
+    },
+    MoproError,
+};
 use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::VariableBaseMSM;
 use ark_ff::{BigInteger, PrimeField};
 use ark_std::{self, cfg_into_iter, One};
-use std::time::{Duration, Instant};
-use crate::{msm::utils::{
-    benchmark::BenchmarkResult,
-    precomputation::precompute_points_from_instances,
-    preprocess,
-}, MoproError};
 use rayon::prelude::*;
+use std::time::{Duration, Instant};
 
 // Helper function for getting the windows size
 fn ln_without_floats(a: usize) -> usize {
@@ -187,11 +188,11 @@ mod tests {
     const NUM_INSTANCE: u32 = 5;
     const UTILSPATH: &str = "src/msm/utils/vectors";
     const BENCHMARKSPATH: &str = "benchmark_results";
-    
+
     #[test]
     fn test_msm_correctness_medium_sample() {
         let dir = format!("{}/{}/{}x{}", preprocess::get_root_path(), UTILSPATH, 8, 5);
-    
+
         // Check if the vectors have been generated
         match preprocess::FileInputIterator::open(&dir) {
             Ok(_) => {
@@ -209,13 +210,13 @@ mod tests {
         } else {
             ln_without_floats(size) + 2
         };
-    
+
         let num_bit_of_scalar = ScalarField::MODULUS_BIT_SIZE as usize;
         let precompute_factor = (num_bit_of_scalar + c - 1) / c;
-        
+
         let benchmark_data = preprocess::FileInputIterator::open(&dir).unwrap();
         let instance_vec: Vec<_> = benchmark_data.collect();
-    
+
         // check precomputed points is generated
         match preprocess::FileInputIterator::open_precomputed_point(&dir) {
             Ok(_) => {
@@ -232,26 +233,35 @@ mod tests {
                 );
             }
         }
-        
-        let precomputed_instances = preprocess::FileInputIterator::open_precomputed_point(&dir).unwrap();
+
+        let precomputed_instances =
+            preprocess::FileInputIterator::open_precomputed_point(&dir).unwrap();
         let precomputed_instances: Vec<_> = precomputed_instances.collect();
-    
-        for (i, (original_instance, precomputed_instance)) in instance_vec.iter().zip(precomputed_instances.iter()).enumerate() {
+
+        for (i, (original_instance, precomputed_instance)) in instance_vec
+            .iter()
+            .zip(precomputed_instances.iter())
+            .enumerate()
+        {
             let original_points = &original_instance.0;
             let scalars = &original_instance
                 .1
                 .iter()
                 .map(|s| ScalarField::new(*s))
                 .collect::<Vec<ScalarField>>();
-            
+
             let precomputed_points = &precomputed_instance.0;
 
             let arkworks_msm = G::msm(&original_points[..], &scalars[..]).unwrap();
             let msm = precompute_msm::<G>(&precomputed_points[..], &scalars[..]).unwrap();
-    
+
             // Compare results
-            assert_eq!(msm, arkworks_msm, "MSM computation mismatch for instance {}", i);
-    
+            assert_eq!(
+                msm, arkworks_msm,
+                "MSM computation mismatch for instance {}",
+                i
+            );
+
             println!(
                 "(pass) {}th instance of size 2^{} is correctly computed",
                 i, 8
