@@ -1,5 +1,5 @@
 use crate::msm::utils::preprocess::{self, Point};
-use ark_bn254::{Fr as ScalarField, G1Projective as G};
+use ark_bn254::G1Projective as G;
 use ark_ec::Group;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rayon::prelude::*;

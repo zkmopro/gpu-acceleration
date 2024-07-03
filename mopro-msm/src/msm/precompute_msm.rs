@@ -8,7 +8,6 @@ use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::VariableBaseMSM;
 use ark_ff::{BigInteger, PrimeField};
 use ark_std::{self, cfg_into_iter, One};
-use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
 // Helper function for getting the windows size

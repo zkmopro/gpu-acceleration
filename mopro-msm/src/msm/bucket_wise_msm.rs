@@ -196,7 +196,7 @@ where
         let mut instance_total_duration = Duration::ZERO;
         for _i in 0..iterations {
             let start = Instant::now();
-            let result = bucket_wise_msm::<G>(&points[..], &scalars[..]).unwrap();
+            let _ = bucket_wise_msm::<G>(&points[..], &scalars[..]).unwrap();
             instance_total_duration += start.elapsed();
         }
         let instance_avg_duration = instance_total_duration / iterations;
