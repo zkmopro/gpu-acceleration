@@ -1,6 +1,5 @@
 .vscode
 .DS_Store
 target/
-mopro-example-app
-!templates/mopro-example-app
+vectors/
 graph.bin
