@@ -1,7 +1,9 @@
 [package]
 name = "gpu-acceleration-app"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+
+[workspace]
 
 # We're going to build a static library named mopro_bindings
 # This library name should not be changed

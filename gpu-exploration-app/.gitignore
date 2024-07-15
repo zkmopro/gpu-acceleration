@@ -1,3 +1,9 @@
-ptau/*
-core/benchmarks/results/*
-core/benchmarks/vectors/*
+/target
+*.udl
+.DS_Store
+
+MoproBindings.xcframework/
+build/
+jniLibs/
+MoproAndroidBindings/
+MoproiOSBindings/
