@@ -1,36 +1,29 @@
-# config-example.toml
+[package]
+name = "gpu-acceleration-app"
+version = "0.1.0"
+edition = "2024"
 
-[build]
-# For iOS device_type can be x86_64, simulator, device
-ios_device_type = "device" # Options: x86_64, simulator, device
-# For Android device_type can be x86_64, x86, arm, arm64
-android_device_type = "arm64" # Options: x86_64, x86, arm, arm64
+# We're going to build a static library named mopro_bindings
+# This library name should not be changed
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "mopro_bindings"
 
-# debug is for Rust library to be in debug mode and release for release mode
-# We recommend release mode by default for performance
-build_mode = "release" # Options: debug, release
+# This is a script used to build the iOS static library
+[[bin]]
+name = "ios"
 
-[circuit]
-# multiplier2
-adapter = "circom"
-dir = "core/circuits/multiplier2"
-name = "multiplier2"
-ptau = "02"                       # ptau to use for trusted setup of circuit, "01" to "27"
+# We're going to build support for circom proofs only
+[features]
+default = ["mopro-ffi/circom"]
 
-# keccak256
-#adapter = "circom"
-#dir = "core/circuits/keccak256"
-#name = "keccak256_256_test"
-#ptau = "19"
+[dependencies]
+mopro-ffi = { git = "https://github.com/zkmopro/mopro.git", branch = "feat/integrate-gpu-acceleration" }
+uniffi = { version = "0.28", features = ["cli"] }
+rust-witness = { git = "https://github.com/vimwitch/rust-witness.git" }
+num-bigint = "0.4.0"
 
-[dylib]
-# NOTE: Dylib support is experimental and requires some fiddling in iOS
-# See https://github.com/zkmopro/mopro/pull/37 and https://github.com/zkmopro/mopro/pull/38
-use_dylib = false        # Options: true, false
-name = "keccak256.dylib" # Name of the dylib file, only used if use_dylib is true
-
-[witness]
-# Note: circom-witness-rs is experimental
-# See https://github.com/zkmopro/mopro/issues/32 for updates
-# Only works for keccak256_256_test circuit now
-use_native_witness_generation = false # Options: true, false
+[build-dependencies]
+rust-witness = { git = "https://github.com/vimwitch/rust-witness.git" }
+mopro-ffi = { git = "https://github.com/zkmopro/mopro.git", branch = "feat/integrate-gpu-acceleration" }
+uniffi = { version = "0.28", features = ["build"] }
