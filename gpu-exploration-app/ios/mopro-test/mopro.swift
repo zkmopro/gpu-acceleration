@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_mopro_ffi_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_mopro_bindings_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_mopro_ffi_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_mopro_bindings_rustbuffer_free(self, $0) }
     }
 }
 
@@ -297,32 +297,6 @@ private func uniffiCheckCallStatus(
 // Public interface members begin here.
 
 
-fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
-    typealias FfiType = UInt32
-    typealias SwiftType = UInt32
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
-        return try lift(readInt(&buf))
-    }
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
-    typealias FfiType = Double
-    typealias SwiftType = Double
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
-        return try lift(readDouble(&buf))
-    }
-
-    public static func write(_ value: Double, into buf: inout [UInt8]) {
-        writeDouble(&buf, lower(value))
-    }
-}
-
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -395,174 +369,6 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
         writeInt(&buf, len)
         writeBytes(&buf, value)
     }
-}
-
-
-public protocol MoproCircomProtocol {
-    func generateProof(circuitInputs: [String: [String]])  throws -> GenerateProofResult
-    func initialize(zkeyPath: String, wasmPath: String)  throws
-    func verifyProof(proof: Data, publicInput: Data)  throws -> Bool
-    
-}
-
-public class MoproCircom: MoproCircomProtocol {
-    fileprivate let pointer: UnsafeMutableRawPointer
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-    required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
-        self.pointer = pointer
-    }
-    public convenience init()  {
-        self.init(unsafeFromRawPointer: try! rustCall() {
-    uniffi_mopro_ffi_fn_constructor_moprocircom_new($0)
-})
-    }
-
-    deinit {
-        try! rustCall { uniffi_mopro_ffi_fn_free_moprocircom(pointer, $0) }
-    }
-
-    
-
-    
-    
-
-    public func generateProof(circuitInputs: [String: [String]]) throws -> GenerateProofResult {
-        return try  FfiConverterTypeGenerateProofResult.lift(
-            try 
-    rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_method_moprocircom_generate_proof(self.pointer, 
-        FfiConverterDictionaryStringSequenceString.lower(circuitInputs),$0
-    )
-}
-        )
-    }
-
-    public func initialize(zkeyPath: String, wasmPath: String) throws {
-        try 
-    rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_method_moprocircom_initialize(self.pointer, 
-        FfiConverterString.lower(zkeyPath),
-        FfiConverterString.lower(wasmPath),$0
-    )
-}
-    }
-
-    public func verifyProof(proof: Data, publicInput: Data) throws -> Bool {
-        return try  FfiConverterBool.lift(
-            try 
-    rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_method_moprocircom_verify_proof(self.pointer, 
-        FfiConverterData.lower(proof),
-        FfiConverterData.lower(publicInput),$0
-    )
-}
-        )
-    }
-}
-
-public struct FfiConverterTypeMoproCircom: FfiConverter {
-    typealias FfiType = UnsafeMutableRawPointer
-    typealias SwiftType = MoproCircom
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MoproCircom {
-        let v: UInt64 = try readInt(&buf)
-        // The Rust code won't compile if a pointer won't fit in a UInt64.
-        // We have to go via `UInt` because that's the thing that's the size of a pointer.
-        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
-            throw UniffiInternalError.unexpectedNullPointer
-        }
-        return try lift(ptr!)
-    }
-
-    public static func write(_ value: MoproCircom, into buf: inout [UInt8]) {
-        // This fiddling is because `Int` is the thing that's the same size as a pointer.
-        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
-        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
-    }
-
-    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> MoproCircom {
-        return MoproCircom(unsafeFromRawPointer: pointer)
-    }
-
-    public static func lower(_ value: MoproCircom) -> UnsafeMutableRawPointer {
-        return value.pointer
-    }
-}
-
-
-public func FfiConverterTypeMoproCircom_lift(_ pointer: UnsafeMutableRawPointer) throws -> MoproCircom {
-    return try FfiConverterTypeMoproCircom.lift(pointer)
-}
-
-public func FfiConverterTypeMoproCircom_lower(_ value: MoproCircom) -> UnsafeMutableRawPointer {
-    return FfiConverterTypeMoproCircom.lower(value)
-}
-
-
-public struct BenchmarkResult {
-    public var instanceSize: UInt32
-    public var numInstance: UInt32
-    public var avgProcessingTime: Double
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(instanceSize: UInt32, numInstance: UInt32, avgProcessingTime: Double) {
-        self.instanceSize = instanceSize
-        self.numInstance = numInstance
-        self.avgProcessingTime = avgProcessingTime
-    }
-}
-
-
-extension BenchmarkResult: Equatable, Hashable {
-    public static func ==(lhs: BenchmarkResult, rhs: BenchmarkResult) -> Bool {
-        if lhs.instanceSize != rhs.instanceSize {
-            return false
-        }
-        if lhs.numInstance != rhs.numInstance {
-            return false
-        }
-        if lhs.avgProcessingTime != rhs.avgProcessingTime {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(instanceSize)
-        hasher.combine(numInstance)
-        hasher.combine(avgProcessingTime)
-    }
-}
-
-
-public struct FfiConverterTypeBenchmarkResult: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BenchmarkResult {
-        return try BenchmarkResult(
-            instanceSize: FfiConverterUInt32.read(from: &buf), 
-            numInstance: FfiConverterUInt32.read(from: &buf), 
-            avgProcessingTime: FfiConverterDouble.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: BenchmarkResult, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.instanceSize, into: &buf)
-        FfiConverterUInt32.write(value.numInstance, into: &buf)
-        FfiConverterDouble.write(value.avgProcessingTime, into: &buf)
-    }
-}
-
-
-public func FfiConverterTypeBenchmarkResult_lift(_ buf: RustBuffer) throws -> BenchmarkResult {
-    return try FfiConverterTypeBenchmarkResult.lift(buf)
-}
-
-public func FfiConverterTypeBenchmarkResult_lower(_ value: BenchmarkResult) -> RustBuffer {
-    return FfiConverterTypeBenchmarkResult.lower(value)
 }
 
 
@@ -899,23 +705,12 @@ fileprivate struct FfiConverterDictionaryStringSequenceString: FfiConverterRustB
     }
 }
 
-public func add(a: UInt32, b: UInt32)  -> UInt32 {
-    return try!  FfiConverterUInt32.lift(
-        try! rustCall() {
-    uniffi_mopro_ffi_fn_func_add(
-        FfiConverterUInt32.lower(a),
-        FfiConverterUInt32.lower(b),$0)
-}
-    )
-}
-
-public func arkworksPippenger(instanceSize: UInt32, numInstance: UInt32, utilsDir: String) throws -> BenchmarkResult {
-    return try  FfiConverterTypeBenchmarkResult.lift(
+public func generateCircomProof(zkeyPath: String, circuitInputs: [String: [String]]) throws -> GenerateProofResult {
+    return try  FfiConverterTypeGenerateProofResult.lift(
         try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_arkworks_pippenger(
-        FfiConverterUInt32.lower(instanceSize),
-        FfiConverterUInt32.lower(numInstance),
-        FfiConverterString.lower(utilsDir),$0)
+    uniffi_mopro_bindings_fn_func_generate_circom_proof(
+        FfiConverterString.lower(zkeyPath),
+        FfiConverterDictionaryStringSequenceString.lower(circuitInputs),$0)
 }
     )
 }
@@ -923,53 +718,8 @@ public func arkworksPippenger(instanceSize: UInt32, numInstance: UInt32, utilsDi
 public func generateHalo2Proof(circuitInputs: [String: [String]]) throws -> GenerateProofResult {
     return try  FfiConverterTypeGenerateProofResult.lift(
         try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_generate_halo2_proof(
+    uniffi_mopro_bindings_fn_func_generate_halo2_proof(
         FfiConverterDictionaryStringSequenceString.lower(circuitInputs),$0)
-}
-    )
-}
-
-public func generateProofStatic(circuitInputs: [String: [String]]) throws -> GenerateProofResult {
-    return try  FfiConverterTypeGenerateProofResult.lift(
-        try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_generate_proof_static(
-        FfiConverterDictionaryStringSequenceString.lower(circuitInputs),$0)
-}
-    )
-}
-
-public func hello()  -> String {
-    return try!  FfiConverterString.lift(
-        try! rustCall() {
-    uniffi_mopro_ffi_fn_func_hello($0)
-}
-    )
-}
-
-public func initializeMopro() throws {
-    try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_initialize_mopro($0)
-}
-}
-
-
-
-public func initializeMoproDylib(dylibPath: String) throws {
-    try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_initialize_mopro_dylib(
-        FfiConverterString.lower(dylibPath),$0)
-}
-}
-
-
-
-public func metalMsm(instanceSize: UInt32, numInstance: UInt32, utilsDir: String) throws -> BenchmarkResult {
-    return try  FfiConverterTypeBenchmarkResult.lift(
-        try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_metal_msm(
-        FfiConverterUInt32.lower(instanceSize),
-        FfiConverterUInt32.lower(numInstance),
-        FfiConverterString.lower(utilsDir),$0)
 }
     )
 }
@@ -977,7 +727,7 @@ public func metalMsm(instanceSize: UInt32, numInstance: UInt32, utilsDir: String
 public func toEthereumInputs(inputs: Data)  -> [String] {
     return try!  FfiConverterSequenceString.lift(
         try! rustCall() {
-    uniffi_mopro_ffi_fn_func_to_ethereum_inputs(
+    uniffi_mopro_bindings_fn_func_to_ethereum_inputs(
         FfiConverterData.lower(inputs),$0)
 }
     )
@@ -986,8 +736,19 @@ public func toEthereumInputs(inputs: Data)  -> [String] {
 public func toEthereumProof(proof: Data)  -> ProofCalldata {
     return try!  FfiConverterTypeProofCalldata.lift(
         try! rustCall() {
-    uniffi_mopro_ffi_fn_func_to_ethereum_proof(
+    uniffi_mopro_bindings_fn_func_to_ethereum_proof(
         FfiConverterData.lower(proof),$0)
+}
+    )
+}
+
+public func verifyCircomProof(zkeyPath: String, proof: Data, publicInput: Data) throws -> Bool {
+    return try  FfiConverterBool.lift(
+        try rustCallWithError(FfiConverterTypeMoproError.lift) {
+    uniffi_mopro_bindings_fn_func_verify_circom_proof(
+        FfiConverterString.lower(zkeyPath),
+        FfiConverterData.lower(proof),
+        FfiConverterData.lower(publicInput),$0)
 }
     )
 }
@@ -995,17 +756,7 @@ public func toEthereumProof(proof: Data)  -> ProofCalldata {
 public func verifyHalo2Proof(proof: Data, publicInput: Data) throws -> Bool {
     return try  FfiConverterBool.lift(
         try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_verify_halo2_proof(
-        FfiConverterData.lower(proof),
-        FfiConverterData.lower(publicInput),$0)
-}
-    )
-}
-
-public func verifyProofStatic(proof: Data, publicInput: Data) throws -> Bool {
-    return try  FfiConverterBool.lift(
-        try rustCallWithError(FfiConverterTypeMoproError.lift) {
-    uniffi_mopro_ffi_fn_func_verify_proof_static(
+    uniffi_mopro_bindings_fn_func_verify_halo2_proof(
         FfiConverterData.lower(proof),
         FfiConverterData.lower(publicInput),$0)
 }
@@ -1023,56 +774,26 @@ private var initializationResult: InitializationResult {
     // Get the bindings contract version from our ComponentInterface
     let bindings_contract_version = 24
     // Get the scaffolding contract version by calling the into the dylib
-    let scaffolding_contract_version = ffi_mopro_ffi_uniffi_contract_version()
+    let scaffolding_contract_version = ffi_mopro_bindings_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_mopro_ffi_checksum_func_add() != 8411) {
+    if (uniffi_mopro_bindings_checksum_func_generate_circom_proof() != 36365) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_mopro_ffi_checksum_func_arkworks_pippenger() != 50067) {
+    if (uniffi_mopro_bindings_checksum_func_generate_halo2_proof() != 57994) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_mopro_ffi_checksum_func_generate_halo2_proof() != 63139) {
+    if (uniffi_mopro_bindings_checksum_func_to_ethereum_inputs() != 35703) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_mopro_ffi_checksum_func_generate_proof_static() != 43287) {
+    if (uniffi_mopro_bindings_checksum_func_to_ethereum_proof() != 52508) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_mopro_ffi_checksum_func_hello() != 46136) {
+    if (uniffi_mopro_bindings_checksum_func_verify_circom_proof() != 63612) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_mopro_ffi_checksum_func_initialize_mopro() != 17540) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_func_initialize_mopro_dylib() != 64476) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_func_metal_msm() != 57344) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_func_to_ethereum_inputs() != 30405) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_func_to_ethereum_proof() != 60110) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_func_verify_halo2_proof() != 1832) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_func_verify_proof_static() != 34007) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_method_moprocircom_generate_proof() != 64602) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_method_moprocircom_initialize() != 50370) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_method_moprocircom_verify_proof() != 61522) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_mopro_ffi_checksum_constructor_moprocircom_new() != 42205) {
+    if (uniffi_mopro_bindings_checksum_func_verify_halo2_proof() != 45481) {
         return InitializationResult.apiChecksumMismatch
     }
 
