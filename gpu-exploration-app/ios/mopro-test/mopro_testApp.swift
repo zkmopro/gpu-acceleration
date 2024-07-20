@@ -11,7 +11,8 @@ import SwiftUI
 struct mopro_testApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // ContentView()
+            MSMBenchmarkView()
         }
     }
 }

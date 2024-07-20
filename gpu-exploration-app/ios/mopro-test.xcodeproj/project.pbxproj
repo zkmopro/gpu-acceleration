@@ -15,6 +15,7 @@
 		4CF977F32C2BCF0300CE1139 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4CF977F22C2BCF0300CE1139 /* Assets.xcassets */; };
 		4CF977F62C2BCF0300CE1139 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4CF977F52C2BCF0300CE1139 /* Preview Assets.xcassets */; };
 		4CF9780F2C2BF43000CE1139 /* multiplier3_final.zkey in Resources */ = {isa = PBXBuildFile; fileRef = 4CF9780E2C2BF43000CE1139 /* multiplier3_final.zkey */; };
+		E1367E072C4B936B008A0475 /* MSMBenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1367E062C4B936B008A0475 /* MSMBenchmarkView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,7 @@
 		4CF977F22C2BCF0300CE1139 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4CF977F52C2BCF0300CE1139 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		4CF9780E2C2BF43000CE1139 /* multiplier3_final.zkey */ = {isa = PBXFileReference; lastKnownFileType = file; name = multiplier3_final.zkey; path = "../test-vectors/circom/multiplier3_final.zkey"; sourceTree = "<group>"; };
+		E1367E062C4B936B008A0475 /* MSMBenchmarkView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MSMBenchmarkView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				4CBAB2792C3334B800B536B7 /* mopro.swift */,
+				E1367E062C4B936B008A0475 /* MSMBenchmarkView.swift */,
 				4CF977EE2C2BCF0000CE1139 /* mopro_testApp.swift */,
 				4CF977F02C2BCF0000CE1139 /* ContentView.swift */,
 				4CF977F22C2BCF0300CE1139 /* Assets.xcassets */,
@@ -224,6 +227,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E1367E072C4B936B008A0475 /* MSMBenchmarkView.swift in Sources */,
 				4CBAB27A2C3334B800B536B7 /* mopro.swift in Sources */,
 				4CF977F12C2BCF0000CE1139 /* ContentView.swift in Sources */,
 				4CF977EF2C2BCF0000CE1139 /* mopro_testApp.swift in Sources */,
@@ -408,12 +412,13 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "mopro.mopro-test.dev";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.mopro-test";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -437,12 +442,13 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "mopro.mopro-test.dev";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.mopro-test";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
