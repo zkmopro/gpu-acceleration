@@ -25,9 +25,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4CF977EA2C2BCF0000CE1139"
-               BuildableName = "mopro-test.app"
-               BlueprintName = "mopro-test"
-               ReferencedContainer = "container:mopro-test.xcodeproj">
+               BuildableName = "gpu-acceleration.app"
+               BlueprintName = "gpu-acceleration"
+               ReferencedContainer = "container:gpu-acceleration.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4C05CDAE2C327C4F00BEBACD"
-               BuildableName = "mopro-test-UITests.xctest"
-               BlueprintName = "mopro-test-UITests"
-               ReferencedContainer = "container:mopro-test.xcodeproj">
+               BuildableName = "gpu-acceleration-UITests.xctest"
+               BlueprintName = "gpu-acceleration-UITests"
+               ReferencedContainer = "container:gpu-acceleration.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4CF977EA2C2BCF0000CE1139"
-            BuildableName = "mopro-test.app"
-            BlueprintName = "mopro-test"
-            ReferencedContainer = "container:mopro-test.xcodeproj">
+            BuildableName = "gpu-acceleration.app"
+            BlueprintName = "gpu-acceleration"
+            ReferencedContainer = "container:gpu-acceleration.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -86,9 +86,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4CF977EA2C2BCF0000CE1139"
-            BuildableName = "mopro-test.app"
-            BlueprintName = "mopro-test"
-            ReferencedContainer = "container:mopro-test.xcodeproj">
+            BuildableName = "gpu-acceleration.app"
+            BlueprintName = "gpu-acceleration"
+            ReferencedContainer = "container:gpu-acceleration.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

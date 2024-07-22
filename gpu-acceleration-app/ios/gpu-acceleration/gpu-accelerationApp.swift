@@ -8,10 +8,9 @@
 import SwiftUI
 
 @main
-struct mopro_testApp: App {
+struct gpu_accelerationApp: App {
     var body: some Scene {
         WindowGroup {
-            // ContentView()
             MSMBenchmarkView()
         }
     }

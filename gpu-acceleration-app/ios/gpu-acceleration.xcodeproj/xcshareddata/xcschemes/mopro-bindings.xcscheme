@@ -18,7 +18,7 @@
                BlueprintIdentifier = "4CF978212C2C0D5B00CE1139"
                BuildableName = "mopro-bindings"
                BlueprintName = "mopro-bindings"
-               ReferencedContainer = "container:mopro-test.xcodeproj">
+               ReferencedContainer = "container:gpu-acceleration.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -55,7 +55,7 @@
             BlueprintIdentifier = "4CF978212C2C0D5B00CE1139"
             BuildableName = "mopro-bindings"
             BlueprintName = "mopro-bindings"
-            ReferencedContainer = "container:mopro-test.xcodeproj">
+            ReferencedContainer = "container:gpu-acceleration.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </ProfileAction>

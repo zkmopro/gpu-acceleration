@@ -1,11 +1,12 @@
 //
 //  MSMBenchmarkView.swift
-//  Example GPU Exploration
+//  GPU Acceleration
 //
 //  Created by Fuchuan Chung on 2024/4/21.
 //  Copyright © 2024 CocoaPods. All rights reserved.
 //
 
+import Foundation
 import SwiftUI
 import moproFFI
 
@@ -31,7 +32,7 @@ struct MSMBenchmarkView: View {
     ) throws -> BenchmarkResult] = [
         "Arkwork (Baseline)": arkworksPippenger,
         "Metal (GPU)": metalMsm,
-//        "TrapdoorTech Zprize": trapdoortechZprizeMsm,
+        // "TrapdoorTech Zprize": trapdoortechZprizeMsm,
     ]
 
     var body: some View {
@@ -114,9 +115,29 @@ struct MSMBenchmarkView: View {
     }
 
     func submitAction() {
+        let instanceSize: UInt32 = 10;
+        let numInstance: UInt32 = 5;
+        let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let documentsPath = documentsUrl.path
+        
         isSubmitting = true
+        
+        // File deletion logic
+        let fileManager = FileManager.default
+        if let documentsUrl = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let fileURL = documentsUrl.appendingPathComponent("yourFileName.txt") // Replace with your actual file name
+            if fileManager.fileExists(atPath: fileURL.path) {
+                do {
+                    try fileManager.removeItem(at: fileURL)
+                    print("File deleted successfully.")
+                } catch {
+                    print("Could not delete the file: \(error)")
+                }
+            } else {
+                print("File does not exist.")
+            }
+        }
         print("Selected algorithms: \(selectedAlgorithms.map { algorithms[$0] })")
-        // print("Downloading Scalars and Points...")
         DispatchQueue.global(qos: .userInitiated).async {
             var tempResults: [AlgorithmBenchmark] = []
             var baselineTiming: Double = 0.0
@@ -126,10 +147,6 @@ struct MSMBenchmarkView: View {
                 
                 if let benchmarkFunction = self.msmBenchmarkMapping[algorithm] {
                     do {
-                        let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                        let documentsPath = documentsUrl.path
-                        let instanceSize: UInt32 = 16;
-                        let numInstance: UInt32 = 5;
                         print("Running MSM in algorithm: \(algorithm)...")
                         let benchData: BenchmarkResult =
                             try benchmarkFunction(

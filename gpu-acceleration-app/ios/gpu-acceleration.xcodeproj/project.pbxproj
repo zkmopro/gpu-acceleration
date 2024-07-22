@@ -7,11 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		4C05CDB22C327C4F00BEBACD /* mopro_test_UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C05CDB12C327C4F00BEBACD /* mopro_test_UITests.swift */; };
+		4C05CDB22C327C4F00BEBACD /* gpu_acceleration_UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C05CDB12C327C4F00BEBACD /* gpu_acceleration_UITests.swift */; };
 		4CBAB2782C3334B300B536B7 /* MoproBindings.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CBAB2772C3334B300B536B7 /* MoproBindings.xcframework */; };
 		4CBAB27A2C3334B800B536B7 /* mopro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBAB2792C3334B800B536B7 /* mopro.swift */; };
-		4CF977EF2C2BCF0000CE1139 /* mopro_testApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF977EE2C2BCF0000CE1139 /* mopro_testApp.swift */; };
-		4CF977F12C2BCF0000CE1139 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF977F02C2BCF0000CE1139 /* ContentView.swift */; };
+		4CF977EF2C2BCF0000CE1139 /* gpu-accelerationApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF977EE2C2BCF0000CE1139 /* gpu-accelerationApp.swift */; };
 		4CF977F32C2BCF0300CE1139 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4CF977F22C2BCF0300CE1139 /* Assets.xcassets */; };
 		4CF977F62C2BCF0300CE1139 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4CF977F52C2BCF0300CE1139 /* Preview Assets.xcassets */; };
 		4CF9780F2C2BF43000CE1139 /* multiplier3_final.zkey in Resources */ = {isa = PBXBuildFile; fileRef = 4CF9780E2C2BF43000CE1139 /* multiplier3_final.zkey */; };
@@ -29,13 +28,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		4C05CDAF2C327C4F00BEBACD /* mopro-test-UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "mopro-test-UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		4C05CDB12C327C4F00BEBACD /* mopro_test_UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = mopro_test_UITests.swift; sourceTree = "<group>"; };
+		4C05CDAF2C327C4F00BEBACD /* gpu-acceleration-UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "gpu-acceleration-UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4C05CDB12C327C4F00BEBACD /* gpu_acceleration_UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = gpu_acceleration_UITests.swift; sourceTree = "<group>"; };
 		4CBAB2772C3334B300B536B7 /* MoproBindings.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MoproBindings.xcframework; path = ../MoproiOSBindings/MoproBindings.xcframework; sourceTree = "<group>"; };
 		4CBAB2792C3334B800B536B7 /* mopro.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = mopro.swift; path = ../../MoproiOSBindings/mopro.swift; sourceTree = "<group>"; };
-		4CF977EB2C2BCF0000CE1139 /* mopro-test.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "mopro-test.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		4CF977EE2C2BCF0000CE1139 /* mopro_testApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = mopro_testApp.swift; sourceTree = "<group>"; };
-		4CF977F02C2BCF0000CE1139 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4CF977EB2C2BCF0000CE1139 /* gpu-acceleration.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "gpu-acceleration.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4CF977EE2C2BCF0000CE1139 /* gpu-accelerationApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "gpu-accelerationApp.swift"; sourceTree = "<group>"; };
 		4CF977F22C2BCF0300CE1139 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4CF977F52C2BCF0300CE1139 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		4CF9780E2C2BF43000CE1139 /* multiplier3_final.zkey */ = {isa = PBXFileReference; lastKnownFileType = file; name = multiplier3_final.zkey; path = "../test-vectors/circom/multiplier3_final.zkey"; sourceTree = "<group>"; };
@@ -61,20 +59,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		4C05CDB02C327C4F00BEBACD /* mopro-test-UITests */ = {
+		4C05CDB02C327C4F00BEBACD /* gpu-acceleration-UITests */ = {
 			isa = PBXGroup;
 			children = (
-				4C05CDB12C327C4F00BEBACD /* mopro_test_UITests.swift */,
+				4C05CDB12C327C4F00BEBACD /* gpu_acceleration_UITests.swift */,
 			);
-			path = "mopro-test-UITests";
+			path = "gpu-acceleration-UITests";
 			sourceTree = "<group>";
 		};
 		4CF977E22C2BCF0000CE1139 = {
 			isa = PBXGroup;
 			children = (
 				4CF9780E2C2BF43000CE1139 /* multiplier3_final.zkey */,
-				4CF977ED2C2BCF0000CE1139 /* mopro-test */,
-				4C05CDB02C327C4F00BEBACD /* mopro-test-UITests */,
+				4CF977ED2C2BCF0000CE1139 /* gpu-acceleration */,
+				4C05CDB02C327C4F00BEBACD /* gpu-acceleration-UITests */,
 				4CF977EC2C2BCF0000CE1139 /* Products */,
 				4CF978102C2BF45500CE1139 /* Frameworks */,
 			);
@@ -83,23 +81,22 @@
 		4CF977EC2C2BCF0000CE1139 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				4CF977EB2C2BCF0000CE1139 /* mopro-test.app */,
-				4C05CDAF2C327C4F00BEBACD /* mopro-test-UITests.xctest */,
+				4CF977EB2C2BCF0000CE1139 /* gpu-acceleration.app */,
+				4C05CDAF2C327C4F00BEBACD /* gpu-acceleration-UITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		4CF977ED2C2BCF0000CE1139 /* mopro-test */ = {
+		4CF977ED2C2BCF0000CE1139 /* gpu-acceleration */ = {
 			isa = PBXGroup;
 			children = (
 				4CBAB2792C3334B800B536B7 /* mopro.swift */,
 				E1367E062C4B936B008A0475 /* MSMBenchmarkView.swift */,
-				4CF977EE2C2BCF0000CE1139 /* mopro_testApp.swift */,
-				4CF977F02C2BCF0000CE1139 /* ContentView.swift */,
+				4CF977EE2C2BCF0000CE1139 /* gpu-accelerationApp.swift */,
 				4CF977F22C2BCF0300CE1139 /* Assets.xcassets */,
 				4CF977F42C2BCF0300CE1139 /* Preview Content */,
 			);
-			path = "mopro-test";
+			path = "gpu-acceleration";
 			sourceTree = "<group>";
 		};
 		4CF977F42C2BCF0300CE1139 /* Preview Content */ = {
@@ -121,9 +118,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		4C05CDAE2C327C4F00BEBACD /* mopro-test-UITests */ = {
+		4C05CDAE2C327C4F00BEBACD /* gpu-acceleration-UITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4C05CDB92C327C4F00BEBACD /* Build configuration list for PBXNativeTarget "mopro-test-UITests" */;
+			buildConfigurationList = 4C05CDB92C327C4F00BEBACD /* Build configuration list for PBXNativeTarget "gpu-acceleration-UITests" */;
 			buildPhases = (
 				4C05CDAB2C327C4F00BEBACD /* Sources */,
 				4C05CDAC2C327C4F00BEBACD /* Frameworks */,
@@ -134,14 +131,14 @@
 			dependencies = (
 				4C05CDB62C327C4F00BEBACD /* PBXTargetDependency */,
 			);
-			name = "mopro-test-UITests";
+			name = "gpu-acceleration-UITests";
 			productName = "mopro-test-UITests";
-			productReference = 4C05CDAF2C327C4F00BEBACD /* mopro-test-UITests.xctest */;
+			productReference = 4C05CDAF2C327C4F00BEBACD /* gpu-acceleration-UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		4CF977EA2C2BCF0000CE1139 /* mopro-test */ = {
+		4CF977EA2C2BCF0000CE1139 /* gpu-acceleration */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4CF977F92C2BCF0300CE1139 /* Build configuration list for PBXNativeTarget "mopro-test" */;
+			buildConfigurationList = 4CF977F92C2BCF0300CE1139 /* Build configuration list for PBXNativeTarget "gpu-acceleration" */;
 			buildPhases = (
 				4CF977E72C2BCF0000CE1139 /* Sources */,
 				4CF977E92C2BCF0000CE1139 /* Resources */,
@@ -151,9 +148,9 @@
 			);
 			dependencies = (
 			);
-			name = "mopro-test";
+			name = "gpu-acceleration";
 			productName = "mopro-test";
-			productReference = 4CF977EB2C2BCF0000CE1139 /* mopro-test.app */;
+			productReference = 4CF977EB2C2BCF0000CE1139 /* gpu-acceleration.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -175,7 +172,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 4CF977E62C2BCF0000CE1139 /* Build configuration list for PBXProject "mopro-test" */;
+			buildConfigurationList = 4CF977E62C2BCF0000CE1139 /* Build configuration list for PBXProject "gpu-acceleration" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -188,8 +185,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4CF977EA2C2BCF0000CE1139 /* mopro-test */,
-				4C05CDAE2C327C4F00BEBACD /* mopro-test-UITests */,
+				4CF977EA2C2BCF0000CE1139 /* gpu-acceleration */,
+				4C05CDAE2C327C4F00BEBACD /* gpu-acceleration-UITests */,
 			);
 		};
 /* End PBXProject section */
@@ -219,7 +216,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4C05CDB22C327C4F00BEBACD /* mopro_test_UITests.swift in Sources */,
+				4C05CDB22C327C4F00BEBACD /* gpu_acceleration_UITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -229,8 +226,7 @@
 			files = (
 				E1367E072C4B936B008A0475 /* MSMBenchmarkView.swift in Sources */,
 				4CBAB27A2C3334B800B536B7 /* mopro.swift in Sources */,
-				4CF977F12C2BCF0000CE1139 /* ContentView.swift in Sources */,
-				4CF977EF2C2BCF0000CE1139 /* mopro_testApp.swift in Sources */,
+				4CF977EF2C2BCF0000CE1139 /* gpu-accelerationApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -239,7 +235,7 @@
 /* Begin PBXTargetDependency section */
 		4C05CDB62C327C4F00BEBACD /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 4CF977EA2C2BCF0000CE1139 /* mopro-test */;
+			target = 4CF977EA2C2BCF0000CE1139 /* gpu-acceleration */;
 			targetProxy = 4C05CDB52C327C4F00BEBACD /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -248,32 +244,36 @@
 		4C05CDB72C327C4F00BEBACD /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 82Y79L4XYJ;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.mopro-test-UITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.gpu-acceleration-UITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "mopro-test";
+				TEST_TARGET_NAME = "gpu-acceleration";
 			};
 			name = Debug;
 		};
 		4C05CDB82C327C4F00BEBACD /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 82Y79L4XYJ;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.mopro-test-UITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.gpu-acceleration-UITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "mopro-test";
+				TEST_TARGET_NAME = "gpu-acceleration";
 			};
 			name = Release;
 		};
@@ -403,8 +403,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"mopro-test/Preview Content\"";
-				DEVELOPMENT_TEAM = 73H2G4S25V;
+				DEVELOPMENT_ASSET_PATHS = "\"gpu-acceleration/Preview Content\"";
+				DEVELOPMENT_TEAM = 82Y79L4XYJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -418,8 +418,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.mopro-test";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.gpu-acceleration-app";
+				PRODUCT_NAME = "gpu-acceleration";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -433,8 +433,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"mopro-test/Preview Content\"";
-				DEVELOPMENT_TEAM = 73H2G4S25V;
+				DEVELOPMENT_ASSET_PATHS = "\"gpu-acceleration/Preview Content\"";
+				DEVELOPMENT_TEAM = 82Y79L4XYJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -448,8 +448,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.mopro-test";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mopro.gpu-acceleration-app";
+				PRODUCT_NAME = "gpu-acceleration";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -459,7 +459,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4C05CDB92C327C4F00BEBACD /* Build configuration list for PBXNativeTarget "mopro-test-UITests" */ = {
+		4C05CDB92C327C4F00BEBACD /* Build configuration list for PBXNativeTarget "gpu-acceleration-UITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4C05CDB72C327C4F00BEBACD /* Debug */,
@@ -468,7 +468,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4CF977E62C2BCF0000CE1139 /* Build configuration list for PBXProject "mopro-test" */ = {
+		4CF977E62C2BCF0000CE1139 /* Build configuration list for PBXProject "gpu-acceleration" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4CF977F72C2BCF0300CE1139 /* Debug */,
@@ -477,7 +477,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4CF977F92C2BCF0300CE1139 /* Build configuration list for PBXNativeTarget "mopro-test" */ = {
+		4CF977F92C2BCF0300CE1139 /* Build configuration list for PBXNativeTarget "gpu-acceleration" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4CF977FA2C2BCF0300CE1139 /* Debug */,
