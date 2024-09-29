@@ -14,7 +14,7 @@ CONFIGURATION=debug cargo run --bin ios
 
 ### running Benchmarks on IOS devices
 
-1. Make sure you are in `./mopro-msm/gpu-acceleartion-app/`.
+1. Make sure you are in `./gpu-acceleartion-app/`.
 2. Run `CONFIGURATION=release cargo run --bin ios` for release building.
 
 
