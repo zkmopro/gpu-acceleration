@@ -33,8 +33,8 @@ witness = { git = "https://github.com/philsippl/circom-witness-rs.git" }
 
 # GPU explorations
 ark-ff = { version = "=0.4.1", default-features = false, features = ["parallel"] }
-metal = { version = "=0.28.0" }
-objc = { version = "=0.2.4" }
+metal = { version = "=0.29.0" }
+objc = { version = "=0.2.7" }
 proptest = { version = "1.4.0" }
 rayon = "1.5.1"
 itertools = "0.13.0"
