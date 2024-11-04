@@ -256,15 +256,7 @@ pub fn deserialize_input(dir: &str) -> Result<(Vec<Vec<Point>>, Vec<Vec<Scalar>>
 }
 
 pub fn get_root_path() -> String {
-    let current_dir = std::env::current_dir().unwrap();
-    let mut current_dir = current_dir;
-    loop {
-        if current_dir.ends_with("mopro-msm") {
-            break;
-        }
-        current_dir = current_dir.parent().unwrap().to_path_buf();
-    }
-    current_dir.display().to_string()
+    env!("CARGO_MANIFEST_DIR").to_string()
 }
 
 mod tests {
