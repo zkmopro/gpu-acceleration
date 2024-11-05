@@ -15,19 +15,16 @@ pub fn test_bigint_add_unsafe() {
     let num_limbs = 20;
 
     // Create two test numbers (equivalent to the previous hex values)
-    let a = BigInt::new([
-        0x0000000100000001,
-        0x0000000000000000,
-        0x1800a1101800a110,
-        0x0000000d0000000d,
-    ]);
+    let a = BigInt::new([0x00000001, 0x00000000, 0x1800a110, 0x0000000d]);
     let b = a.clone(); // Same value as a for this test
 
+    let max_value = BigInt::new([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]);
+
     let mut expected = a.clone();
-    let overflow = expected.add_with_carry(&b);
+    expected.add_with_carry(&b);
 
     // We are testing add_unsafe, so the sum should not overflow
-    assert!(!overflow);
+    assert!(expected <= max_value);
 
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
