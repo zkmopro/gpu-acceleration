@@ -18,3 +18,7 @@ src/middleware/gpu_explorations/utils/vectors
 
 # GPU exploration - proptest generated files
 proptest-regressions
+
+# Metal shader intermediate files and libraries
+src/msm/metal_msm/shader/**/*.ir
+src/msm/metal_msm/shader/**/*.lib
