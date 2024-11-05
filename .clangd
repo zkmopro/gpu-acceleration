@@ -1,0 +1,33 @@
+# Apply a config conditionally to all C files
+If:
+  PathMatch: .*\.(c|h)$
+
+---
+
+# Apply a config conditionally to all C files
+If:
+  PathMatch: .*\.(c|h)pp
+
+---
+
+If:
+  PathMatch: .*\.metal?
+
+CompileFlags:
+  Add:
+    # language settings
+    - '--std'
+    - 'c++14'
+    - '-x'
+    - 'c++'
+    # includes
+    - '-I'
+    - '/System/Library/Frameworks'
+    - '-I'
+    - '/Library/Frameworks'
+    - '-I'
+    - '/usr/local/include'
+    - '-I'
+    - '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/metal/32023/lib/clang/32023.335/include'
+    - '-I'
+    - '/System/Library/PrivateFrameworks/GPUCompiler.framework/Versions/32023/Libraries/lib/clang/32023.401/include/metal'
