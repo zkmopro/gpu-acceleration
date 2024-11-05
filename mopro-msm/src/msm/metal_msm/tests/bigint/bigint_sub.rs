@@ -88,7 +88,6 @@ pub fn test_bigint_sub() {
 }
 
 #[test]
-#[serial_test::serial]
 fn test_bigint_sub_underflow() {
     let device = Device::system_default().expect("no device found");
     let num_limbs = 20;
