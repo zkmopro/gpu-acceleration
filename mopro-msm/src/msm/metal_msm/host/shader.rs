@@ -115,7 +115,10 @@ pub mod tests {
 
     #[test]
     pub fn test_compile() {
-        let lib_filepath = compile_metal("../mopro-msm/src/msm/metal_msm/shader", "bigint/bigint_add_unsafe.metal");
+        let lib_filepath = compile_metal(
+            "../mopro-msm/src/msm/metal_msm/shader",
+            "bigint/bigint_add_unsafe.metal",
+        );
         println!("{}", lib_filepath);
     }
 }
