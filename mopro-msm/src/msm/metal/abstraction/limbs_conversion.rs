@@ -33,17 +33,17 @@ impl ToLimbs for BigInteger256 {
         let mut result = vec![0u32; num_limbs];
         let limb_size = 1u32 << log_limb_size;
         let mask = limb_size - 1;
-        
+
         // Convert to little-endian representation
         let bytes = self.to_bytes_le();
         let mut val = 0u32;
         let mut bits = 0u32;
         let mut limb_idx = 0;
-        
+
         for &byte in bytes.iter() {
             val |= (byte as u32) << bits;
             bits += 8;
-            
+
             while bits >= log_limb_size && limb_idx < num_limbs {
                 result[limb_idx] = val & mask;
                 val >>= log_limb_size;
@@ -51,12 +51,12 @@ impl ToLimbs for BigInteger256 {
                 limb_idx += 1;
             }
         }
-        
+
         // Handle any remaining bits
         if bits > 0 && limb_idx < num_limbs {
             result[limb_idx] = val;
         }
-        
+
         result
     }
 }
