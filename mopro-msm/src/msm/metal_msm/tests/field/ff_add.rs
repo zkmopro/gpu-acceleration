@@ -5,7 +5,8 @@ use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use ark_ff::{BigInt, BigInteger};
+use ark_bn254::Fr as ScalarField;
+use ark_ff::{BigInt, BigInteger, PrimeField};
 use metal::*;
 
 #[test]
@@ -21,6 +22,7 @@ pub fn test_ff_add() {
         0xB85045B68181585D,
         0x30644E72E131A029,
     ]);
+    assert!(p == ScalarField::MODULUS);
 
     let a = BigInt::new([
         0x43E1F593F0000001,
