@@ -9,12 +9,12 @@ namespace {
 }
 
 /* Constants for bn254 field operations
- * N: base field modulus
+ * N: scalar field modulus
  * R_SQUARED: R^2 mod N
  * R_SUB_N: R - N
  * MU: Montgomery Multiplication Constant = -N^{-1} mod (2^32)
  *
- * For bn254, the modulus is "21888242871839275222246405745257275088696311157297823662689037894645226208583" [1, 2]
+ * For bn254, the modulus is "21888242871839275222246405745257275088548364400416034343698204186575808495617" [1, 2]
  * We use 8 limbs of 32 bits unsigned integers to represent the constanst
  *
  * References:
