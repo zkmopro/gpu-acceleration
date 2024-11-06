@@ -1,7 +1,7 @@
 // source: https://github.com/geometryxyz/msl-secp256k1
 
 using namespace metal;
-#include "constants.metal"
+#include "../constants.metal"
 
 struct BigInt {
     array<uint, NUM_LIMBS> limbs;
