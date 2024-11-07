@@ -28,6 +28,14 @@ pub fn all_benchmarks() {
             Err(e) => println!("benchmark for {}-bit limbs: {}", i, e),
         }
     }
+
+    println!("\n=== benchmarking mont_mul_cios ===");
+    for i in 11..17 {
+        match benchmark(i, "mont_mul_cios_benchmarks.metal") {
+            Ok(elapsed) => println!("benchmark for {}-bit limbs took {}ms", i, elapsed),
+            Err(e) => println!("benchmark for {}-bit limbs: {}", i, e),
+        }
+    }
 }
 
 fn expensive_computation(
