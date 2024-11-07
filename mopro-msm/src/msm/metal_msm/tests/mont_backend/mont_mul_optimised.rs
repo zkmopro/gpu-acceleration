@@ -55,7 +55,9 @@ pub fn do_test(log_limb_size: u32) {
     let a_r_in_ark = ScalarField::from_bigint(a_r.clone().try_into().unwrap()).unwrap();
     let b_r_in_ark = ScalarField::from_bigint(b_r.clone().try_into().unwrap()).unwrap();
     let expected_in_ark = ScalarField::from_bigint(expected.clone().try_into().unwrap()).unwrap();
-    let expected_limbs = expected_in_ark.0.to_limbs(num_limbs, log_limb_size);
+    let expected_limbs = expected_in_ark
+        .into_bigint()
+        .to_limbs(num_limbs, log_limb_size);
 
     let device = get_default_device();
     let a_buf = create_buffer(
@@ -129,7 +131,7 @@ pub fn do_test(log_limb_size: u32) {
     let result = BigInt::from_limbs(&result_limbs, log_limb_size);
 
     assert!(result == expected.try_into().unwrap());
-    // assert!(result_limbs == expected_limbs);     // the limbs seems different but the converted result is the same
+    assert!(result_limbs == expected_limbs);
 }
 
 #[test]
