@@ -60,6 +60,7 @@ witness = { git = "https://github.com/philsippl/circom-witness-rs.git" }
 
 [dev-dependencies]
 serial_test = "3.0.0"
+stopwatch = "0.0.7"
 
 # [dependencies.rayon]
 # version = "1"
