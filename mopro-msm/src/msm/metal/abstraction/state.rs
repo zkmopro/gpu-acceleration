@@ -3,8 +3,7 @@ use metal::{ComputeCommandEncoderRef, MTLResourceOptions};
 use crate::msm::metal::abstraction::errors::MetalError;
 
 use core::{ffi, mem};
-
-const LIB_DATA: &[u8] = include_bytes!("../shader/msm.metallib");
+use std::{env, fs, path::Path};
 
 /// Structure for abstracting basic calls to a Metal device and saving the state. Used for
 /// implementing GPU parallel computations in Apple machines.
@@ -21,8 +20,13 @@ impl MetalState {
         let device: metal::Device =
             device.unwrap_or(metal::Device::system_default().ok_or(MetalError::DeviceNotFound())?);
 
+        let metallib_path = Path::new(env!("OUT_DIR")).join("msm.metallib");
+
+        let lib_data = fs::read(metallib_path)
+            .expect(format!("Missing metal library on the path {}", env!("OUT_DIR")).as_str());
+
         let library = device
-            .new_library_with_data(LIB_DATA) // TODO: allow different files
+            .new_library_with_data(&lib_data)
             .map_err(MetalError::LibraryError)?;
         let queue = device.new_command_queue();
 
