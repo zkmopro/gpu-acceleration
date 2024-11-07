@@ -3,11 +3,11 @@
 // we avoid using ark_ff::ScalarField here because the mont radix exceeds the range of its field
 // and we need to use num_bigint::BigUint for better flexibility
 
-use crate::msm::metal::abstraction::limbs_conversion::{FromLimbs, ToLimbs};
 use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
+use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_rinv_and_n0};
 use ark_bn254::Fr as ScalarField;
 use ark_ff::{BigInt, PrimeField};

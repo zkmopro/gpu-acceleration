@@ -2,11 +2,11 @@
 
 use core::borrow;
 
-use crate::msm::metal::abstraction::limbs_conversion::{FromLimbs, ToLimbs};
 use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
+use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
 use ark_ff::{BigInt, BigInteger};
 use metal::*;
 
