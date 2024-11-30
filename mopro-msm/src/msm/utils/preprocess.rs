@@ -259,6 +259,7 @@ pub fn get_root_path() -> String {
     env!("CARGO_MANIFEST_DIR").to_string()
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
