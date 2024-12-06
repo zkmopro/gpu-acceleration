@@ -2,17 +2,6 @@ name: Setup env
 
 on:
   workflow_call:
-  push:
-    branches:
-      - main
-      - github-action-update
-    paths-ignore:
-      - "**/*.md"
-  pull_request:
-    branches:
-      - main
-    paths-ignore:
-      - "**/*.md"
 
 jobs:
   setup-macos:
