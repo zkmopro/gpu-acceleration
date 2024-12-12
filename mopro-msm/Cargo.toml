@@ -9,6 +9,7 @@ default = ["macos"]
 
 macos = []
 ios = []
+profiling-release = []
 
 [dependencies]
 ## Shared dependencies

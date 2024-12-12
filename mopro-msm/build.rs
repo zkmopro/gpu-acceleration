@@ -25,16 +25,12 @@ fn compile_shaders() {
             get_sdk(),
             "metal",
             "-c",
-            "-frecord-sources",
             shader_path.to_str().unwrap(),
             "-o",
             air_output.to_str().unwrap(),
         ];
 
-        if std::env::var("PROFILE")
-            .map(|profile| profile == "release")
-            .unwrap_or(false)
-        {
+        if cfg!(feature = "profiling-release") {
             args.push("-frecord-sources");
         }
 
@@ -62,10 +58,7 @@ fn compile_shaders() {
         metallib_output.to_str().unwrap(),
     ];
 
-    if std::env::var("PROFILE")
-        .map(|profile| profile == "release")
-        .unwrap_or(false)
-    {
+    if cfg!(feature = "profiling-release") {
         metallib_args.push("-frecord-sources");
     }
 
