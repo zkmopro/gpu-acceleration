@@ -45,7 +45,7 @@ pub fn test_bigint_add() {
     let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
 
     write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
+        "../mopro-msm/src/msm/metal_msm/shader/bigint",
         num_limbs,
         log_limb_size,
         0,
@@ -133,7 +133,7 @@ pub fn test_bigint_add_no_overflow() {
     let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
 
     write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
+        "../mopro-msm/src/msm/metal_msm/shader/bigint",
         num_limbs,
         log_limb_size,
         0,
