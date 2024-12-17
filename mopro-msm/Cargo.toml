@@ -58,6 +58,10 @@ serde_derive = "1.0"
 wasmer = { git = "https://github.com/oskarth/wasmer.git", rev = "09c7070" }
 witness = { git = "https://github.com/philsippl/circom-witness-rs.git" }
 
+[dev-dependencies]
+serial_test = "3.0.0"
+stopwatch = "0.0.7"
+
 # [dependencies.rayon]
 # version = "1"
 # optional=false
