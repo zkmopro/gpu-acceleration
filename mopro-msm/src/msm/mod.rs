@@ -1,6 +1,7 @@
 pub mod arkworks_pippenger;
 pub mod bucket_wise_msm;
 pub mod metal;
+pub mod metal_msm;
 pub mod precompute_msm;
 pub mod utils;
 
