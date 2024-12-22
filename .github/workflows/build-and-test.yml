@@ -45,4 +45,4 @@ jobs:
             - name: Run GPU Benchmarks tests
               run: |
                   cd mopro-msm
-                  cargo test test_msm_correctness -- --nocapture
+                  cargo test --release test_msm_correctness -- --nocapture
