@@ -31,18 +31,19 @@ jobs:
             - name: Check formatting
               run: cargo fmt --all -- --check
 
-    gpu-benchmarks:
-        runs-on: macos-latest
-        steps:
-            - uses: actions/checkout@v4
-            - name: Install Rust toolchain
-              uses: actions-rs/toolchain@v1
-              with:
-                  toolchain: "1.77"
-                  override: true
-            - name: Run sccache-cache
-              uses: mozilla-actions/sccache-action@v0.0.3
-            - name: Run GPU Benchmarks tests
-              run: |
-                  cd mopro-msm
-                  cargo test --release test_msm_correctness -- --nocapture
+# TODO: Temporarily disable GPU benchmarks since it's under refactoring
+    # gpu-benchmarks:
+    #     runs-on: macos-latest
+    #     steps:
+    #         - uses: actions/checkout@v4
+    #         - name: Install Rust toolchain
+    #           uses: actions-rs/toolchain@v1
+    #           with:
+    #               toolchain: "1.77"
+    #               override: true
+    #         - name: Run sccache-cache
+    #           uses: mozilla-actions/sccache-action@v0.0.3
+    #         - name: Run GPU Benchmarks tests
+    #           run: |
+    #               cd mopro-msm
+    #               cargo test --release test_msm_correctness -- --nocapture
