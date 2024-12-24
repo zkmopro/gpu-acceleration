@@ -5,29 +5,30 @@ use crate::msm::metal_msm::host::gpu::{
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
-use ark_ff::{BigInt, BigInteger};
+use ark_ff::{BigInt, BigInteger, UniformRand};
+use ark_std::rand;
 use metal::*;
 
 #[test]
 #[serial_test::serial]
 pub fn test_bigint_add_unsafe() {
-    let log_limb_size = 13;
+    let log_limb_size = 16;
     let num_limbs = 20;
 
-    // Create two test numbers (equivalent to the previous hex values)
-    let a = BigInt::new([
-        0x0000000100000001,
-        0x0000000000000000,
-        0x1800a1101800a110,
-        0x0000000d0000000d,
-    ]);
-    let b = a.clone(); // Same value as a for this test
-
-    let mut expected = a.clone();
-    let overflow = expected.add_with_carry(&b);
-
-    // We are testing add_unsafe, so the sum should not overflow
-    assert!(!overflow);
+    // Create two test numbers that do not cause overflow
+    let mut rng = rand::thread_rng();
+    let (a, b, expected) = loop {
+        let a = BigInt::rand(&mut rng);
+        let b = BigInt::rand(&mut rng);
+        
+        let mut expected = a.clone();
+        let overflow = expected.add_with_carry(&b);
+        
+        // Break the loop if addition does not overflow
+        if !overflow {
+            break (a, b, expected);
+        }
+    };
 
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
@@ -87,7 +88,9 @@ pub fn test_bigint_add_unsafe() {
     command_buffer.wait_until_completed();
 
     let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    let expected_limbs = expected.to_limbs(num_limbs, log_limb_size);
+    assert_eq!(result_limbs, expected_limbs);
 
-    assert!(result.eq(&expected));
+    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    assert_eq!(result, expected);
 }
