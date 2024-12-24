@@ -21,10 +21,10 @@ pub fn test_bigint_add_unsafe() {
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
         let b = BigInt::rand(&mut rng);
-        
+
         let mut expected = a.clone();
         let overflow = expected.add_with_carry(&b);
-        
+
         // Break the loop if addition does not overflow
         if !overflow {
             break (a, b, expected);

@@ -21,10 +21,10 @@ pub fn test_bigint_sub_no_underflow() {
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
         let b = BigInt::rand(&mut rng);
-        
+
         let mut expected = a.clone();
         let underflow = expected.sub_with_borrow(&b);
-        
+
         // Break the loop if subtraction does not underflow
         if !underflow {
             break (a, b, expected);
@@ -107,10 +107,10 @@ fn test_bigint_sub_underflow() {
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
         let b = BigInt::rand(&mut rng);
-        
+
         let mut expected = a.clone();
         let underflow = expected.sub_with_borrow(&b);
-        
+
         // Break the loop if subtraction does not underflow
         if underflow {
             break (a, b, expected);

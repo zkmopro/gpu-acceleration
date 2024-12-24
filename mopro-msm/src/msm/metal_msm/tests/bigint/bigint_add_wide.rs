@@ -9,7 +9,6 @@ use ark_ff::{BigInt, BigInteger, UniformRand};
 use ark_std::rand;
 use metal::*;
 
-
 #[test]
 #[serial_test::serial]
 pub fn test_bigint_add_no_overflow() {
@@ -22,10 +21,10 @@ pub fn test_bigint_add_no_overflow() {
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
         let b = BigInt::rand(&mut rng);
-        
+
         let mut expected = a.clone();
         let overflow = expected.add_with_carry(&b);
-        
+
         // Break the loop if addition does not overflow
         if !overflow {
             break (a, b, expected);
@@ -110,10 +109,10 @@ pub fn test_bigint_add_overflow() {
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
         let b = BigInt::rand(&mut rng);
-        
+
         let mut expected = a.clone();
         let overflow = expected.add_with_carry(&b);
-        
+
         // Break the loop if addition overflow
         if overflow {
             break (a, b, expected);
