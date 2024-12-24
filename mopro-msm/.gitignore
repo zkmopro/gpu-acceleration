@@ -24,4 +24,4 @@ src/msm/metal_msm/shader/**/*.ir
 src/msm/metal_msm/shader/**/*.lib
 
 # Metal shader constants file
-src/msm/metal_msm/shader/**/constants.metal
+src/msm/metal_msm/shader/constants.metal

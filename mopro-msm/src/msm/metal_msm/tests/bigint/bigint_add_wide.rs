@@ -5,33 +5,31 @@ use crate::msm::metal_msm::host::gpu::{
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
-use ark_ff::{BigInt, BigInteger};
+use ark_ff::{BigInt, BigInteger, UniformRand};
+use ark_std::rand;
 use metal::*;
 
 #[test]
 #[serial_test::serial]
-pub fn test_bigint_add() {
-    let log_limb_size = 13;
-    let num_limbs = 20;
+pub fn test_bigint_add_no_overflow() {
+    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
+    let log_limb_size = 16;
+    let num_limbs = 16;
 
-    // Create two large numbers that will overflow when added
-    let a = BigInt::new([
-        0xffffffffffffffff,
-        0xffffffffffffffff,
-        0xffffffffffffffff,
-        0xffffffffffffffff,
-    ]);
-    let b = BigInt::new([
-        0x1000000000000000,
-        0x0000000000000000,
-        0x0000000000000000,
-        0x0000000000000000,
-    ]);
+    // Create two test numbers that do not cause overflow
+    let mut rng = rand::thread_rng();
+    let (a, b, expected) = loop {
+        let a = BigInt::rand(&mut rng);
+        let b = BigInt::rand(&mut rng);
 
-    let mut expected = a.clone();
+        let mut expected = a.clone();
+        let overflow = expected.add_with_carry(&b);
 
-    let overflow = expected.add_with_carry(&b);
-    assert!(overflow);
+        // Break the loop if addition does not overflow
+        if !overflow {
+            break (a, b, expected);
+        }
+    };
 
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
@@ -91,35 +89,35 @@ pub fn test_bigint_add() {
     command_buffer.commit();
     command_buffer.wait_until_completed();
 
-    let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs + 1);
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
+    let expected_limbs = expected.to_limbs(num_limbs, log_limb_size);
+    assert_eq!(result_limbs, expected_limbs);
 
-    assert!(result.eq(&expected));
+    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    assert_eq!(result, expected);
 }
 
 #[test]
 #[serial_test::serial]
-pub fn test_bigint_add_no_overflow() {
-    let log_limb_size = 13;
-    let num_limbs = 20;
+pub fn test_bigint_add_overflow() {
+    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
+    let log_limb_size = 16;
+    let num_limbs = 16;
 
-    // Create two numbers that won't overflow when added
-    let a = BigInt::new([
-        0x0000000000000000,
-        0x0000000000000000,
-        0x0000000000000000,
-        0x0000000000000001,
-    ]);
-    let b = BigInt::new([
-        0x0000000000000000,
-        0x0000000000000000,
-        0x0000000000000000,
-        0x0000000000000002,
-    ]);
+    // Create two test numbers that cause overflow
+    let mut rng = rand::thread_rng();
+    let (a, b, expected) = loop {
+        let a = BigInt::rand(&mut rng);
+        let b = BigInt::rand(&mut rng);
 
-    let mut expected = a.clone();
-    let overflow = expected.add_with_carry(&b);
-    assert!(!overflow);
+        let mut expected = a.clone();
+        let overflow = expected.add_with_carry(&b);
+
+        // Break the loop if addition overflow
+        if overflow {
+            break (a, b, expected);
+        }
+    };
 
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
@@ -179,8 +177,10 @@ pub fn test_bigint_add_no_overflow() {
     command_buffer.commit();
     command_buffer.wait_until_completed();
 
-    let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs + 1);
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
+    let expected_limbs = expected.to_limbs(num_limbs, log_limb_size);
+    assert_eq!(result_limbs, expected_limbs);
 
-    assert!(result.eq(&expected));
+    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    assert_eq!(result, expected);
 }
