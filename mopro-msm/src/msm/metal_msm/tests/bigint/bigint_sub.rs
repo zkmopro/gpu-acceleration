@@ -12,8 +12,9 @@ use metal::*;
 #[test]
 #[serial_test::serial]
 pub fn test_bigint_sub_no_underflow() {
-    let log_limb_size = 13;
-    let num_limbs = 20;
+    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
+    let log_limb_size = 16;
+    let num_limbs = 16;
 
     // Create two test numbers that do not cause underflow
     let mut rng = rand::thread_rng();

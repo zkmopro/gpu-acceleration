@@ -12,8 +12,9 @@ use metal::*;
 #[test]
 #[serial_test::serial]
 pub fn test_bigint_add_unsafe() {
+    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
     let log_limb_size = 16;
-    let num_limbs = 20;
+    let num_limbs = 16;
 
     // Create two test numbers that do not cause overflow
     let mut rng = rand::thread_rng();

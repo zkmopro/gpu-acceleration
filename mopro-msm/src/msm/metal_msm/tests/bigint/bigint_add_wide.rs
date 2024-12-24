@@ -9,13 +9,15 @@ use ark_ff::{BigInt, BigInteger, UniformRand};
 use ark_std::rand;
 use metal::*;
 
+
 #[test]
 #[serial_test::serial]
-pub fn test_bigint_add_overflow() {
-    let log_limb_size = 13;
-    let num_limbs = 20;
+pub fn test_bigint_add_no_overflow() {
+    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
+    let log_limb_size = 16;
+    let num_limbs = 16;
 
-    // Create two test numbers that cause overflow
+    // Create two test numbers that do not cause overflow
     let mut rng = rand::thread_rng();
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
@@ -24,8 +26,8 @@ pub fn test_bigint_add_overflow() {
         let mut expected = a.clone();
         let overflow = expected.add_with_carry(&b);
         
-        // Break the loop if addition overflow
-        if overflow {
+        // Break the loop if addition does not overflow
+        if !overflow {
             break (a, b, expected);
         }
     };
@@ -98,11 +100,12 @@ pub fn test_bigint_add_overflow() {
 
 #[test]
 #[serial_test::serial]
-pub fn test_bigint_add_no_overflow() {
+pub fn test_bigint_add_overflow() {
+    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
     let log_limb_size = 16;
-    let num_limbs = 20;
+    let num_limbs = 16;
 
-    // Create two test numbers that do not cause overflow
+    // Create two test numbers that cause overflow
     let mut rng = rand::thread_rng();
     let (a, b, expected) = loop {
         let a = BigInt::rand(&mut rng);
@@ -111,8 +114,8 @@ pub fn test_bigint_add_no_overflow() {
         let mut expected = a.clone();
         let overflow = expected.add_with_carry(&b);
         
-        // Break the loop if addition does not overflow
-        if !overflow {
+        // Break the loop if addition overflow
+        if overflow {
             break (a, b, expected);
         }
     };
