@@ -4,7 +4,7 @@ use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
 use crate::msm::metal_msm::utils::mont_params::{
     calc_bitwidth, calc_mont_radix, calc_nsafe, calc_num_limbs, calc_rinv_and_n0,
 };
-use ark_bn254::Fr as ScalarField;
+use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
 use metal::*;
 use num_bigint::{BigUint, RandBigInt};
@@ -54,7 +54,7 @@ fn expensive_computation(
 }
 
 pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
-    let p: BigUint = ScalarField::MODULUS.try_into().unwrap();
+    let p: BigUint = BaseField::MODULUS.try_into().unwrap();
 
     let p_bitwidth = calc_bitwidth(&p);
     let num_limbs = calc_num_limbs(log_limb_size, p_bitwidth);
@@ -77,20 +77,20 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
 
     let cost = 2u32.pow(16u32) as usize;
     let expected = expensive_computation(cost, &a, &b, &p, &r);
-    let expected_limbs = ScalarField::from_bigint(expected.clone().try_into().unwrap())
+    let expected_limbs = BaseField::from_bigint(expected.clone().try_into().unwrap())
         .unwrap()
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
 
-    let ar_limbs = ScalarField::from_bigint(a_r.clone().try_into().unwrap())
+    let ar_limbs = BaseField::from_bigint(a_r.clone().try_into().unwrap())
         .unwrap()
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
-    let br_limbs = ScalarField::from_bigint(b_r.clone().try_into().unwrap())
+    let br_limbs = BaseField::from_bigint(b_r.clone().try_into().unwrap())
         .unwrap()
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
-    let p_limbs = &ScalarField::MODULUS.to_limbs(num_limbs, log_limb_size);
+    let p_limbs = &BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
 
     let device = get_default_device();
 
