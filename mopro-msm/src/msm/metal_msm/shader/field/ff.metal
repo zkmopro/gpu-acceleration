@@ -10,31 +10,21 @@ BigInt ff_add(
     BigInt b,
     BigInt p
 ) {
-    // Assign p to p_wide
-    BigIntWide p_wide;
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        p_wide.limbs[i] = p.limbs[i];
-    }
-
-    // a + b
-    BigIntWide sum_wide = bigint_add_wide(a, b);
+    BigInt sum = bigint_add_unsafe(a, b);
 
     BigInt res;
-
-    // if (a + b) >= p
-    if (bigint_wide_gte(sum_wide, p_wide)) {
+    if (bigint_gte(sum, p)) {
         // s = a + b - p
-        BigIntWide s = bigint_sub_wide(sum_wide, p_wide);
-
+        BigInt s = bigint_sub(sum, p);
         for (uint i = 0; i < NUM_LIMBS; i ++) {
             res.limbs[i] = s.limbs[i];
         }
-    } else {
+    }
+    else {
         for (uint i = 0; i < NUM_LIMBS; i ++) {
-            res.limbs[i] = sum_wide.limbs[i];
+            res.limbs[i] = sum.limbs[i];
         }
     }
-
     return res;
 }
 
