@@ -7,7 +7,8 @@ use crate::msm::metal_msm::utils::mont_params::{
 use ark_bn254::Fr as ScalarField;
 use ark_ff::{BigInt, PrimeField};
 use metal::*;
-use num_bigint::BigUint;
+use num_bigint::{BigUint, RandBigInt};
+use rand::thread_rng;
 use stopwatch::Stopwatch;
 
 #[test]
@@ -53,26 +54,14 @@ fn expensive_computation(
 }
 
 pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
-    let p = BigUint::parse_bytes(
-        b"30644E72E131A029B85045B68181585D2833E84879B9709143E1F593F0000001",
-        16,
-    )
-    .unwrap();
-    assert!(p == ScalarField::MODULUS.try_into().unwrap());
+    let p: BigUint = ScalarField::MODULUS.try_into().unwrap();
 
     let p_bitwidth = calc_bitwidth(&p);
     let num_limbs = calc_num_limbs(log_limb_size, p_bitwidth);
 
-    let a = BigUint::parse_bytes(
-        b"10ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001",
-        16,
-    )
-    .unwrap();
-    let b = BigUint::parse_bytes(
-        b"11ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001",
-        16,
-    )
-    .unwrap();
+    let mut rng = thread_rng();
+    let a = rng.gen_biguint_below(&p);
+    let b = rng.gen_biguint_below(&p);
 
     let nsafe = calc_nsafe(log_limb_size);
     if nsafe == 0 {

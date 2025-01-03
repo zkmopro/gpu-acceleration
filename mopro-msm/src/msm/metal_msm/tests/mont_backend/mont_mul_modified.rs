@@ -9,7 +9,8 @@ use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, cal
 use ark_bn254::Fr as ScalarField;
 use ark_ff::{BigInt, PrimeField};
 use metal::*;
-use num_bigint::BigUint;
+use num_bigint::{BigUint, RandBigInt};
+use rand::thread_rng;
 
 #[test]
 #[serial_test::serial]
@@ -34,16 +35,9 @@ pub fn do_test(log_limb_size: u32) {
     let res = calc_rinv_and_n0(&p, &r, log_limb_size);
     let n0 = res.1;
 
-    let a = BigUint::parse_bytes(
-        b"10ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001",
-        16,
-    )
-    .unwrap();
-    let b = BigUint::parse_bytes(
-        b"11ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001",
-        16,
-    )
-    .unwrap();
+    let mut rng = thread_rng();
+    let a = rng.gen_biguint_below(&p);
+    let b = rng.gen_biguint_below(&p);
 
     let a_r = &a * &r % &p;
     let b_r = &b * &r % &p;
