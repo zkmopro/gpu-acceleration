@@ -1,6 +1,6 @@
 // adapted from: https://github.com/geometryxyz/msl-secp256k1
 
-// we avoid using ark_ff::ScalarField here because the mont radix exceeds the range of its field
+// we avoid using ark_ff::BaseField here because the mont radix exceeds the range of its field
 // and we need to use num_bigint::BigUint for better flexibility
 
 use crate::msm::metal_msm::host::gpu::{
