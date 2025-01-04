@@ -9,10 +9,11 @@ use crate::msm::metal_msm::host::gpu::{
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_rinv_and_n0};
-use ark_bn254::Fr as ScalarField;
+use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
 use metal::*;
-use num_bigint::BigUint;
+use num_bigint::{BigUint, RandBigInt};
+use rand::thread_rng;
 
 #[test]
 #[serial_test::serial]
@@ -28,33 +29,26 @@ pub fn test_mont_mul_13() {
 
 pub fn do_test(log_limb_size: u32) {
     // Calculate num_limbs based on modulus size and limb size
-    let modulus_bits = ScalarField::MODULUS_BIT_SIZE as u32;
+    let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
 
     let r = calc_mont_radix(num_limbs, log_limb_size);
-    let p: BigUint = ScalarField::MODULUS.try_into().unwrap();
+    let p: BigUint = BaseField::MODULUS.try_into().unwrap();
 
     let res = calc_rinv_and_n0(&p, &r, log_limb_size);
     let n0 = res.1;
 
-    let a = BigUint::parse_bytes(
-        b"10ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001",
-        16,
-    )
-    .unwrap();
-    let b = BigUint::parse_bytes(
-        b"11ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001",
-        16,
-    )
-    .unwrap();
+    let mut rng = thread_rng();
+    let a = rng.gen_biguint_below(&p);
+    let b = rng.gen_biguint_below(&p);
 
     let a_r = &a * &r % &p;
     let b_r = &b * &r % &p;
     let expected = (&a * &b * &r) % &p;
 
-    let a_r_in_ark = ScalarField::from_bigint(a_r.clone().try_into().unwrap()).unwrap();
-    let b_r_in_ark = ScalarField::from_bigint(b_r.clone().try_into().unwrap()).unwrap();
-    let expected_in_ark = ScalarField::from_bigint(expected.clone().try_into().unwrap()).unwrap();
+    let a_r_in_ark = BaseField::from_bigint(a_r.clone().try_into().unwrap()).unwrap();
+    let b_r_in_ark = BaseField::from_bigint(b_r.clone().try_into().unwrap()).unwrap();
+    let expected_in_ark = BaseField::from_bigint(expected.clone().try_into().unwrap()).unwrap();
     let expected_limbs = expected_in_ark
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
@@ -70,7 +64,7 @@ pub fn do_test(log_limb_size: u32) {
     );
     let p_buf = create_buffer(
         &device,
-        &ScalarField::MODULUS.to_limbs(num_limbs, log_limb_size),
+        &BaseField::MODULUS.to_limbs(num_limbs, log_limb_size),
     );
     let result_buf = create_empty_buffer(&device, num_limbs);
 
@@ -139,17 +133,17 @@ pub fn do_test(log_limb_size: u32) {
 pub fn test_number_conversions() {
     // Setup parameters
     let log_limb_size = 12;
-    let modulus_bits = ScalarField::MODULUS_BIT_SIZE as u32;
+    let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
 
     // Create test values using small numbers for clarity
     let original_biguint = BigUint::parse_bytes(b"123456789", 10).unwrap();
 
-    // Convert BigUint to ScalarField
+    // Convert BigUint to BaseField
     let scalar_field_value =
-        ScalarField::from_bigint(original_biguint.clone().try_into().unwrap()).unwrap();
+        BaseField::from_bigint(original_biguint.clone().try_into().unwrap()).unwrap();
 
-    // Convert ScalarField to limbs
+    // Convert BaseField to limbs
     let limbs = scalar_field_value
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
@@ -174,7 +168,7 @@ pub fn test_number_conversions() {
     ];
 
     for value in test_values {
-        let scalar = ScalarField::from_bigint(value.clone().try_into().unwrap()).unwrap();
+        let scalar = BaseField::from_bigint(value.clone().try_into().unwrap()).unwrap();
         let value_limbs = scalar.into_bigint().to_limbs(num_limbs, log_limb_size);
         let converted: BigUint = BigInt::from_limbs(&value_limbs, log_limb_size)
             .try_into()
