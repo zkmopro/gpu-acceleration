@@ -12,6 +12,11 @@ struct Jacobian {
     BigInt z;
 };
 
+struct Affine {
+    BigInt x;
+    BigInt y;
+};
+
 Jacobian jacobian_add_2007_bl(
     Jacobian a,
     Jacobian b,
@@ -93,6 +98,74 @@ Jacobian jacobian_dbl_2009_l(
     BigInt y1z1 = mont_mul_cios(y, z, p);
     BigInt z3 = ff_add(y1z1, y1z1, p);
 
+    Jacobian result;
+    result.x = x3;
+    result.y = y3;
+    result.z = z3;
+    return result;
+}
+
+//http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-madd-2007-bl
+Jacobian jacobian_madd_2007_bl(
+    Jacobian a,
+    Affine b,
+    BigInt p
+) {
+    BigInt x1 = a.x;
+    BigInt y1 = a.y;
+    BigInt z1 = a.z;
+    BigInt x2 = b.x;
+    BigInt y2 = b.y;
+
+    // Z1Z1 = Z1^2
+    BigInt z1z1 = mont_mul_cios(z1, z1, p);
+    
+    // U2 = X2*Z1Z1
+    BigInt u2 = mont_mul_cios(x2, z1z1, p);
+    
+    // S2 = Y2*Z1*Z1Z1
+    BigInt temp_s2 = mont_mul_cios(y2, z1, p);
+    BigInt s2 = mont_mul_cios(temp_s2, z1z1, p);
+    
+    // H = U2-X1
+    BigInt h = ff_sub(u2, x1, p);
+    
+    // HH = H^2
+    BigInt hh = mont_mul_cios(h, h, p);
+    
+    // I = 4*HH
+    BigInt i = ff_add(hh, hh, p); // *2
+    i = ff_add(i, i, p);          // *4
+    
+    // J = H*I
+    BigInt j = mont_mul_cios(h, i, p);
+    
+    // r = 2*(S2-Y1)
+    BigInt s2_minus_y1 = ff_sub(s2, y1, p);
+    BigInt r = ff_add(s2_minus_y1, s2_minus_y1, p);
+    
+    // V = X1*I
+    BigInt v = mont_mul_cios(x1, i, p);
+    
+    // X3 = r^2-J-2*V
+    BigInt r2 = mont_mul_cios(r, r, p);
+    BigInt v2 = ff_add(v, v, p);
+    BigInt jv2 = ff_add(j, v2, p);
+    BigInt x3 = ff_sub(r2, jv2, p);
+    
+    // Y3 = r*(V-X3)-2*Y1*J
+    BigInt v_minus_x3 = ff_sub(v, x3, p);
+    BigInt r_vmx3 = mont_mul_cios(r, v_minus_x3, p);
+    BigInt y1j = mont_mul_cios(y1, j, p);
+    BigInt y1j2 = ff_add(y1j, y1j, p);
+    BigInt y3 = ff_sub(r_vmx3, y1j2, p);
+    
+    // Z3 = (Z1+H)^2-Z1Z1-HH
+    BigInt z1_plus_h = ff_add(z1, h, p);
+    BigInt z1_plus_h_squared = mont_mul_cios(z1_plus_h, z1_plus_h, p);
+    BigInt temp = ff_sub(z1_plus_h_squared, z1z1, p);
+    BigInt z3 = ff_sub(temp, hh, p);
+    
     Jacobian result;
     result.x = x3;
     result.y = y3;
