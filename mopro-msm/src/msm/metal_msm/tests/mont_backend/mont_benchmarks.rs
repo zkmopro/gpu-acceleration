@@ -13,29 +13,23 @@ use stopwatch::Stopwatch;
 
 #[test]
 #[serial_test::serial]
+#[ignore]
 pub fn all_benchmarks() {
-    println!("=== benchmarking mont_mul_modified ===");
-    for i in 11..17 {
-        match benchmark(i, "mont_mul_modified_benchmarks.metal") {
-            Ok(elapsed) => println!("benchmark for {}-bit limbs took {}ms", i, elapsed),
-            Err(e) => println!("benchmark for {}-bit limbs: {}", i, e),
-        }
-    }
+    let benchmarks_to_run = vec![
+        ("mont_mul_modified_benchmarks.metal", "mont_mul_modified"),
+        ("mont_mul_optimised_benchmarks.metal", "mont_mul_optimised"),
+        ("mont_mul_cios_benchmarks.metal", "mont_mul_cios"),
+    ];
 
-    println!("\n=== benchmarking mont_mul_optimised ===");
-    for i in 11..17 {
-        match benchmark(i, "mont_mul_optimised_benchmarks.metal") {
-            Ok(elapsed) => println!("benchmark for {}-bit limbs took {}ms", i, elapsed),
-            Err(e) => println!("benchmark for {}-bit limbs: {}", i, e),
+    for (shader_file, benchmark_name) in benchmarks_to_run {
+        println!("=== benchmarking {} ===", benchmark_name);
+        for i in 11..17 {
+            match benchmark(i, shader_file) {
+                Ok(elapsed) => println!("benchmark for {}-bit limbs took {}ms", i, elapsed),
+                Err(e) => println!("benchmark for {}-bit limbs: {}", i, e),
+            }
         }
-    }
-
-    println!("\n=== benchmarking mont_mul_cios ===");
-    for i in 11..17 {
-        match benchmark(i, "mont_mul_cios_benchmarks.metal") {
-            Ok(elapsed) => println!("benchmark for {}-bit limbs took {}ms", i, elapsed),
-            Err(e) => println!("benchmark for {}-bit limbs: {}", i, e),
-        }
+        println!();
     }
 }
 

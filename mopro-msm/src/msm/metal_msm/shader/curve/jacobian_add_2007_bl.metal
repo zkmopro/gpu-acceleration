@@ -29,7 +29,7 @@ kernel void run(
     Jacobian a; a.x = x1; a.y = y1; a.z = z1;
     Jacobian b; b.x = x2; b.y = y2; b.z = z2;
 
-    Jacobian res = jacobian_add_2007_bl_unsafe(a, b, p);
+    Jacobian res = jacobian_add_2007_bl(a, b, p);
     result_xr->limbs = res.x.limbs;
     result_yr->limbs = res.y.limbs;
     result_zr->limbs = res.z.limbs;

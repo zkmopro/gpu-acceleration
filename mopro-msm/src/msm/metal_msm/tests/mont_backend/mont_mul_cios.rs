@@ -14,14 +14,14 @@ use rand::thread_rng;
 
 #[test]
 #[serial_test::serial]
-pub fn test_mont_mul_14() {
-    do_test(14);
+pub fn test_mont_mul_15() {
+    do_test(15);
 }
 
 #[test]
 #[serial_test::serial]
-pub fn test_mont_mul_15() {
-    do_test(15);
+pub fn test_mont_mul_16() {
+    do_test(16);
 }
 
 pub fn do_test(log_limb_size: u32) {
