@@ -9,10 +9,9 @@ use crate::msm::metal_msm::host::gpu::{
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
-use crate::msm::metal_msm::utils::mont_params::{
-    calc_bitwidth, calc_mont_radix, calc_nsafe, calc_num_limbs, calc_rinv_and_n0,
-};
+use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_ff::{BigInt, PrimeField};
+use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::BigUint;
 
 #[test]
@@ -20,25 +19,19 @@ use num_bigint::BigUint;
 pub fn test_jacobian_dbl_2009_l() {
     let log_limb_size = 16;
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-    assert_eq!(
-        p,
-        BigUint::parse_bytes(
-            b"30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD47",
-            16
-        )
-        .unwrap()
-    );
 
-    let p_bitwidth = calc_bitwidth(&p);
-    let num_limbs = calc_num_limbs(log_limb_size, p_bitwidth);
+    let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
+    let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
+
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let res = calc_rinv_and_n0(&p, &r, log_limb_size);
     let rinv = res.0;
     let n0 = res.1;
     let nsafe = calc_nsafe(log_limb_size);
 
-    let point = GAffine::generator().into_group();
-    let a = point * ScalarField::from(1u32);
+    let base_point = GAffine::generator().into_group();
+    let mut rng = thread_rng();
+    let a = base_point * ScalarField::rand(&mut rng);
 
     let expected = a + a;
 
@@ -144,9 +137,6 @@ pub fn test_jacobian_dbl_2009_l() {
     let result_y = (&result_yr * &rinv) % &p;
     let result_z = (&result_zr * &rinv) % &p;
 
-    let result = G::new_unchecked(result_x.into(), result_y.into(), result_z.into());
-
-    println!("result: {:?}", result);
-    println!("expected: {:?}", expected);
+    let result = G::new(result_x.into(), result_y.into(), result_z.into());
     assert!(result == expected);
 }

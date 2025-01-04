@@ -11,21 +11,14 @@ use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_ff::{BigInt, PrimeField};
+use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::BigUint;
 
 #[test]
 #[serial_test::serial]
-pub fn test_jacobian_add_2007_bl_unsafe() {
+pub fn test_jacobian_add_2007_bl() {
     let log_limb_size = 16;
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-    assert_eq!(
-        p,
-        BigUint::parse_bytes(
-            b"30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD47",
-            16
-        )
-        .unwrap()
-    );
 
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
@@ -36,16 +29,21 @@ pub fn test_jacobian_add_2007_bl_unsafe() {
     let n0 = res.1;
     let nsafe = calc_nsafe(log_limb_size);
 
-    println!("num_limbs: {:?}", num_limbs);
-    println!("r: {:?}", r);
-    println!("rinv: {:?}", rinv);
-    println!("n0: {:?}", n0);
-    println!("nsafe: {:?}", nsafe);
+    // Generate 2 random affine points
+    let (a, b) = {
+        let mut rng = thread_rng();
+        let base_point = GAffine::generator().into_group();
 
-    // Generate 2 different affine points which are not the point at infinity
-    let point = GAffine::generator().into_group();
-    let a = point * ScalarField::from(1u32);
-    let b = point * ScalarField::from(3u32);
+        let s1 = ScalarField::rand(&mut rng);
+        let mut s2 = ScalarField::rand(&mut rng);
+
+        // Ensure s1 and s2 are different (if s1 == s2, we use pDBL instead of pADD)
+        while s1 == s2 {
+            s2 = ScalarField::rand(&mut rng);
+        }
+
+        (base_point * s1, base_point * s2)
+    };
 
     // Compute the sum in projective form using Arkworks
     let expected = a + b;
@@ -111,7 +109,7 @@ pub fn test_jacobian_add_2007_bl_unsafe() {
     );
     let library_path = compile_metal(
         "../mopro-msm/src/msm/metal_msm/shader/curve",
-        "jacobian_add_2007_bl_unsafe.metal",
+        "jacobian_add_2007_bl.metal",
     );
     let library = device.new_library_with_file(library_path).unwrap();
     let kernel = library.get_function("run", None).unwrap();
@@ -173,9 +171,6 @@ pub fn test_jacobian_add_2007_bl_unsafe() {
     let result_y = (result_yr * &rinv) % &p;
     let result_z = (result_zr * &rinv) % &p;
 
-    let result = G::new_unchecked(result_x.into(), result_y.into(), result_z.into());
-
-    println!("result  : {:?}", result);
-    println!("expected: {:?}", expected);
-    // assert!(result == expected);
+    let result = G::new(result_x.into(), result_y.into(), result_z.into());
+    assert!(result == expected);
 }
