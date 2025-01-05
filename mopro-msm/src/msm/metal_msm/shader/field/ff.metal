@@ -10,12 +10,12 @@ BigInt ff_add(
     BigInt b,
     BigInt p
 ) {
-    BigInt sum = bigint_add_unsafe(a, b);
+    BigInt sum = a + b;
 
     BigInt res;
-    if (bigint_gte(sum, p)) {
+    if (sum >= p) {
         // s = a + b - p
-        BigInt s = bigint_sub(sum, p);
+        BigInt s = sum - p;
         for (uint i = 0; i < NUM_LIMBS; i ++) {
             res.limbs[i] = s.limbs[i];
         }
@@ -34,17 +34,17 @@ BigInt ff_sub(
     BigInt p
 ) {
     // if a >= b
-    if (bigint_gte(a, b)) {
+    if (a >= b) {
         // a - b
-        BigInt res = bigint_sub(a, b);
+        BigInt res = a - b;
         for (uint i = 0; i < NUM_LIMBS; i ++) {
             res.limbs[i] = res.limbs[i];
         }
         return res;
     } else {
         // p - (b - a)
-        BigInt r = bigint_sub(b, a);
-        BigInt res = bigint_sub(p, r);
+        BigInt r = b - a;
+        BigInt res = p - r;
         for (uint i = 0; i < NUM_LIMBS; i ++) {
             res.limbs[i] = res.limbs[i];
         }

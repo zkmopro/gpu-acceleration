@@ -11,10 +11,8 @@ kernel void run(
     device BigIntWide* result [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt a;
-    BigInt b;
-    a.limbs = lhs->limbs;
-    b.limbs = rhs->limbs;
+    BigInt a = *lhs;
+    BigInt b = *rhs;
     BigIntWide res = bigint_add_wide(a, b);
-    result->limbs = res.limbs;
+    *result = res;
 }

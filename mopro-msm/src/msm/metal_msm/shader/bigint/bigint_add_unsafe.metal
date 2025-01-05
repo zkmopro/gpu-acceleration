@@ -11,10 +11,8 @@ kernel void run(
     device BigInt* result [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt a;
-    BigInt b;
-    a.limbs = lhs->limbs;
-    b.limbs = rhs->limbs;
-    BigInt res = bigint_add_unsafe(a, b);
-    result->limbs = res.limbs;
+    BigInt a = *lhs;
+    BigInt b = *rhs;
+    BigInt res = a + b;
+    *result = res;
 }

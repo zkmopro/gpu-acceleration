@@ -9,8 +9,8 @@ BigInt conditional_reduce(
     BigInt x,
     BigInt y
 ) {
-    if (bigint_gte(x, y)) {
-        return bigint_sub(x, y);
+    if (x >= y) {
+        return x - y;
     }
 
     return x;

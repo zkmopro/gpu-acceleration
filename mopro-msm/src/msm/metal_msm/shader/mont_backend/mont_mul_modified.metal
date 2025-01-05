@@ -12,14 +12,10 @@ kernel void run(
     device BigInt* result [[ buffer(3) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt a;
-    BigInt b;
-    BigInt p;
-    a.limbs = lhs->limbs;
-    b.limbs = rhs->limbs;
-    p.limbs = prime->limbs;
+    BigInt a = *lhs;
+    BigInt b = *rhs;
+    BigInt p = *prime;
 
     BigInt res = mont_mul_modified(a, b, p);
-    result->limbs = res.limbs;
-
+    *result = res;
 }
