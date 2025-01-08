@@ -130,27 +130,6 @@ bool bigint_wide_gte(
     return true;
 }
 
-BigInt get_bn254_basefield_modulus() {
-    BigInt modulus;
-    modulus.limbs[0] = BN254_BASEFIELD_MODULUS_LIMB_0;
-    modulus.limbs[1] = BN254_BASEFIELD_MODULUS_LIMB_1;
-    modulus.limbs[2] = BN254_BASEFIELD_MODULUS_LIMB_2;
-    modulus.limbs[3] = BN254_BASEFIELD_MODULUS_LIMB_3;
-    modulus.limbs[4] = BN254_BASEFIELD_MODULUS_LIMB_4;
-    modulus.limbs[5] = BN254_BASEFIELD_MODULUS_LIMB_5;
-    modulus.limbs[6] = BN254_BASEFIELD_MODULUS_LIMB_6;
-    modulus.limbs[7] = BN254_BASEFIELD_MODULUS_LIMB_7;
-    modulus.limbs[8] = BN254_BASEFIELD_MODULUS_LIMB_8;
-    modulus.limbs[9] = BN254_BASEFIELD_MODULUS_LIMB_9;
-    modulus.limbs[10] = BN254_BASEFIELD_MODULUS_LIMB_10;
-    modulus.limbs[11] = BN254_BASEFIELD_MODULUS_LIMB_11;
-    modulus.limbs[12] = BN254_BASEFIELD_MODULUS_LIMB_12;
-    modulus.limbs[13] = BN254_BASEFIELD_MODULUS_LIMB_13;
-    modulus.limbs[14] = BN254_BASEFIELD_MODULUS_LIMB_14;
-    modulus.limbs[15] = BN254_BASEFIELD_MODULUS_LIMB_15;
-    return modulus;
-}
-
 // Overload Operators
 constexpr BigInt operator+(const BigInt lhs, const BigInt rhs) {
     return bigint_add_unsafe(lhs, rhs);
