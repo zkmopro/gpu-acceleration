@@ -1,5 +1,6 @@
 // source: https://github.com/geometryxyz/msl-secp256k1
 // algorithms: https://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html
+#pragma once
 
 using namespace metal;
 #include <metal_stdlib>
