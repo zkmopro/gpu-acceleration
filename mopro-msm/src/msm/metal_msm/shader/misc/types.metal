@@ -1,3 +1,5 @@
+#pragma once
+
 using namespace metal;
 #include <metal_stdlib>
 

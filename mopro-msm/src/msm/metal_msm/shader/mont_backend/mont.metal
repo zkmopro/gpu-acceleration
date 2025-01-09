@@ -1,4 +1,5 @@
 // adapted from: https://github.com/geometryxyz/msl-secp256k1
+#pragma once
 
 using namespace metal;
 #include <metal_stdlib>
