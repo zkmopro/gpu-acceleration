@@ -6,16 +6,6 @@ using namespace metal;
 #include <metal_math>
 #include "../mont_backend/mont.metal"
 
-struct Jacobian {
-    BigInt x;
-    BigInt y;
-    BigInt z;
-};
-
-struct Affine {
-    BigInt x;
-    BigInt y;
-};
 
 Jacobian jacobian_add_2007_bl(
     Jacobian a,

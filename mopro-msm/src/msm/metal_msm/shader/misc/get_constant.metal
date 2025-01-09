@@ -1,6 +1,7 @@
 using namespace metal;
 #include <metal_stdlib>
-#include "../bigint/bigint.metal"
+#include "../constants.metal"
+#include "../misc/types.metal"
 
 BigInt get_mu() {
     BigInt mu;
