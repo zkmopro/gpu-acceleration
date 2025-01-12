@@ -4,7 +4,7 @@ use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
@@ -119,7 +119,7 @@ pub fn do_test(log_limb_size: u32) {
     command_buffer.wait_until_completed();
 
     let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
 
     assert!(result == expected.try_into().unwrap());
     assert!(result_limbs == expected_limbs);

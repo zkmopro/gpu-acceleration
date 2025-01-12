@@ -4,7 +4,7 @@ use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, BigInteger, PrimeField, UniformRand};
 use ark_std::rand;
@@ -20,8 +20,8 @@ pub fn test_ff_add() {
     let p = BaseField::MODULUS;
 
     let mut rng = rand::thread_rng();
-    let mut a = BigInt::rand(&mut rng);
-    let mut b = BigInt::rand(&mut rng);
+    let mut a = BigInt::<4>::rand(&mut rng);
+    let mut b = BigInt::<4>::rand(&mut rng);
 
     // Reduce a and b if they are greater than or equal to the prime field modulus
     while a >= p {

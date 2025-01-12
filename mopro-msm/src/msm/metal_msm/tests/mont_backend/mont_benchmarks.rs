@@ -1,6 +1,6 @@
 use crate::msm::metal_msm::host::gpu::{create_buffer, create_empty_buffer, get_default_device};
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::{
     calc_bitwidth, calc_mont_radix, calc_nsafe, calc_num_limbs, calc_rinv_and_n0,
 };
@@ -161,7 +161,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         panic!("Pointer is null");
     }
 
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
 
     // assert!(result == expected.try_into().unwrap());
     // assert!(result_limbs == expected_limbs);
