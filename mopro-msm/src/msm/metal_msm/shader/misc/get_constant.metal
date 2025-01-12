@@ -40,3 +40,23 @@ BigIntWide get_p_wide() {
     }
     return p;
 }
+
+Jacobian get_bn254_zero() {
+    Jacobian zero;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        zero.x.limbs[i] = BN254_ZERO_X[i];
+        zero.y.limbs[i] = BN254_ZERO_Y[i];
+        zero.z.limbs[i] = BN254_ZERO_Z[i];
+    }
+    return zero;
+}
+
+Jacobian get_bn254_one() {
+    Jacobian one;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        one.x.limbs[i] = BN254_ONE_X[i];
+        one.y.limbs[i] = BN254_ONE_Y[i];
+        one.z.limbs[i] = BN254_ONE_Z[i];
+    }
+    return one;
+}
