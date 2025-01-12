@@ -17,6 +17,14 @@ BigInt get_mu() {
     return mu;
 }
 
+BigIntWide get_r() {
+    BigIntWide r;   // 257 bits
+    for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
+        r.limbs[i] = MONT_RADIX[i];
+    }
+    return r;
+}
+
 BigInt get_p() {
     BigInt p;
     for (uint i = 0; i < NUM_LIMBS; i++) {
@@ -31,16 +39,4 @@ BigIntWide get_p_wide() {
         p.limbs[i] = BN254_BASEFIELD_MODULUS[i];
     }
     return p;
-}
-
-kernel void test_get_mu(device BigInt* result) {
-    *result = get_mu();
-}
-
-kernel void test_get_p(device BigInt* result) {
-    *result = get_p();
-}
-
-kernel void test_get_p_wide(device BigIntWide* result) {
-    *result = get_p_wide();
 }
