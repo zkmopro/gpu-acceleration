@@ -17,6 +17,14 @@ BigInt get_mu() {
     return mu;
 }
 
+BigIntWide get_r() {
+    BigIntWide r;   // 257 bits
+    for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
+        r.limbs[i] = MONT_RADIX[i];
+    }
+    return r;
+}
+
 BigInt get_p() {
     BigInt p;
     for (uint i = 0; i < NUM_LIMBS; i++) {
@@ -33,14 +41,42 @@ BigIntWide get_p_wide() {
     return p;
 }
 
-kernel void test_get_mu(device BigInt* result) {
-    *result = get_mu();
+Jacobian get_bn254_zero() {
+    Jacobian zero;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        zero.x.limbs[i] = BN254_ZERO_X[i];
+        zero.y.limbs[i] = BN254_ZERO_Y[i];
+        zero.z.limbs[i] = BN254_ZERO_Z[i];
+    }
+    return zero;
 }
 
-kernel void test_get_p(device BigInt* result) {
-    *result = get_p();
+Jacobian get_bn254_one() {
+    Jacobian one;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        one.x.limbs[i] = BN254_ONE_X[i];
+        one.y.limbs[i] = BN254_ONE_Y[i];
+        one.z.limbs[i] = BN254_ONE_Z[i];
+    }
+    return one;
 }
 
-kernel void test_get_p_wide(device BigIntWide* result) {
-    *result = get_p_wide();
+Jacobian get_bn254_zero_mont() {
+    Jacobian zero;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        zero.x.limbs[i] = BN254_ZERO_XR[i];
+        zero.y.limbs[i] = BN254_ZERO_YR[i];
+        zero.z.limbs[i] = BN254_ZERO_ZR[i];
+    }
+    return zero;
+}
+
+Jacobian get_bn254_one_mont() {
+    Jacobian one;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        one.x.limbs[i] = BN254_ONE_XR[i];
+        one.y.limbs[i] = BN254_ONE_YR[i];
+        one.z.limbs[i] = BN254_ONE_ZR[i];
+    }
+    return one;
 }
