@@ -60,3 +60,23 @@ Jacobian get_bn254_one() {
     }
     return one;
 }
+
+Jacobian get_bn254_zero_mont() {
+    Jacobian zero;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        zero.x.limbs[i] = BN254_ZERO_XR[i];
+        zero.y.limbs[i] = BN254_ZERO_YR[i];
+        zero.z.limbs[i] = BN254_ZERO_ZR[i];
+    }
+    return zero;
+}
+
+Jacobian get_bn254_one_mont() {
+    Jacobian one;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        one.x.limbs[i] = BN254_ONE_XR[i];
+        one.y.limbs[i] = BN254_ONE_YR[i];
+        one.z.limbs[i] = BN254_ONE_ZR[i];
+    }
+    return one;
+}

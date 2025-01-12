@@ -13,10 +13,11 @@
  */
 
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
+use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_rinv_and_n0};
 use ark_bn254::{Fq as BaseField, G1Projective as G};
 use ark_ec::Group;
 use ark_ff::{BigInt, PrimeField, Zero};
+use num_bigint::BigUint;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -112,9 +113,9 @@ pub fn write_constants(
     let mask = two_pow_word_size - 1u32;
     let num_limbs_wide = num_limbs + 1;
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
+    let r = calc_mont_radix(num_limbs, log_limb_size);
     let mont_radix_limbs: Vec<u32> = {
-        let mont_radix = calc_mont_radix(num_limbs, log_limb_size);
-        let mont_radix_limbs: BigInt<6> = mont_radix.try_into().unwrap();
+        let mont_radix_limbs: BigInt<6> = r.clone().try_into().unwrap();
         mont_radix_limbs.to_limbs(num_limbs_wide, log_limb_size) // num_limbs_wide because mont_radix is 257 bits
     };
     let (bn254_zero, bn254_one) = {
@@ -179,6 +180,54 @@ pub fn write_constants(
         bn254_one_limbs(&bn254_one.z.into()),
         "NUM_LIMBS"
     );
+
+    let p: BigUint = BaseField::MODULUS.try_into().unwrap();
+    let (rinv, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
+    let (bn254_zero_xr_limbs, bn254_zero_yr_limbs, bn254_zero_zr_limbs) = {
+        let bn254_zero_x: BigUint = bn254_zero.x.into();
+        let bn254_zero_y: BigUint = bn254_zero.y.into();
+        let bn254_zero_z: BigUint = bn254_zero.z.into();
+        let bn254_zero_xr = (bn254_zero_x * &r) % &p;
+        let bn254_zero_yr = (bn254_zero_y * &r) % &p;
+        let bn254_zero_zr = (bn254_zero_z * &r) % &p;
+        (
+            ark_ff::BigInt::<4>::try_from(bn254_zero_xr)
+                .unwrap()
+                .to_limbs(num_limbs, log_limb_size),
+            ark_ff::BigInt::<4>::try_from(bn254_zero_yr)
+                .unwrap()
+                .to_limbs(num_limbs, log_limb_size),
+            ark_ff::BigInt::<4>::try_from(bn254_zero_zr)
+                .unwrap()
+                .to_limbs(num_limbs, log_limb_size),
+        )
+    };
+    write_constant_array!(data, "BN254_ZERO_XR", bn254_zero_xr_limbs, "NUM_LIMBS");
+    write_constant_array!(data, "BN254_ZERO_YR", bn254_zero_yr_limbs, "NUM_LIMBS");
+    write_constant_array!(data, "BN254_ZERO_ZR", bn254_zero_zr_limbs, "NUM_LIMBS");
+
+    let (bn254_one_xr_limbs, bn254_one_yr_limbs, bn254_one_zr_limbs) = {
+        let bn254_one_x: BigUint = bn254_one.x.into();
+        let bn254_one_y: BigUint = bn254_one.y.into();
+        let bn254_one_z: BigUint = bn254_one.z.into();
+        let bn254_one_xr = (bn254_one_x * &r) % &p;
+        let bn254_one_yr = (bn254_one_y * &r) % &p;
+        let bn254_one_zr = (bn254_one_z * &r) % &p;
+        (
+            ark_ff::BigInt::<4>::try_from(bn254_one_xr)
+                .unwrap()
+                .to_limbs(num_limbs, log_limb_size),
+            ark_ff::BigInt::<4>::try_from(bn254_one_yr)
+                .unwrap()
+                .to_limbs(num_limbs, log_limb_size),
+            ark_ff::BigInt::<4>::try_from(bn254_one_zr)
+                .unwrap()
+                .to_limbs(num_limbs, log_limb_size),
+        )
+    };
+    write_constant_array!(data, "BN254_ONE_XR", bn254_one_xr_limbs, "NUM_LIMBS");
+    write_constant_array!(data, "BN254_ONE_YR", bn254_one_yr_limbs, "NUM_LIMBS");
+    write_constant_array!(data, "BN254_ONE_ZR", bn254_one_zr_limbs, "NUM_LIMBS");
 
     let output_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(filepath)
