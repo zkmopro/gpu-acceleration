@@ -8,7 +8,7 @@ use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand};
@@ -123,13 +123,13 @@ pub fn test_jacobian_dbl_2009_l() {
     let result_yr_limbs: Vec<u32> = read_buffer(&result_yr_buf, num_limbs);
     let result_zr_limbs: Vec<u32> = read_buffer(&result_zr_buf, num_limbs);
 
-    let result_xr: BigUint = BigInt::from_limbs(&result_xr_limbs, log_limb_size)
+    let result_xr: BigUint = BigInt::<4>::from_limbs(&result_xr_limbs, log_limb_size)
         .try_into()
         .unwrap();
-    let result_yr: BigUint = BigInt::from_limbs(&result_yr_limbs, log_limb_size)
+    let result_yr: BigUint = BigInt::<4>::from_limbs(&result_yr_limbs, log_limb_size)
         .try_into()
         .unwrap();
-    let result_zr: BigUint = BigInt::from_limbs(&result_zr_limbs, log_limb_size)
+    let result_zr: BigUint = BigInt::<4>::from_limbs(&result_zr_limbs, log_limb_size)
         .try_into()
         .unwrap();
 

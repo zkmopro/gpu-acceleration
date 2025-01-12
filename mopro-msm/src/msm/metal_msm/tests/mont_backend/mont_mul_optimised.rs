@@ -7,7 +7,7 @@ use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_rinv_and_n0};
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
@@ -122,7 +122,7 @@ pub fn do_test(log_limb_size: u32) {
     command_buffer.wait_until_completed();
 
     let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
+    let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
 
     assert!(result == expected.try_into().unwrap());
     assert!(result_limbs == expected_limbs);
@@ -149,7 +149,7 @@ pub fn test_number_conversions() {
         .to_limbs(num_limbs, log_limb_size);
 
     // Convert limbs back to BigUint
-    let converted_biguint: BigUint = BigInt::from_limbs(&limbs, log_limb_size)
+    let converted_biguint: BigUint = BigInt::<4>::from_limbs(&limbs, log_limb_size)
         .try_into()
         .unwrap();
 
@@ -170,7 +170,7 @@ pub fn test_number_conversions() {
     for value in test_values {
         let scalar = BaseField::from_bigint(value.clone().try_into().unwrap()).unwrap();
         let value_limbs = scalar.into_bigint().to_limbs(num_limbs, log_limb_size);
-        let converted: BigUint = BigInt::from_limbs(&value_limbs, log_limb_size)
+        let converted: BigUint = BigInt::<4>::from_limbs(&value_limbs, log_limb_size)
             .try_into()
             .unwrap();
 

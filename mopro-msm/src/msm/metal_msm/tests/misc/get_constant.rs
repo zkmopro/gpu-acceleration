@@ -1,6 +1,6 @@
 use crate::msm::metal_msm::host::gpu::{create_empty_buffer, get_default_device, read_buffer};
 use crate::msm::metal_msm::host::shader::compile_metal;
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_rinv_and_n0};
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};

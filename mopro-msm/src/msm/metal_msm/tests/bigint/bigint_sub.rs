@@ -4,7 +4,7 @@ use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::{FromLimbs, ToLimbs};
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use ark_ff::{BigInt, BigInteger, UniformRand};
 use ark_std::rand;
 use metal::*;
@@ -19,8 +19,8 @@ pub fn test_bigint_sub_no_underflow() {
     // Create two test numbers that do not cause underflow
     let mut rng = rand::thread_rng();
     let (a, b, expected) = loop {
-        let a = BigInt::rand(&mut rng);
-        let b = BigInt::rand(&mut rng);
+        let a = BigInt::<4>::rand(&mut rng);
+        let b = BigInt::<4>::rand(&mut rng);
 
         let mut expected = a.clone();
         let underflow = expected.sub_with_borrow(&b);
@@ -105,8 +105,8 @@ fn test_bigint_sub_underflow() {
     // Create two test numbers that cause underflow
     let mut rng = rand::thread_rng();
     let (a, b, expected) = loop {
-        let a = BigInt::rand(&mut rng);
-        let b = BigInt::rand(&mut rng);
+        let a = BigInt::<4>::rand(&mut rng);
+        let b = BigInt::<4>::rand(&mut rng);
 
         let mut expected = a.clone();
         let underflow = expected.sub_with_borrow(&b);

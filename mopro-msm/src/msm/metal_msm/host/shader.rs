@@ -12,7 +12,7 @@
  * xcrun -sdk macosx metallib <path.ir> -o <path.metallib>
  */
 
-use crate::msm::metal_msm::utils::limbs_conversion::ToLimbs;
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use ark_bn254::Fq as BaseField;
 use ark_ff::PrimeField;
 use std::fs;
