@@ -76,7 +76,6 @@ impl GenericLimbConversion for BigInteger256 {
 
     fn from_u32_limbs(limbs: &[u32]) -> Self {
         let mut big_int = [0u64; 4];
-        // same logic from your code
         for (i, limb_pair) in limbs.chunks(2).rev().enumerate() {
             let high = u64::from(limb_pair[0]);
             let low = u64::from(limb_pair[1]);
