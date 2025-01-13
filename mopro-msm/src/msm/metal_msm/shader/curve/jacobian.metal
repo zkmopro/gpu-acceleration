@@ -6,13 +6,58 @@ using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
 #include "../mont_backend/mont.metal"
+#include "./utils.metal"
 
+Jacobian jacobian_dbl_2009_l(
+    Jacobian pt,
+    BigInt p
+) {
+    BigInt x = pt.x;
+    BigInt y = pt.y;
+    BigInt z = pt.z;
+
+    BigInt a = mont_mul_cios(x, x, p);
+    BigInt b = mont_mul_cios(y, y, p);
+    BigInt c = mont_mul_cios(b, b, p);
+    BigInt x1b = ff_add(x, b, p);
+    BigInt x1b2 = mont_mul_cios(x1b, x1b, p);
+    BigInt ac = ff_add(a, c, p);
+    BigInt x1b2ac = ff_sub(x1b2, ac, p);
+    BigInt d = ff_add(x1b2ac, x1b2ac, p);
+    BigInt a2 = ff_add(a, a, p);
+    BigInt e = ff_add(a2, a, p);
+    BigInt f = mont_mul_cios(e, e, p);
+    BigInt d2 = ff_add(d, d, p);
+    BigInt x3 = ff_sub(f, d2, p);
+    BigInt c2 = ff_add(c, c, p);
+    BigInt c4 = ff_add(c2, c2, p);
+    BigInt c8 = ff_add(c4, c4, p);
+    BigInt dx3 = ff_sub(d, x3, p);
+    BigInt edx3 = mont_mul_cios(e, dx3, p);
+    BigInt y3 = ff_sub(edx3, c8, p);
+    BigInt y1z1 = mont_mul_cios(y, z, p);
+    BigInt z3 = ff_add(y1z1, y1z1, p);
+
+    Jacobian result;
+    result.x = x3;
+    result.y = y3;
+    result.z = z3;
+    return result;
+}
 
 Jacobian jacobian_add_2007_bl(
     Jacobian a,
     Jacobian b,
     BigInt p
 ) {
+    if (is_jacobian_zero(a)) {
+        return b;
+    }
+    if (is_jacobian_zero(b)) {
+        return a;
+    }
+    if (a == b) return jacobian_dbl_2009_l(a, p);
+
     BigInt x1 = a.x;
     BigInt y1 = a.y;
     BigInt z1 = a.z;
@@ -20,6 +65,7 @@ Jacobian jacobian_add_2007_bl(
     BigInt y2 = b.y;
     BigInt z2 = b.z;
 
+    // First compute z coordinates
     BigInt z1z1 = mont_mul_cios(z1, z1, p);
     BigInt z2z2 = mont_mul_cios(z2, z2, p);
     BigInt u1 = mont_mul_cios(x1, z2z2, p);
@@ -51,43 +97,6 @@ Jacobian jacobian_add_2007_bl(
     BigInt z1z2 = mont_mul_cios(z1, z2, p);
     BigInt z1z2h = mont_mul_cios(z1z2, h, p);
     BigInt z3 = ff_add(z1z2h, z1z2h, p);
-
-    Jacobian result;
-    result.x = x3;
-    result.y = y3;
-    result.z = z3;
-    return result;
-}
-
-Jacobian jacobian_dbl_2009_l(
-    Jacobian pt,
-    BigInt p
-) {
-    BigInt x = pt.x;
-    BigInt y = pt.y;
-    BigInt z = pt.z;
-
-    BigInt a = mont_mul_cios(x, x, p);
-    BigInt b = mont_mul_cios(y, y, p);
-    BigInt c = mont_mul_cios(b, b, p);
-    BigInt x1b = ff_add(x, b, p);
-    BigInt x1b2 = mont_mul_cios(x1b, x1b, p);
-    BigInt ac = ff_add(a, c, p);
-    BigInt x1b2ac = ff_sub(x1b2, ac, p);
-    BigInt d = ff_add(x1b2ac, x1b2ac, p);
-    BigInt a2 = ff_add(a, a, p);
-    BigInt e = ff_add(a2, a, p);
-    BigInt f = mont_mul_cios(e, e, p);
-    BigInt d2 = ff_add(d, d, p);
-    BigInt x3 = ff_sub(f, d2, p);
-    BigInt c2 = ff_add(c, c, p);
-    BigInt c4 = ff_add(c2, c2, p);
-    BigInt c8 = ff_add(c4, c4, p);
-    BigInt dx3 = ff_sub(d, x3, p);
-    BigInt edx3 = mont_mul_cios(e, dx3, p);
-    BigInt y3 = ff_sub(edx3, c8, p);
-    BigInt y1z1 = mont_mul_cios(y, z, p);
-    BigInt z3 = ff_add(y1z1, y1z1, p);
 
     Jacobian result;
     result.x = x3;
