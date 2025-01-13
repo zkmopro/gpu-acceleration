@@ -1,7 +1,7 @@
 // adapted from https://github.com/geometryxyz/msl-secp256k1
 
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as GAffine, G1Projective as G};
-use ark_ec::AffineRepr;
+use ark_ec::{AffineRepr, Group};
 use metal::*;
 
 use crate::msm::metal_msm::host::gpu::{
@@ -11,12 +11,10 @@ use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_ff::{BigInt, PrimeField};
-use ark_std::{rand::thread_rng, UniformRand};
+use ark_std::{rand::thread_rng, UniformRand, Zero};
 use num_bigint::BigUint;
 
-#[test]
-#[serial_test::serial]
-pub fn test_jacobian_add_2007_bl() {
+fn jacobian_add_2007_bl_kernel(a: G, b: G, name: &str) -> G {
     let log_limb_size = 16;
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
 
@@ -28,25 +26,6 @@ pub fn test_jacobian_add_2007_bl() {
     let rinv = res.0;
     let n0 = res.1;
     let nsafe = calc_nsafe(log_limb_size);
-
-    // Generate 2 random affine points
-    let (a, b) = {
-        let mut rng = thread_rng();
-        let base_point = GAffine::generator().into_group();
-
-        let s1 = ScalarField::rand(&mut rng);
-        let mut s2 = ScalarField::rand(&mut rng);
-
-        // Ensure s1 and s2 are different (if s1 == s2, we use pDBL instead of pADD)
-        while s1 == s2 {
-            s2 = ScalarField::rand(&mut rng);
-        }
-
-        (base_point * s1, base_point * s2)
-    };
-
-    // Compute the sum in projective form using Arkworks
-    let expected = a + b;
 
     let ax: BigUint = a.x.into();
     let ay: BigUint = a.y.into();
@@ -107,9 +86,10 @@ pub fn test_jacobian_add_2007_bl() {
         n0,
         nsafe,
     );
+
     let library_path = compile_metal(
         "../mopro-msm/src/msm/metal_msm/shader/curve",
-        "jacobian_add_2007_bl.metal",
+        &format!("{}.metal", name),
     );
     let library = device.new_library_with_file(library_path).unwrap();
     let kernel = library.get_function("run", None).unwrap();
@@ -172,5 +152,66 @@ pub fn test_jacobian_add_2007_bl() {
     let result_z = (result_zr * &rinv) % &p;
 
     let result = G::new(result_x.into(), result_y.into(), result_z.into());
+    result
+}
+
+#[test]
+#[serial_test::serial]
+pub fn test_jacobian_add_2007_bl_zero() {
+    let a = G::zero();
+    let b = G::generator();
+    let expected = a + b;
+    let result = jacobian_add_2007_bl_kernel(a, b, "jacobian_add_2007_bl");
+    assert!(result == expected);
+
+    let c = G::generator();
+    let d = G::zero();
+    let expected = c + d;
+    let result = jacobian_add_2007_bl_kernel(a, b, "jacobian_add_2007_bl");
+    assert!(result == expected);
+}
+
+#[test]
+#[serial_test::serial]
+pub fn test_jacobian_add_2007_bl_two_equals() {
+    let a = G::zero();
+    let expected = a + a;
+    let result = jacobian_add_2007_bl_kernel(a, a, "jacobian_add_2007_bl");
+    assert!(result == expected);
+
+    let b = G::generator();
+    let expected = b + b;
+    let result = jacobian_add_2007_bl_kernel(b, b, "jacobian_add_2007_bl");
+    assert!(result == expected);
+
+    let mut rng = thread_rng();
+    let base_point = G::generator();
+    let s = ScalarField::rand(&mut rng);
+    let c = base_point * s;
+    let expected = c + c;
+    let result = jacobian_add_2007_bl_kernel(c, c, "jacobian_add_2007_bl");
+    assert!(expected == result);
+}
+
+#[test]
+#[serial_test::serial]
+pub fn test_jacobian_add_2007_bl() {
+    // Generate 2 random affine points
+    let (a, b) = {
+        let mut rng = thread_rng();
+        let base_point = GAffine::generator().into_group();
+
+        let s1 = ScalarField::rand(&mut rng);
+        let mut s2 = ScalarField::rand(&mut rng);
+
+        // Ensure s1 and s2 are different (if s1 == s2, we use pDBL instead of pADD)
+        while s1 == s2 {
+            s2 = ScalarField::rand(&mut rng);
+        }
+
+        (base_point * s1, base_point * s2)
+    };
+    let expected = a + b;
+    let result = jacobian_add_2007_bl_kernel(a, b, "jacobian_add_2007_bl");
     assert!(result == expected);
 }
