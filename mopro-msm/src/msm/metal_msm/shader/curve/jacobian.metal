@@ -172,3 +172,31 @@ Jacobian jacobian_madd_2007_bl(
     result.z = z3;
     return result;
 }
+
+Jacobian jacobian_scalar_mul(
+    Jacobian point,
+    uint scalar
+) {
+    // Handle special cases first
+    if (scalar == 0 || is_bigint_zero(point.z)) {
+        return get_bn254_zero_mont();
+    }
+    if (scalar == 1) {
+        return point;
+    }
+
+    BigInt p = get_p();
+    Jacobian result = get_bn254_zero_mont();
+    Jacobian temp = point;
+    uint s = scalar;
+
+    while (s > 0) {
+        if (s & 1) {
+            result = jacobian_add_2007_bl(result, temp, p);
+        }
+        temp = jacobian_dbl_2009_l(temp, p);
+        s = s >> 1;
+    }
+    
+    return result;
+}
