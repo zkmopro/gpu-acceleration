@@ -124,6 +124,27 @@ bool bigint_wide_gte(
     return true;
 }
 
+bool bigint_eq(
+    BigInt lhs,
+    BigInt rhs
+) {
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        if (lhs.limbs[i] != rhs.limbs[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_bigint_zero(BigInt x) {
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        if (x.limbs[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Overload Operators
 constexpr BigInt operator+(const BigInt lhs, const BigInt rhs) {
     return bigint_add_unsafe(lhs, rhs);
@@ -135,4 +156,8 @@ constexpr BigInt operator-(const BigInt lhs, const BigInt rhs) {
 
 constexpr bool operator>=(const BigInt lhs, const BigInt rhs) {
     return bigint_gte(lhs, rhs);
+}
+
+constexpr bool operator==(const BigInt lhs, const BigInt rhs) {
+    return bigint_eq(lhs, rhs);
 }
