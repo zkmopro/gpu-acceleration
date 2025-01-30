@@ -6,13 +6,11 @@ using namespace metal;
 #include "bigint.metal"
 
 kernel void run(
-    device BigInt* lhs [[ buffer(0) ]],
-    device BigInt* rhs [[ buffer(1) ]],
-    device BigIntWide* result [[ buffer(2) ]],
+    device BigInt* a [[ buffer(0) ]],
+    device BigInt* b [[ buffer(1) ]],
+    device BigIntWide* res [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt a = *lhs;
-    BigInt b = *rhs;
-    BigIntWide res = bigint_add_wide(a, b);
-    *result = res;
+    BigIntResultWide result = bigint_add_wide(*a, *b);
+    *res = result.value;
 }

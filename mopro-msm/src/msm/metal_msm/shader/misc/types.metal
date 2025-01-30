@@ -11,6 +11,16 @@ struct BigIntWide {
     array<uint, NUM_LIMBS_WIDE> limbs;
 };
 
+struct BigIntResult {
+    BigInt value;
+    bool carry;
+};
+
+struct BigIntResultWide {
+    BigIntWide value;
+    bool carry;
+};
+
 struct Jacobian {
     BigInt x;
     BigInt y;

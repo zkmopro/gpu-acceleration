@@ -7,88 +7,79 @@ using namespace metal;
 
 BigInt bigint_zero() {
     BigInt s;
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         s.limbs[i] = 0;
     }
     return s;
 }
 
-BigInt bigint_add_unsafe(
+BigIntResult bigint_add_unsafe(
     BigInt lhs,
     BigInt rhs
 ) {
-    BigInt result;
+    BigIntResult res;
+    res.carry = 0;
     uint mask = (1 << LOG_LIMB_SIZE) - 1;
-    uint carry = 0;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint c = lhs.limbs[i] + rhs.limbs[i] + carry;
-        result.limbs[i] = c & mask;
-        carry = c >> LOG_LIMB_SIZE;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        uint c = lhs.limbs[i] + rhs.limbs[i] + res.carry;
+        res.value.limbs[i] = c & mask;
+        res.carry = c >> LOG_LIMB_SIZE;
     }
-    return result;
+    return res;
 }
 
-BigIntWide bigint_add_wide(
+BigIntResultWide bigint_add_wide(
     BigInt lhs,
     BigInt rhs
 ) {
-    BigIntWide result;
+    BigIntResultWide res;
+    res.carry = 0;
     uint mask = (1 << LOG_LIMB_SIZE) - 1;
     uint carry = 0;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         uint c = lhs.limbs[i] + rhs.limbs[i] + carry;
-        result.limbs[i] = c & mask;
+        res.value.limbs[i] = c & mask;
         carry = c >> LOG_LIMB_SIZE;
     }
-    result.limbs[NUM_LIMBS] = carry;
-
-    return result;
+    res.value.limbs[NUM_LIMBS] = carry;
+    res.carry = carry;
+    return res;
 }
 
-BigInt bigint_sub(
+BigIntResult bigint_sub(
     BigInt lhs,
     BigInt rhs
 ) {
-    uint borrow = 0;
-
-    BigInt res;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        res.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - borrow;
-
-        if (lhs.limbs[i] < (rhs.limbs[i] + borrow)) {
-            res.limbs[i] = res.limbs[i] + TWO_POW_WORD_SIZE;
-            borrow = 1;
+    BigIntResult res;
+    res.carry = 0;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        res.value.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - res.carry;
+        if (lhs.limbs[i] < rhs.limbs[i] + res.carry) {
+            res.value.limbs[i] += TWO_POW_WORD_SIZE;
+            res.carry = 1;
         } else {
-            borrow = 0;
+            res.carry = 0;
         }
     }
-
     return res;
 }
 
 
-BigIntWide bigint_sub_wide(
+BigIntResultWide bigint_sub_wide(
     BigIntWide lhs,
     BigIntWide rhs
 ) {
-    uint borrow = 0;
-
-    BigIntWide res;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        res.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - borrow;
-
-        if (lhs.limbs[i] < (rhs.limbs[i] + borrow)) {
-            res.limbs[i] = res.limbs[i] + TWO_POW_WORD_SIZE;
-            borrow = 1;
+    BigIntResultWide res;
+    res.carry = 0;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        res.value.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - res.carry;
+        if (lhs.limbs[i] < rhs.limbs[i] + res.carry) {
+            res.value.limbs[i] += TWO_POW_WORD_SIZE;
+            res.carry = 1;
         } else {
-            borrow = 0;
+            res.carry = 0;
         }
     }
-
     return res;
 }
 
@@ -96,15 +87,12 @@ bool bigint_gte(
     BigInt lhs,
     BigInt rhs
 ) {
-    for (uint idx = 0; idx < NUM_LIMBS; idx ++) {
+    // for (uint i = NUM_LIMBS-1; i >= 0; i--) is troublesome from unknown reason
+    for (uint idx = 0; idx < NUM_LIMBS; idx++) {
         uint i = NUM_LIMBS - 1 - idx;
-        if (lhs.limbs[i] < rhs.limbs[i]) {
-            return false;
-        } else if (lhs.limbs[i] > rhs.limbs[i]) {
-            return true;
-        }
+        if (lhs.limbs[i] < rhs.limbs[i]) return false;
+        else if (lhs.limbs[i] > rhs.limbs[i]) return true;
     }
-
     return true;
 }
 
@@ -112,15 +100,11 @@ bool bigint_wide_gte(
     BigIntWide lhs,
     BigIntWide rhs
 ) {
-    for (uint idx = 0; idx < NUM_LIMBS_WIDE; idx ++) {
+    for (uint idx = 0; idx < NUM_LIMBS_WIDE; idx++) {
         uint i = NUM_LIMBS_WIDE - 1 - idx;
-        if (lhs.limbs[i] < rhs.limbs[i]) {
-            return false;
-        } else if (lhs.limbs[i] > rhs.limbs[i]) {
-            return true;
-        }
+        if (lhs.limbs[i] < rhs.limbs[i]) return false;
+        else if (lhs.limbs[i] > rhs.limbs[i]) return true;
     }
-
     return true;
 }
 
@@ -129,29 +113,25 @@ bool bigint_eq(
     BigInt rhs
 ) {
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        if (lhs.limbs[i] != rhs.limbs[i]) {
-            return false;
-        }
+        if (lhs.limbs[i] != rhs.limbs[i]) return false;
     }
     return true;
 }
 
 bool is_bigint_zero(BigInt x) {
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        if (x.limbs[i] != 0) {
-            return false;
-        }
+        if (x.limbs[i] != 0) return false;
     }
     return true;
 }
 
 // Overload Operators
 constexpr BigInt operator+(const BigInt lhs, const BigInt rhs) {
-    return bigint_add_unsafe(lhs, rhs);
+    return bigint_add_unsafe(lhs, rhs).value;
 }
 
 constexpr BigInt operator-(const BigInt lhs, const BigInt rhs) {
-    return bigint_sub(lhs, rhs);
+    return bigint_sub(lhs, rhs).value;
 }
 
 constexpr bool operator>=(const BigInt lhs, const BigInt rhs) {
