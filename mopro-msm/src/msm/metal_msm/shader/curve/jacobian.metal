@@ -50,12 +50,8 @@ Jacobian jacobian_add_2007_bl(
     Jacobian b,
     BigInt p
 ) {
-    if (is_jacobian_zero(a)) {
-        return b;
-    }
-    if (is_jacobian_zero(b)) {
-        return a;
-    }
+    if (is_jacobian_zero(a)) return b;
+    if (is_jacobian_zero(b)) return a;
     if (a == b) return jacobian_dbl_2009_l(a, p);
 
     BigInt x1 = a.x;

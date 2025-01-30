@@ -6,13 +6,11 @@ using namespace metal;
 #include "bigint.metal"
 
 kernel void run(
-    device BigInt* lhs [[ buffer(0) ]],
-    device BigInt* rhs [[ buffer(1) ]],
-    device BigInt* result [[ buffer(2) ]],
+    device BigInt* a [[ buffer(0) ]],
+    device BigInt* b [[ buffer(1) ]],
+    device BigInt* res [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt a = *lhs;
-    BigInt b = *rhs;
-    BigInt res = a + b;
-    *result = res;
+    BigIntResult result = bigint_add_unsafe(*a, *b);
+    *res = result.value;
 }
