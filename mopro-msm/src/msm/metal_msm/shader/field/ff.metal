@@ -6,27 +6,22 @@ using namespace metal;
 #include <metal_math>
 #include "../bigint/bigint.metal"
 
+BigInt ff_reduce(
+    BigInt a,
+    BigInt p
+) {
+    BigIntResult res = bigint_sub(a, p);
+    if (bigint_gte(res.value, p)) return a;
+    return res.value;
+}
+
 BigInt ff_add(
     BigInt a,
     BigInt b,
     BigInt p
 ) {
-    BigInt sum = a + b;
-
-    BigInt res;
-    if (sum >= p) {
-        // s = a + b - p
-        BigInt s = sum - p;
-        for (uint i = 0; i < NUM_LIMBS; i ++) {
-            res.limbs[i] = s.limbs[i];
-        }
-    }
-    else {
-        for (uint i = 0; i < NUM_LIMBS; i ++) {
-            res.limbs[i] = sum.limbs[i];
-        }
-    }
-    return res;
+    BigIntResult res = bigint_add_unsafe(a, b);
+    return ff_reduce(res.value, p);
 }
 
 BigInt ff_sub(
@@ -34,21 +29,16 @@ BigInt ff_sub(
     BigInt b,
     BigInt p
 ) {
-    // if a >= b
-    if (a >= b) {
-        // a - b
-        BigInt res = a - b;
-        for (uint i = 0; i < NUM_LIMBS; i ++) {
-            res.limbs[i] = res.limbs[i];
-        }
-        return res;
-    } else {
+    bool a_gte_b = bigint_gte(a, b);
+
+    if (a_gte_b) {
+        BigIntResult res = bigint_sub(a, b);
+        return res.value;
+    }
+    else {
         // p - (b - a)
-        BigInt r = b - a;
-        BigInt res = p - r;
-        for (uint i = 0; i < NUM_LIMBS; i ++) {
-            res.limbs[i] = res.limbs[i];
-        }
-        return res;
+        BigIntResult diff = bigint_sub(b, a);
+        BigIntResult res = bigint_sub(p, diff.value);
+        return res.value;
     }
 }

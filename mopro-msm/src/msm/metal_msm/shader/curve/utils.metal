@@ -21,7 +21,7 @@ bool jacobian_eq(
 }
 
 bool is_jacobian_zero(Jacobian p) {
-    return (is_bigint_zero(p.z));
+    return is_bigint_zero(p.z);
 }
 
 constexpr bool operator==(const Jacobian lhs, const Jacobian rhs) {
