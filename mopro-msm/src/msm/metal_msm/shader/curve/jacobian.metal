@@ -200,3 +200,9 @@ Jacobian jacobian_scalar_mul(
     
     return result;
 }
+
+// Override operators in Jacobian
+Jacobian operator+(Jacobian a, Jacobian b) {
+    BigInt p = get_p();
+    return jacobian_add_2007_bl(a, b, p);
+}
