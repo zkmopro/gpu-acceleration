@@ -111,6 +111,7 @@ pub fn write_constants(
 ) {
     let two_pow_word_size = 2u32.pow(log_limb_size);
     let mask = two_pow_word_size - 1u32;
+    let slack = num_limbs as u32 * log_limb_size - BaseField::MODULUS_BIT_SIZE;
     let num_limbs_wide = num_limbs + 1;
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
@@ -132,6 +133,7 @@ pub fn write_constants(
     data += format!("#define MASK {}\n", mask).as_str();
     data += format!("#define N0 {}\n", n0).as_str();
     data += format!("#define NSAFE {}\n", nsafe).as_str();
+    data += format!("#define SLACK {}\n", slack).as_str();
 
     write_constant_array!(
         data,
@@ -182,7 +184,6 @@ pub fn write_constants(
     );
 
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-    let (rinv, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
     let (bn254_zero_xr_limbs, bn254_zero_yr_limbs, bn254_zero_zr_limbs) = {
         let bn254_zero_x: BigUint = bn254_zero.x.into();
         let bn254_zero_y: BigUint = bn254_zero.y.into();
