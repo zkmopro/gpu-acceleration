@@ -1,9 +1,9 @@
-use ark_ff::biginteger::{BigInteger, BigInteger256, BigInteger384};
+use ark_ff::biginteger::{BigInt, BigInteger};
 use std::convert::TryInto;
 
 /// A trait that abstracts "to/from limbs" for *any* BigInteger type
 pub trait GenericLimbConversion {
-    /// The number of 64-bit words in this BigInteger (e.g., 4 for BigInteger256)
+    /// The number of 64-bit words in this BigInteger (e.g., 4 for BigInt<4>)
     const NUM_WORDS: usize;
 
     /// Convert to big-endian `u32` limbs of length `2 * NUM_WORDS`.
@@ -26,12 +26,12 @@ pub trait GenericLimbConversion {
     fn from_limbs(limbs: &[u32], log_limb_size: u32) -> Self;
 }
 
-impl GenericLimbConversion for BigInteger256 {
+impl GenericLimbConversion for BigInt<4> {
     const NUM_WORDS: usize = 4; // 4 x 64-bit words
 
     fn to_u32_limbs(&self) -> Vec<u32> {
         let mut limbs = Vec::new();
-        // BigInteger256::to_bytes_be() gives us 32 bytes in BE
+        // BigInt<4>::to_bytes_be() gives us 32 bytes in BE
         self.to_bytes_be().chunks(8).for_each(|chunk| {
             let high = u32::from_be_bytes(chunk[0..4].try_into().unwrap());
             let low = u32::from_be_bytes(chunk[4..8].try_into().unwrap());
@@ -81,17 +81,17 @@ impl GenericLimbConversion for BigInteger256 {
             let low = u64::from(limb_pair[1]);
             big_int[i] = (high << 32) | low;
         }
-        BigInteger256::new(big_int)
+        BigInt::<4>::new(big_int)
     }
 
     fn from_u128(num: u128) -> Self {
         let high = (num >> 64) as u64;
         let low = num as u64;
-        BigInteger256::new([low, high, 0, 0])
+        BigInt::<4>::new([low, high, 0, 0])
     }
 
     fn from_u32(num: u32) -> Self {
-        BigInteger256::new([num as u64, 0, 0, 0])
+        BigInt::<4>::new([num as u64, 0, 0, 0])
     }
 
     fn from_limbs(limbs: &[u32], log_limb_size: u32) -> Self {
@@ -116,11 +116,11 @@ impl GenericLimbConversion for BigInteger256 {
         if accumulated_bits > 0 && result_idx < 4 {
             result[result_idx] = current_u64;
         }
-        BigInteger256::new(result)
+        BigInt::<4>::new(result)
     }
 }
 
-impl GenericLimbConversion for BigInteger384 {
+impl GenericLimbConversion for BigInt<6> {
     const NUM_WORDS: usize = 6; // 6 x 64-bit words
 
     fn to_u32_limbs(&self) -> Vec<u32> {
@@ -172,17 +172,17 @@ impl GenericLimbConversion for BigInteger384 {
             let low = u64::from(limb_pair[1]);
             big_int[i] = (high << 32) | low;
         }
-        BigInteger384::new(big_int)
+        BigInt::<6>::new(big_int)
     }
 
     fn from_u128(num: u128) -> Self {
         let high = (num >> 64) as u64;
         let low = num as u64;
-        BigInteger384::new([low, high, 0, 0, 0, 0])
+        BigInt::<6>::new([low, high, 0, 0, 0, 0])
     }
 
     fn from_u32(num: u32) -> Self {
-        BigInteger384::new([num as u64, 0, 0, 0, 0, 0])
+        BigInt::<6>::new([num as u64, 0, 0, 0, 0, 0])
     }
 
     fn from_limbs(limbs: &[u32], log_limb_size: u32) -> Self {
@@ -206,7 +206,7 @@ impl GenericLimbConversion for BigInteger384 {
         if accumulated_bits > 0 && result_idx < 6 {
             result[result_idx] = current_u64;
         }
-        BigInteger384::new(result)
+        BigInt::<6>::new(result)
     }
 }
 
@@ -224,7 +224,7 @@ mod tests {
         let log_limb_size = 16;
 
         let p_limbs = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
-        let p_bigint256 = BigInteger256::from_limbs(&p_limbs, log_limb_size);
+        let p_bigint256 = BigInt::<4>::from_limbs(&p_limbs, log_limb_size);
 
         assert_eq!(BaseField::MODULUS, p_bigint256);
     }
@@ -238,7 +238,7 @@ mod tests {
         let r = calc_mont_radix(num_limbs, log_limb_size); // r has 257 bits
         let r_bigint384: BigInt<6> = r.try_into().unwrap();
         let r_limbs = r_bigint384.to_limbs(num_limbs_wide, log_limb_size);
-        let r_reconstructed = BigInteger384::from_limbs(&r_limbs, log_limb_size);
+        let r_reconstructed = BigInt::<6>::from_limbs(&r_limbs, log_limb_size);
 
         // Check if the original and reconstructed values are equal
         assert_eq!(r_bigint384, r_reconstructed);
