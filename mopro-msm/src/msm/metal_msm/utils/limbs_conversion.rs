@@ -333,4 +333,25 @@ mod tests {
         // Check if the original and reconstructed values are equal
         assert_eq!(r_bigint384, r_reconstructed);
     }
+
+    #[test]
+    fn test_within_bigint512() {
+        let num_limbs = 16;
+        let num_limbs_extra_wide = num_limbs * 2;
+        let log_limb_size = 16;
+
+        let mut rng = rand::thread_rng();
+        let p: BigUint = BaseField::MODULUS.try_into().unwrap();
+        let a = rng.gen_biguint_below(&p); // a has at most 254 bits
+        let r = calc_mont_radix(num_limbs, log_limb_size); // r has 257 bits
+
+        let mont_a = &a * &r; // mont_a has at most 511 bits
+
+        let mont_a_bigint512: BigInt<8> = mont_a.try_into().unwrap();
+        let mont_a_limbs = mont_a_bigint512.to_limbs(num_limbs_extra_wide, log_limb_size);
+        let mont_a_reconstructed = BigInt::<8>::from_limbs(&mont_a_limbs, log_limb_size);
+
+        // Check if the original and reconstructed values are equal
+        assert_eq!(mont_a_bigint512, mont_a_reconstructed);
+    }
 }
