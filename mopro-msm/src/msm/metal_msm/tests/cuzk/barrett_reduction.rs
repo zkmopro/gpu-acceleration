@@ -83,10 +83,9 @@ pub fn test_barrett_reduce_with_mont_params() {
 
 #[test]
 #[serial_test::serial]
-pub fn test_field_mul() {
+pub fn test_field_mul_with_mont_params() {
     let log_limb_size = 16;
     let num_limbs = 16;
-    let num_limbs_extra_wide = num_limbs * 2; // maximum 512 bits
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let (rinv, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
@@ -94,27 +93,20 @@ pub fn test_field_mul() {
 
     let mut rng = thread_rng();
     let a = rng.gen_biguint_below(&p);
-    let b = rng.gen_biguint_below(&p);
+    let r = calc_mont_radix(num_limbs, log_limb_size);
+
+    let expected = &a * &r % &p;
 
     // Calculate expected result using Arkworks
     let a_in_ark: BigInt<4> = a.clone().try_into().unwrap();
-    let a_in_field = BaseField::from_bigint(a_in_ark).unwrap();
-    let b_in_ark: BigInt<4> = b.clone().try_into().unwrap();
-    let b_in_field = BaseField::from_bigint(b_in_ark).unwrap();
-    let expected = a_in_field * b_in_field;
-
-    // Convert to Montgomery form
-    let mont_a = (&a * &r) % &p;
-    let mont_b = (&b * &r) % &p;
-    let mont_a_in_ark: BigInt<8> = mont_a.clone().try_into().unwrap();
-    let mont_b_in_ark: BigInt<8> = mont_b.clone().try_into().unwrap();
+    let r_in_ark: BigInt<4> = r.clone().try_into().unwrap();
 
     // Prepare Metal buffers
     let device = get_default_device();
-    let mont_a_limbs = mont_a_in_ark.to_limbs(num_limbs_extra_wide, log_limb_size);
-    let mont_b_limbs = mont_b_in_ark.to_limbs(num_limbs_extra_wide, log_limb_size);
-    let a_buf = create_buffer(&device, &mont_a_limbs);
-    let b_buf = create_buffer(&device, &mont_b_limbs);
+    let a_limbs = a_in_ark.to_limbs(num_limbs, log_limb_size);
+    let r_limbs = r_in_ark.to_limbs(num_limbs, log_limb_size);
+    let a_buf = create_buffer(&device, &a_limbs);
+    let r_buf = create_buffer(&device, &r_limbs);
     let res_buf = create_empty_buffer(&device, num_limbs);
 
     let command_queue = device.new_command_queue();
@@ -147,7 +139,7 @@ pub fn test_field_mul() {
 
     encoder.set_compute_pipeline_state(&pipeline_state);
     encoder.set_buffer(0, Some(&a_buf), 0);
-    encoder.set_buffer(1, Some(&b_buf), 0);
+    encoder.set_buffer(1, Some(&r_buf), 0);
     encoder.set_buffer(2, Some(&res_buf), 0);
 
     encoder.dispatch_thread_groups(MTLSize::new(1, 1, 1), MTLSize::new(1, 1, 1));
@@ -156,11 +148,15 @@ pub fn test_field_mul() {
     command_buffer.commit();
     command_buffer.wait_until_completed();
 
-    // Convert result back from Montgomery form
     let result_limbs: Vec<u32> = read_buffer(&res_buf, num_limbs);
-    let result_mont = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
-    let result: BigUint = result_mont.try_into().unwrap();
-    let result = (result * rinv) % &p;
+    let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
+    assert_eq!(result, expected.clone().try_into().unwrap());
 
-    assert_eq!(result, expected.into_bigint().try_into().unwrap());
+    // verify correctness by restoring expected from montgomery form
+    let a_in_field = BaseField::from_bigint(a_in_ark).unwrap();
+    let expected_restored = (&expected * &rinv) % &p;
+    assert_eq!(
+        expected_restored,
+        a_in_field.into_bigint().try_into().unwrap()
+    );
 }
