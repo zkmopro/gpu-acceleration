@@ -11,7 +11,7 @@ BigInt ff_reduce(
     BigInt p
 ) {
     BigIntResult res = bigint_sub(a, p);
-    if (bigint_gte(res.value, p)) return a;
+    if (res.carry == 1) return a;
     return res.value;
 }
 
