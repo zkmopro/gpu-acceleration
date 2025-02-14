@@ -29,6 +29,10 @@ pub fn calc_nsafe(log_limb_size: u32) -> usize {
 }
 
 pub fn calc_mont_radix(num_limbs: usize, log_limb_size: u32) -> BigUint {
+    // for bn254, we use 255 bits for the montgomery radix
+    if num_limbs as u32 * log_limb_size == 256 {
+        return BigUint::from(2u32).pow(255u32);
+    }
     BigUint::from(2u32).pow(num_limbs as u32 * log_limb_size)
 }
 
@@ -89,19 +93,19 @@ pub fn calc_rinv_and_n0(p: &BigUint, r: &BigUint, log_limb_size: u32) -> (BigUin
 
 #[cfg(test)]
 pub mod tests {
+    use std::str::FromStr;
+
     use super::{calc_mont_radix, calc_rinv_and_n0};
+    use ark_bn254::Fq as BaseField;
+    use ark_ff::PrimeField;
     use num_bigint::BigUint;
 
     #[test]
     pub fn test_calc_rinv_and_n0() {
-        // Use the BN254 scalar field as a known example
-        let p = BigUint::parse_bytes(
-            b"30644E72E131A029B85045B68181585D2833E84879B9709143E1F593F0000001",
-            16,
-        )
-        .unwrap();
-        let num_limbs = 20;
-        let log_limb_size = 13;
+        // Use the BN254 base field as a known example
+        let p: BigUint = BaseField::MODULUS.try_into().unwrap();
+        let num_limbs = 16;
+        let log_limb_size = 16;
         let r = calc_mont_radix(num_limbs, log_limb_size);
         let res = calc_rinv_and_n0(&p, &r, log_limb_size);
         let rinv = res.0;
@@ -113,13 +117,12 @@ pub mod tests {
         println!("n0: {}", n0);
 
         assert!(
-            rinv == BigUint::parse_bytes(
-                b"3355749084782366974633145829281540770527962706798299046061554422584528540053",
-                10
+            rinv == BigUint::from_str(
+                "20988524275117001072002809824448087578619730785600314334253784976379291040311"
             )
             .unwrap()
         );
-        assert!(n0 == 8191u32);
+        assert!(n0 == 25481u32);
     }
 }
 

@@ -184,7 +184,7 @@ pub fn test_get_r() {
     let result_limbs: Vec<u32> = read_buffer(&result_buf, NUM_LIMBS_WIDE);
     let result = BigInt::from_limbs(&result_limbs, LOG_LIMB_SIZE);
 
-    let expected: BigInt<6> = calc_mont_radix(NUM_LIMBS, LOG_LIMB_SIZE)
+    let expected: BigInt<4> = calc_mont_radix(NUM_LIMBS, LOG_LIMB_SIZE)
         .try_into()
         .unwrap();
     let expected_limbs = expected.to_limbs(NUM_LIMBS_WIDE, LOG_LIMB_SIZE);

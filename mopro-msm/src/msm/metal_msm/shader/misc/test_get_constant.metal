@@ -2,12 +2,15 @@ using namespace metal;
 #include <metal_stdlib>
 #include "get_constant.metal"
 
-
 kernel void test_get_mu(device BigInt* result) {
     *result = get_mu();
 }
 
-kernel void test_get_r(device BigIntWide* result) {
+kernel void test_get_n0(device BigInt* result) {
+    *result = get_n0();
+}
+
+kernel void test_get_r(device BigInt* result) {
     *result = get_r();
 }
 
