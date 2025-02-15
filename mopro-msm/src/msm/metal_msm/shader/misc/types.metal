@@ -11,6 +11,10 @@ struct BigIntWide {
     array<uint, NUM_LIMBS_WIDE> limbs;
 };
 
+struct BigIntExtraWide {
+    array<uint, NUM_LIMBS_EXTRA_WIDE> limbs;
+};
+
 struct BigIntResult {
     BigInt value;
     bool carry;
@@ -18,6 +22,11 @@ struct BigIntResult {
 
 struct BigIntResultWide {
     BigIntWide value;
+    bool carry;
+};
+
+struct BigIntResultExtraWide {
+    BigIntExtraWide value;
     bool carry;
 };
 

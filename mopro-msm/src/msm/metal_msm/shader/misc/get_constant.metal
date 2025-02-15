@@ -7,19 +7,27 @@ using namespace metal;
 
 BigInt get_mu() {
     BigInt mu;
-    uint n0 = N0;
-    
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        mu.limbs[i] = n0 & MASK;
-        n0 >>= LOG_LIMB_SIZE;
+        mu.limbs[i] = BARRETT_MU[i];
     }
-    
     return mu;
 }
 
-BigIntWide get_r() {
-    BigIntWide r;   // 257 bits
-    for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
+BigInt get_n0() {
+    BigInt n0;
+    uint tmp = N0;
+    
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        n0.limbs[i] = tmp & MASK;
+        tmp >>= LOG_LIMB_SIZE;
+    }
+    
+    return n0;
+}
+
+BigInt get_r() {
+    BigInt r;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         r.limbs[i] = MONT_RADIX[i];
     }
     return r;
@@ -39,6 +47,38 @@ BigIntWide get_p_wide() {
         p.limbs[i] = BN254_BASEFIELD_MODULUS[i];
     }
     return p;
+}
+
+BigIntExtraWide get_p_extra_wide() {
+    BigIntExtraWide p;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        p.limbs[i] = BN254_BASEFIELD_MODULUS[i];
+    }
+    return p;
+}
+
+BigInt bigint_zero() {
+    BigInt s;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        s.limbs[i] = 0;
+    }
+    return s;
+}
+
+BigIntWide bigint_zero_wide() {
+    BigIntWide s;
+    for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
+        s.limbs[i] = 0;
+    }
+    return s;
+}
+
+BigIntExtraWide bigint_zero_extra_wide() {
+    BigIntExtraWide s;
+    for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
+        s.limbs[i] = 0;
+    }
+    return s;
 }
 
 Jacobian get_bn254_zero() {

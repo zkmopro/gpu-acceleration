@@ -5,14 +5,6 @@ using namespace metal;
 #include "../misc/get_constant.metal"
 
 
-BigInt bigint_zero() {
-    BigInt s;
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        s.limbs[i] = 0;
-    }
-    return s;
-}
-
 BigIntResult bigint_add_unsafe(
     BigInt lhs,
     BigInt rhs

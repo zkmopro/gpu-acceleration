@@ -325,13 +325,19 @@ mod tests {
         let num_limbs_wide = num_limbs + 1;
         let log_limb_size = 16;
 
-        let r = calc_mont_radix(num_limbs, log_limb_size); // r has 257 bits
-        let r_bigint384: BigInt<6> = r.try_into().unwrap();
-        let r_limbs = r_bigint384.to_limbs(num_limbs_wide, log_limb_size);
-        let r_reconstructed = BigInt::<6>::from_limbs(&r_limbs, log_limb_size);
+        let mut rng = rand::thread_rng();
+        let some_257_bit_number = rng.gen_biguint(257);
+        let some_257_bit_number_bigint: BigInt<6> = some_257_bit_number.try_into().unwrap();
+        let some_257_bit_number_limbs =
+            some_257_bit_number_bigint.to_limbs(num_limbs_wide, log_limb_size);
+        let some_257_bit_number_reconstructed =
+            BigInt::<6>::from_limbs(&some_257_bit_number_limbs, log_limb_size);
 
         // Check if the original and reconstructed values are equal
-        assert_eq!(r_bigint384, r_reconstructed);
+        assert_eq!(
+            some_257_bit_number_bigint,
+            some_257_bit_number_reconstructed
+        );
     }
 
     #[test]
@@ -343,9 +349,9 @@ mod tests {
         let mut rng = rand::thread_rng();
         let p: BigUint = BaseField::MODULUS.try_into().unwrap();
         let a = rng.gen_biguint_below(&p); // a has at most 254 bits
-        let r = calc_mont_radix(num_limbs, log_limb_size); // r has 257 bits
+        let r = calc_mont_radix(num_limbs, log_limb_size); // r has 255 bits
 
-        let mont_a = &a * &r; // mont_a has at most 511 bits
+        let mont_a = &a * &r; // mont_a has at most 509 bits
 
         let mont_a_bigint512: BigInt<8> = mont_a.try_into().unwrap();
         let mont_a_limbs = mont_a_bigint512.to_limbs(num_limbs_extra_wide, log_limb_size);
