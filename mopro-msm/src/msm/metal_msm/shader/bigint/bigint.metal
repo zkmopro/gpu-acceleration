@@ -1,163 +1,217 @@
-// source: https://github.com/geometryxyz/msl-secp256k1
-#pragma once
+// // source: https://github.com/geometryxyz/msl-secp256k1
 
-using namespace metal;
-#include "../misc/get_constant.metal"
+// #include "bigint.h"
 
-
-BigInt bigint_zero() {
-    BigInt s;
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        s.limbs[i] = 0;
-    }
-    return s;
-}
-
-BigInt bigint_add_unsafe(
-    BigInt lhs,
-    BigInt rhs
-) {
-    BigInt result;
-    uint mask = (1 << LOG_LIMB_SIZE) - 1;
-    uint carry = 0;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint c = lhs.limbs[i] + rhs.limbs[i] + carry;
-        result.limbs[i] = c & mask;
-        carry = c >> LOG_LIMB_SIZE;
-    }
-    return result;
-}
-
-BigIntWide bigint_add_wide(
-    BigInt lhs,
-    BigInt rhs
-) {
-    BigIntWide result;
-    uint mask = (1 << LOG_LIMB_SIZE) - 1;
-    uint carry = 0;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint c = lhs.limbs[i] + rhs.limbs[i] + carry;
-        result.limbs[i] = c & mask;
-        carry = c >> LOG_LIMB_SIZE;
-    }
-    result.limbs[NUM_LIMBS] = carry;
-
-    return result;
-}
-
-BigInt bigint_sub(
-    BigInt lhs,
-    BigInt rhs
-) {
-    uint borrow = 0;
-
-    BigInt res;
-
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        res.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - borrow;
-
-        if (lhs.limbs[i] < (rhs.limbs[i] + borrow)) {
-            res.limbs[i] = res.limbs[i] + TWO_POW_WORD_SIZE;
-            borrow = 1;
-        } else {
-            borrow = 0;
-        }
-    }
-
-    return res;
-}
+// #define NUM_LIMBS 16
+// #define NUM_LIMBS_WIDE 17
+// #define LOG_LIMB_SIZE 16
+// #define TWO_POW_WORD_SIZE 65536
+// #define MASK 65535
+// #define N0 25481
+// #define NSAFE 1
 
 
-BigIntWide bigint_sub_wide(
-    BigIntWide lhs,
-    BigIntWide rhs
-) {
-    uint borrow = 0;
+// BigInt ff_add(
+//     BigInt a,
+//     BigInt b,
+//     BigInt p
+// ) {
+//     BigInt sum = a + b;
 
-    BigIntWide res;
+//     BigInt res;
+//     if (sum >= p) {
+//         // s = a + b - p
+//         BigInt s = sum - p;
+//         for (uint i = 0; i < NUM_LIMBS; i ++) {
+//             res.limbs[i] = s.limbs[i];
+//         }
+//     }
+//     else {
+//         for (uint i = 0; i < NUM_LIMBS; i ++) {
+//             res.limbs[i] = sum.limbs[i];
+//         }
+//     }
+//     return res;
+// }
 
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
-        res.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - borrow;
+// BigInt ff_sub(
+//     BigInt a,
+//     BigInt b,
+//     BigInt p
+// ) {
+//     // if a >= b
+//     if (a >= b) {
+//         // a - b
+//         BigInt res = a - b;
+//         for (uint i = 0; i < NUM_LIMBS; i ++) {
+//             res.limbs[i] = res.limbs[i];
+//         }
+//         return res;
+//     } else {
+//         // p - (b - a)
+//         BigInt r = b - a;
+//         BigInt res = p - r;
+//         for (uint i = 0; i < NUM_LIMBS; i ++) {
+//             res.limbs[i] = res.limbs[i];
+//         }
+//         return res;
+//     }
+// }
 
-        if (lhs.limbs[i] < (rhs.limbs[i] + borrow)) {
-            res.limbs[i] = res.limbs[i] + TWO_POW_WORD_SIZE;
-            borrow = 1;
-        } else {
-            borrow = 0;
-        }
-    }
 
-    return res;
-}
+// BigInt bigint_zero() {
+//     BigInt s;
+//     for (uint i = 0; i < NUM_LIMBS; i ++) {
+//         s.limbs[i] = 0;
+//     }
+//     return s;
+// }
 
-bool bigint_gte(
-    BigInt lhs,
-    BigInt rhs
-) {
-    for (uint idx = 0; idx < NUM_LIMBS; idx ++) {
-        uint i = NUM_LIMBS - 1 - idx;
-        if (lhs.limbs[i] < rhs.limbs[i]) {
-            return false;
-        } else if (lhs.limbs[i] > rhs.limbs[i]) {
-            return true;
-        }
-    }
+// BigInt bigint_add_unsafe(
+//     BigInt lhs,
+//     BigInt rhs
+// ) {
+//     BigInt result;
+//     uint mask = (1 << LOG_LIMB_SIZE) - 1;
+//     uint carry = 0;
 
-    return true;
-}
+//     for (uint i = 0; i < NUM_LIMBS; i ++) {
+//         uint c = lhs.limbs[i] + rhs.limbs[i] + carry;
+//         result.limbs[i] = c & mask;
+//         carry = c >> LOG_LIMB_SIZE;
+//     }
+//     return result;
+// }
 
-bool bigint_wide_gte(
-    BigIntWide lhs,
-    BigIntWide rhs
-) {
-    for (uint idx = 0; idx < NUM_LIMBS_WIDE; idx ++) {
-        uint i = NUM_LIMBS_WIDE - 1 - idx;
-        if (lhs.limbs[i] < rhs.limbs[i]) {
-            return false;
-        } else if (lhs.limbs[i] > rhs.limbs[i]) {
-            return true;
-        }
-    }
+// BigIntWide bigint_add_wide(
+//     BigInt lhs,
+//     BigInt rhs
+// ) {
+//     BigIntWide result;
+//     uint mask = (1 << LOG_LIMB_SIZE) - 1;
+//     uint carry = 0;
 
-    return true;
-}
+//     for (uint i = 0; i < NUM_LIMBS; i ++) {
+//         uint c = lhs.limbs[i] + rhs.limbs[i] + carry;
+//         result.limbs[i] = c & mask;
+//         carry = c >> LOG_LIMB_SIZE;
+//     }
+//     result.limbs[NUM_LIMBS] = carry;
 
-bool bigint_eq(
-    BigInt lhs,
-    BigInt rhs
-) {
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        if (lhs.limbs[i] != rhs.limbs[i]) {
-            return false;
-        }
-    }
-    return true;
-}
+//     return result;
+// }
 
-bool is_bigint_zero(BigInt x) {
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        if (x.limbs[i] != 0) {
-            return false;
-        }
-    }
-    return true;
-}
+// BigInt bigint_sub(
+//     BigInt lhs,
+//     BigInt rhs
+// ) {
+//     uint borrow = 0;
 
-// Overload Operators
-constexpr BigInt operator+(const BigInt lhs, const BigInt rhs) {
-    return bigint_add_unsafe(lhs, rhs);
-}
+//     BigInt res;
 
-constexpr BigInt operator-(const BigInt lhs, const BigInt rhs) {
-    return bigint_sub(lhs, rhs);
-}
+//     for (uint i = 0; i < NUM_LIMBS; i ++) {
+//         res.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - borrow;
 
-constexpr bool operator>=(const BigInt lhs, const BigInt rhs) {
-    return bigint_gte(lhs, rhs);
-}
+//         if (lhs.limbs[i] < (rhs.limbs[i] + borrow)) {
+//             res.limbs[i] = res.limbs[i] + TWO_POW_WORD_SIZE;
+//             borrow = 1;
+//         } else {
+//             borrow = 0;
+//         }
+//     }
 
-constexpr bool operator==(const BigInt lhs, const BigInt rhs) {
-    return bigint_eq(lhs, rhs);
-}
+//     return res;
+// }
+
+
+// BigIntWide bigint_sub_wide(
+//     BigIntWide lhs,
+//     BigIntWide rhs
+// ) {
+//     uint borrow = 0;
+
+//     BigIntWide res;
+
+//     for (uint i = 0; i < NUM_LIMBS; i ++) {
+//         res.limbs[i] = lhs.limbs[i] - rhs.limbs[i] - borrow;
+
+//         if (lhs.limbs[i] < (rhs.limbs[i] + borrow)) {
+//             res.limbs[i] = res.limbs[i] + TWO_POW_WORD_SIZE;
+//             borrow = 1;
+//         } else {
+//             borrow = 0;
+//         }
+//     }
+
+//     return res;
+// }
+
+// bool bigint_gte(
+//     BigInt lhs,
+//     BigInt rhs
+// ) {
+//     for (uint idx = 0; idx < NUM_LIMBS; idx ++) {
+//         uint i = NUM_LIMBS - 1 - idx;
+//         if (lhs.limbs[i] < rhs.limbs[i]) {
+//             return false;
+//         } else if (lhs.limbs[i] > rhs.limbs[i]) {
+//             return true;
+//         }
+//     }
+
+//     return true;
+// }
+
+// bool bigint_wide_gte(
+//     BigIntWide lhs,
+//     BigIntWide rhs
+// ) {
+//     for (uint idx = 0; idx < NUM_LIMBS_WIDE; idx ++) {
+//         uint i = NUM_LIMBS_WIDE - 1 - idx;
+//         if (lhs.limbs[i] < rhs.limbs[i]) {
+//             return false;
+//         } else if (lhs.limbs[i] > rhs.limbs[i]) {
+//             return true;
+//         }
+//     }
+
+//     return true;
+// }
+
+// bool bigint_eq(
+//     BigInt lhs,
+//     BigInt rhs
+// ) {
+//     for (uint i = 0; i < NUM_LIMBS; i++) {
+//         if (lhs.limbs[i] != rhs.limbs[i]) {
+//             return false;
+//         }
+//     }
+//     return true;
+// }
+
+// bool is_bigint_zero(BigInt x) {
+//     for (uint i = 0; i < NUM_LIMBS; i++) {
+//         if (x.limbs[i] != 0) {
+//             return false;
+//         }
+//     }
+//     return true;
+// }
+
+// // Overload Operators
+// constexpr BigInt operator+(const BigInt lhs, const BigInt rhs) {
+//     return bigint_add_unsafe(lhs, rhs);
+// }
+
+// constexpr BigInt operator-(const BigInt lhs, const BigInt rhs) {
+//     return bigint_sub(lhs, rhs);
+// }
+
+// constexpr bool operator>=(const BigInt lhs, const BigInt rhs) {
+//     return bigint_gte(lhs, rhs);
+// }
+
+// constexpr bool operator==(const BigInt lhs, const BigInt rhs) {
+//     return bigint_eq(lhs, rhs);
+// }

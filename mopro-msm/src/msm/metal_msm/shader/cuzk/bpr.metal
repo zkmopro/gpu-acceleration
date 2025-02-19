@@ -1,11 +1,9 @@
-using namespace metal;
-#include <metal_stdlib>
-#include "../curve/jacobian.metal"
-#include "../misc/get_constant.metal"
+#include "bpr.h"
+// constant os_log logger(/*subsystem=*/"com.metal.xyz", /*category=*/"abc");
 
 // the first stage of BPR. after this, 
-// s_shared[tid] = B_{(tid-1)r+1} + 2*B_{(tid-1)r+2} + ... + r*B_{(tid-1)r+r}
-// m_shared[tid*r] = B_{(tid-1)r+1} + B_{(tid-1)r+2} + ... + B_{(tid-1)r+r}
+// s_shared[tid] = B_{(tid)r+1} + 2*B_{(tid)r+2} + ... + r*B_{(tid)r+r}
+// m_shared[tid*r] = B_{(tid)r+1} + B_{(tid)r+2} + ... + B_{(tid)r+r}
 kernel void bpr_stage_1(
     constant Jacobian* buckets [[ buffer(0) ]],
     device Jacobian* m_shared [[ buffer(1) ]],
@@ -23,7 +21,7 @@ kernel void bpr_stage_1(
         return;
     }  
 
-    uint32_t tid = gid + 1; // converting index into 1-based
+    uint32_t tid = gid;
     // Calculate r = (2^c - 1) / total_threads
     uint32_t r = uint32_t(ceil(float(bucket_size) / float(total_threads)));
     
@@ -32,16 +30,27 @@ kernel void bpr_stage_1(
     debug_buckets[tid] = buckets[tid];
     debug_r = r;
 
-    // Accumulating buckets to s_shared and m_shared
-    for (uint32_t l = 1; l <= r; l++) {
-        if (l != 1) {
-            m_shared[(tid-1) * r + l] = m_shared[(tid-1) * r + l - 1] + buckets[tid * r + 1 - l];
-            s_shared[tid] = s_shared[tid] + m_shared[(tid-1) * r + l];
-            // threadgroup_barrier(mem_flags::mem_device);
-        } else {
-            m_shared[(tid-1) * r + l] = buckets[tid * r];
-            s_shared[tid] = m_shared[(tid-1) * r + l];
-        }    
+//    logger.log_error("Hello Not There!");
+//    metal::os_log_default.log_debug("Hello There!");
+
+    uint32_t base = tid * r;
+
+    if (base >= bucket_size) {
+        s_shared[tid] = jacobian_zero();
+        return;
+    }
+
+    m_shared[base] = buckets[base];
+    s_shared[tid] = buckets[base];
+
+    for (uint32_t l = 1; l < r; l++) {
+        uint32_t idx = base + l;
+        if (idx >= bucket_size) {
+            break;
+        }
+
+        m_shared[idx] = m_shared[idx - 1] + buckets[idx];
+        s_shared[tid] = s_shared[tid] + m_shared[idx];
     }
 }
 
