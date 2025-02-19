@@ -4,13 +4,13 @@ use crate::msm::metal_msm::host::gpu::{
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as GAffine, G1Projective as G};
-use ark_ec::Group;
+use ark_ec::{CurveGroup, Group};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand, Zero};
 use metal::*;
 use num_bigint::BigUint;
 
-fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
+pub fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
     let log_limb_size: u32 = 16;
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
@@ -79,8 +79,6 @@ fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
     // set up command queue and encoder
     let command_queue = device.new_command_queue();
     let command_buffer = command_queue.new_command_buffer();
-    let encoder =
-        command_buffer.compute_command_encoder_with_descriptor(ComputePassDescriptor::new());
 
     write_constants(
         "../mopro-msm/src/msm/metal_msm/shader",
@@ -97,41 +95,50 @@ fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
     let pipeline_state_descriptor = ComputePipelineDescriptor::new();
     pipeline_state_descriptor.set_compute_function(Some(&kernel));
 
+    let log_state_desc = MTLLogStateDescriptor();
+
+    // logStateDesc.bufferSize = 2048;
+    // logStateDesc.level = MTLLogLevelDebug;
+
     let pipeline_state = device
         .new_compute_pipeline_state_with_function(
             pipeline_state_descriptor.compute_function().unwrap(),
         )
         .unwrap();
+    {
+        let encoder =
+            command_buffer.compute_command_encoder_with_descriptor(ComputePassDescriptor::new());
 
-    encoder.set_compute_pipeline_state(&pipeline_state);
+        encoder.set_compute_pipeline_state(&pipeline_state);
 
-    encoder.set_buffer(0, Some(&bucket_buffer), 0);
-    encoder.set_buffer(1, Some(&s_shared_buffer), 0);
-    encoder.set_buffer(2, Some(&m_shared_buffer), 0);
-    encoder.set_buffer(3, Some(&bucket_size_buffer), 0);
-    encoder.set_buffer(4, Some(&total_threads_buffer), 0);
+        encoder.set_buffer(0, Some(&bucket_buffer), 0);
+        encoder.set_buffer(1, Some(&s_shared_buffer), 0);
+        encoder.set_buffer(2, Some(&m_shared_buffer), 0);
+        encoder.set_buffer(3, Some(&bucket_size_buffer), 0);
+        encoder.set_buffer(4, Some(&total_threads_buffer), 0);
 
-    // TODO: remove me:  for debugging
-    encoder.set_buffer(5, Some(&debug_idx_buffer), 0);
-    encoder.set_buffer(6, Some(&debug_bucket_buffer), 0);
-    encoder.set_buffer(7, Some(&debug_r_buffer), 0);
+        // TODO: remove me:  for debugging
+        encoder.set_buffer(5, Some(&debug_idx_buffer), 0);
+        encoder.set_buffer(6, Some(&debug_bucket_buffer), 0);
+        encoder.set_buffer(7, Some(&debug_r_buffer), 0);
 
-    let thread_group_size = MTLSize {
-        width: total_threads as u64,
-        height: 1,
-        depth: 1,
-    };
+        let thread_group_size = MTLSize {
+            width: total_threads as u64,
+            height: 1,
+            depth: 1,
+        };
 
-    let thread_groups = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
+        let thread_groups = MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
 
-    encoder.dispatch_threads(thread_groups, thread_group_size);
-    encoder.end_encoding();
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
+        encoder.dispatch_threads(thread_groups, thread_group_size);
+        encoder.end_encoding();
+        command_buffer.commit();
+        command_buffer.wait_until_completed();
+    }
 
     // TODO: remove me: for debugging
     let debug_idx_ptr = debug_idx_buffer.contents() as *const u32;
@@ -175,8 +182,8 @@ fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
 }
 
 // This is very naive way to implement the bucket reduction
-// computing $\sum_{i=1}^{len} i * buckets[i]$
-fn cpu_bucket_point_reduction(buckets: &Vec<G>) -> G {
+// computing sum from i=1 to len of (i * buckets[i])
+pub fn cpu_bucket_point_reduction(buckets: &Vec<G>) -> G {
     buckets
         .iter()
         .enumerate()
@@ -184,34 +191,36 @@ fn cpu_bucket_point_reduction(buckets: &Vec<G>) -> G {
         .sum::<G>()
 }
 
-// TODO: still need to check if the results are correct
-fn cpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
-    let total_threads = 4 as usize;
-    let bucket_size = buckets.len() as usize;
-    let r = (bucket_size + total_threads as usize - 1) / total_threads as usize; // Ceiling division
-    println!("r: {}", r);
+pub fn cpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
+    let total_threads = 4;
+    let bucket_size = buckets.len();
+    let r = (bucket_size + total_threads - 1) / total_threads; // ceiling division
 
-    let mut s = vec![G::zero(); total_threads + 1];
-    let mut m = vec![G::zero(); bucket_size + 1];
+    // s: one element per thread; m: one element per bucket
+    let mut s = vec![G::zero(); total_threads];
+    let mut m = vec![G::zero(); bucket_size];
 
-    for tid in 1..=total_threads {
-        s[tid - 1] = G::zero();
-        for l in 1..=r {
-            let m_idx = (tid - 1) * r + l;
-            if m_idx > bucket_size {
+    for tid in 0..total_threads {
+        let base = tid * r;
+        if base >= bucket_size {
+            s[tid] = G::zero();
+            continue;
+        }
+
+        // Process the first bucket in this thread's group.
+        m[base] = buckets[base];
+        s[tid] = buckets[base];
+
+        // Process remaining buckets in this thread's group.
+        for l in 1..r {
+            let idx = base + l;
+            if idx >= bucket_size {
                 break;
             }
-            // println!("tid: {}, l: {}, midx: {}, tid*r-l: {}", tid, l, m_idx, tid * r - l);
-            if l != 1 {
-                m[m_idx] = m[m_idx - 1] + buckets[tid * r - l];
-                s[tid - 1] = s[tid - 1] + m[m_idx];
-            } else {
-                m[m_idx] = buckets[tid * r + 1 - l];
-                s[tid - 1] = m[m_idx];
-            }
+            m[idx] = m[idx - 1] + buckets[idx];
+            s[tid] = s[tid] + m[idx];
         }
     }
-
     (s, m)
 }
 
@@ -227,7 +236,7 @@ pub fn test_bpr_stage_1() {
     let r = bucket_size / 4;
     println!("r: {:?}", r);
 
-    let (expected_s, expected_m) = cpu_bpr_stage_1(&buckets);
+    let (expected_s, expected_m) = cpu_bpr_stage_1(dbg!(&buckets));
     let (s, m) = gpu_bpr_stage_1(&buckets);
 
     println!("expected_s: {:?}\n", expected_s);
@@ -236,6 +245,13 @@ pub fn test_bpr_stage_1() {
     println!("expected_m: {:?}\n", expected_m);
     println!("m: {:?}\n", m);
 
+    let cpu_affine: Vec<_> = expected_s.iter().map(|pt| pt.into_affine()).collect();
+    let gpu_affine: Vec<_> = s.iter().map(|pt| pt.into_affine()).collect();
+    assert_eq!(
+        cpu_affine, gpu_affine,
+        "Normalized S_shared: GPU and CPU results don't match"
+    );
+
     // assert_eq!(expected_s, s, "S_shared: GPU and CPU results don't match");
-    // assert_eq!(expected_m, m, "M_shared: GPU and CPU results don't match");
+    assert_eq!(expected_m, m, "M_shared: GPU and CPU results don't match");
 }

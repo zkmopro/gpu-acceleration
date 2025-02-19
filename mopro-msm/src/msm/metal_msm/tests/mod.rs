@@ -2,7 +2,7 @@
 pub mod bigint;
 #[cfg(test)]
 pub mod curve;
-#[cfg(test)]
+// #[cfg(test)]
 pub mod cuzk;
 #[cfg(test)]
 pub mod field;
