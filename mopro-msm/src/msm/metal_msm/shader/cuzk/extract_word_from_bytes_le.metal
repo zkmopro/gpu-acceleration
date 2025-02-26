@@ -5,7 +5,7 @@ using namespace metal;
 #include <metal_math>
 
 uint32_t extract_word_from_bytes_le(
-    device const uint32_t* input,
+    const thread uint32_t* input,
     uint32_t word_idx,
     uint32_t chunk_size
 ) {
@@ -29,3 +29,19 @@ uint32_t extract_word_from_bytes_le(
     
     return word;
 }
+
+// // Similar to bigint_funcs from bigint.metal
+// BigInt extract_word_from_bytes_le(constant uint* bytes, uint word_idx, uint word_size) {
+//     uint mask = (1 << word_size) - 1;
+//     uint byte_idx = word_idx * word_size / 32;
+//     uint bit_offset = (word_idx * word_size) % 32;
+    
+//     uint word = bytes[byte_idx];
+//     if (bit_offset + word_size > 32) {
+//         uint next_word = bytes[byte_idx + 1];
+//         word = (next_word << (32 - bit_offset)) | (word >> bit_offset);
+//     } else {
+//         word = (word >> bit_offset) & mask;
+//     }
+//     return word;
+// }
