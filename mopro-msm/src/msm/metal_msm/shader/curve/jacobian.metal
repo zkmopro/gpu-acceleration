@@ -44,6 +44,44 @@ Jacobian jacobian_dbl_2009_l(
     result.z = z3;
     return result;
 }
+#include "./utils.metal"
+
+Jacobian jacobian_dbl_2009_l(
+    Jacobian pt,
+    BigInt p
+) {
+    BigInt x = pt.x;
+    BigInt y = pt.y;
+    BigInt z = pt.z;
+
+    BigInt a = mont_mul_cios(x, x, p);
+    BigInt b = mont_mul_cios(y, y, p);
+    BigInt c = mont_mul_cios(b, b, p);
+    BigInt x1b = ff_add(x, b, p);
+    BigInt x1b2 = mont_mul_cios(x1b, x1b, p);
+    BigInt ac = ff_add(a, c, p);
+    BigInt x1b2ac = ff_sub(x1b2, ac, p);
+    BigInt d = ff_add(x1b2ac, x1b2ac, p);
+    BigInt a2 = ff_add(a, a, p);
+    BigInt e = ff_add(a2, a, p);
+    BigInt f = mont_mul_cios(e, e, p);
+    BigInt d2 = ff_add(d, d, p);
+    BigInt x3 = ff_sub(f, d2, p);
+    BigInt c2 = ff_add(c, c, p);
+    BigInt c4 = ff_add(c2, c2, p);
+    BigInt c8 = ff_add(c4, c4, p);
+    BigInt dx3 = ff_sub(d, x3, p);
+    BigInt edx3 = mont_mul_cios(e, dx3, p);
+    BigInt y3 = ff_sub(edx3, c8, p);
+    BigInt y1z1 = mont_mul_cios(y, z, p);
+    BigInt z3 = ff_add(y1z1, y1z1, p);
+
+    Jacobian result;
+    result.x = x3;
+    result.y = y3;
+    result.z = z3;
+    return result;
+}
 
 Jacobian jacobian_add_2007_bl(
     Jacobian a,
@@ -61,6 +99,7 @@ Jacobian jacobian_add_2007_bl(
     BigInt y2 = b.y;
     BigInt z2 = b.z;
 
+    // First compute z coordinates
     // First compute z coordinates
     BigInt z1z1 = mont_mul_cios(z1, z1, p);
     BigInt z2z2 = mont_mul_cios(z2, z2, p);
@@ -169,6 +208,39 @@ Jacobian jacobian_madd_2007_bl(
     return result;
 }
 
+Jacobian jacobian_scalar_mul(
+    Jacobian point,
+    uint scalar
+) {
+    // Handle special cases first
+    if (scalar == 0 || is_bigint_zero(point.z)) {
+        return get_bn254_zero_mont();
+    }
+    if (scalar == 1) {
+        return point;
+    }
+
+    BigInt p = get_p();
+    Jacobian result = get_bn254_zero_mont();
+    Jacobian temp = point;
+    uint s = scalar;
+
+    while (s > 0) {
+        if (s & 1) {
+            result = jacobian_add_2007_bl(result, temp, p);
+        }
+        temp = jacobian_dbl_2009_l(temp, p);
+        s = s >> 1;
+    }
+    
+    return result;
+}
+
+// Override operators in Jacobian
+Jacobian operator+(Jacobian a, Jacobian b) {
+    BigInt p = get_p();
+    return jacobian_add_2007_bl(a, b, p);
+}
 Jacobian jacobian_scalar_mul(
     Jacobian point,
     uint scalar
