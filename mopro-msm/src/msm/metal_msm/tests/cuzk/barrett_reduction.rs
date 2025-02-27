@@ -36,12 +36,6 @@ pub fn test_barrett_reduce_with_mont_params() {
     let mont_a_buf = create_buffer(&device, &mont_a_limbs);
     let result_buf = create_empty_buffer(&device, num_limbs);
 
-    let command_queue = device.new_command_queue();
-    let command_buffer = command_queue.new_command_buffer();
-
-    let compute_pass_descriptor = ComputePassDescriptor::new();
-    let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
-
     write_constants(
         "../mopro-msm/src/msm/metal_msm/shader",
         num_limbs,
@@ -56,25 +50,33 @@ pub fn test_barrett_reduce_with_mont_params() {
     let library = device.new_library_with_file(library_path).unwrap();
     let kernel = library.get_function("run", None).unwrap();
 
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
+    let command_queue = device.new_command_queue();
+    {
+        let command_buffer = command_queue.new_command_buffer();
 
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
+        let compute_pass_descriptor = ComputePassDescriptor::new();
+        let encoder =
+            command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
 
-    encoder.set_compute_pipeline_state(&pipeline_state);
-    encoder.set_buffer(0, Some(&mont_a_buf), 0);
-    encoder.set_buffer(1, Some(&result_buf), 0);
+        let pipeline_state_descriptor = ComputePipelineDescriptor::new();
+        pipeline_state_descriptor.set_compute_function(Some(&kernel));
 
-    encoder.dispatch_thread_groups(MTLSize::new(1, 1, 1), MTLSize::new(1, 1, 1));
-    encoder.end_encoding();
+        let pipeline_state = device
+            .new_compute_pipeline_state_with_function(
+                pipeline_state_descriptor.compute_function().unwrap(),
+            )
+            .unwrap();
 
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
+        encoder.set_compute_pipeline_state(&pipeline_state);
+        encoder.set_buffer(0, Some(&mont_a_buf), 0);
+        encoder.set_buffer(1, Some(&result_buf), 0);
 
+        encoder.dispatch_thread_groups(MTLSize::new(1, 1, 1), MTLSize::new(1, 1, 1));
+        encoder.end_encoding();
+
+        command_buffer.commit();
+        command_buffer.wait_until_completed();
+    }
     let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
     let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
 

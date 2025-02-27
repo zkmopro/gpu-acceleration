@@ -4,6 +4,9 @@ using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
 #include "../field/ff.metal"
+#include <metal_logging>
+constant os_log logger(/*subsystem=*/"barret_reduction", /*category=*/"abc");
+
 
 BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide res = bigint_zero_extra_wide();
@@ -64,6 +67,10 @@ BigInt get_higher_with_slack(BigIntExtraWide a) {
 }
 
 BigInt barrett_reduce(BigIntExtraWide a) {
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        logger.log_info("res.limbs[%u] = %u", i, a.limbs[i]);
+    }
+
     BigInt p = get_p();
     BigInt mu = get_mu();
 
