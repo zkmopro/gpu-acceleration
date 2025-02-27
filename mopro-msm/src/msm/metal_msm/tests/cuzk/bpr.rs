@@ -1,81 +1,46 @@
-use crate::msm::metal_msm::host::gpu::{
-    create_buffer, create_empty_buffer, get_default_device, read_buffer,
-};
+use crate::msm::metal_msm::host::gpu::{create_buffer, get_default_device};
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
-use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as GAffine, G1Projective as G};
+use crate::msm::metal_msm::utils::data_conversion::{points_from_gpu_buffer, points_to_gpu_buffer};
+use crate::msm::metal_msm::utils::mont_params::MontgomeryParams;
+use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::Group;
-use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand, Zero};
 use metal::*;
 use num_bigint::BigUint;
+use rayon::prelude::*;
 
-fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
+// Implements parallel bucket reduction in GPU
+// TODO: 1. current algorithm does not support odd bucket size (should be 2N)
+// TODO: 2. current total threads is fixed, we should change it into dynamic
+// TODO: 3. we should also dynamically dispatch the threadgroup_size and threads_per_threadgroup
+fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
+    let mont_params = MontgomeryParams::default();
     let log_limb_size: u32 = 16;
-    let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-    let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
-    let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
-
-    let r = calc_mont_radix(num_limbs, log_limb_size);
-    let res = calc_rinv_and_n0(&p, &r, log_limb_size);
-    let n0 = res.1;
-    let nsafe = calc_nsafe(log_limb_size);
+    let p: BigUint = mont_params.p;
+    let num_limbs = mont_params.num_limbs;
+    // let r = mont_params.r;
+    let rinv = mont_params.rinv;
+    let n0 = mont_params.n0;
+    let nsafe = mont_params.nsafe;
 
     let device = get_default_device();
-    let bucket_size = buckets.len() as usize;
+    let bucket_size = buckets.len();
+    let bucket_buffer = points_to_gpu_buffer(buckets, num_limbs, &device);
 
-    let bucket_buffer = device.new_buffer(
-        (bucket_size * std::mem::size_of::<G>()) as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
+    let total_threads: u32 = 512; // TODO: To make this dynamic
 
-    unsafe {
-        let bucket_ptr = bucket_buffer.contents() as *mut G;
-        for (i, point) in buckets.iter().enumerate() {
-            *bucket_ptr.add(i) = *point;
-        }
-    }
+    let total_threads_buffer = create_buffer(&device, &vec![total_threads]);
+    let bucket_size_buffer = create_buffer(&device, &vec![bucket_size as u32]);
 
-    let total_threads: u32 = 4; // TODO: should make it dynamic
+    let m_shared = vec![G::zero(); total_threads as usize];
+    let s_shared = vec![G::zero(); total_threads as usize];
 
-    let total_threads_buffer = device.new_buffer_with_data(
-        &total_threads as *const u32 as *const _,
-        std::mem::size_of::<u32>() as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
+    let m_shared_buffer = points_to_gpu_buffer(&m_shared, num_limbs, &device);
+    let s_shared_buffer = points_to_gpu_buffer(&s_shared, num_limbs, &device);
 
-    let bucket_size_buffer = device.new_buffer_with_data(
-        &bucket_size as *const usize as *const _,
-        std::mem::size_of::<usize>() as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
-
-    let s_shared_buffer = device.new_buffer(
-        (total_threads as usize * std::mem::size_of::<G>()) as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
-
-    let m_shared_buffer = device.new_buffer(
-        (bucket_size * std::mem::size_of::<G>()) as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
-
-    // TODO: remove me: for debugging
-    let debug_idx_buffer = device.new_buffer(
-        (total_threads as usize * std::mem::size_of::<u32>()) as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
-
-    let debug_bucket_buffer = device.new_buffer(
-        (bucket_size * std::mem::size_of::<G>()) as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
-
-    let debug_r_buffer = device.new_buffer(
-        std::mem::size_of::<u32>() as u64,
-        MTLResourceOptions::StorageModeShared,
-    );
-
+    let num_subtask = (bucket_size + total_threads as usize - 1) / total_threads as usize;
+    let num_subtask_buffer = create_buffer(&device, &vec![num_subtask as u32]);
+    println!("r: {}", num_subtask);
     // set up command queue and encoder
     let command_queue = device.new_command_queue();
     let command_buffer = command_queue.new_command_buffer();
@@ -91,7 +56,7 @@ fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
     );
     let library_path = compile_metal("../mopro-msm/src/msm/metal_msm/shader/cuzk", "bpr.metal");
     let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library.get_function("bpr_stage_1", None).unwrap();
+    let kernel = library.get_function("parallel_bpr", None).unwrap();
 
     // set up pipeline
     let pipeline_state_descriptor = ComputePipelineDescriptor::new();
@@ -106,136 +71,108 @@ fn gpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
     encoder.set_compute_pipeline_state(&pipeline_state);
 
     encoder.set_buffer(0, Some(&bucket_buffer), 0);
-    encoder.set_buffer(1, Some(&s_shared_buffer), 0);
-    encoder.set_buffer(2, Some(&m_shared_buffer), 0);
+    encoder.set_buffer(1, Some(&m_shared_buffer), 0);
+    encoder.set_buffer(2, Some(&s_shared_buffer), 0);
     encoder.set_buffer(3, Some(&bucket_size_buffer), 0);
     encoder.set_buffer(4, Some(&total_threads_buffer), 0);
+    encoder.set_buffer(5, Some(&num_subtask_buffer), 0);
 
-    // TODO: remove me:  for debugging
-    encoder.set_buffer(5, Some(&debug_idx_buffer), 0);
-    encoder.set_buffer(6, Some(&debug_bucket_buffer), 0);
-    encoder.set_buffer(7, Some(&debug_r_buffer), 0);
-
-    let thread_group_size = MTLSize {
-        width: total_threads as u64,
+    // TODO: make this dynamic
+    let threads_per_thread_group = MTLSize {
+        width: 256,
         height: 1,
         depth: 1,
     };
 
     let thread_groups = MTLSize {
-        width: 1,
+        width: 1024,
         height: 1,
         depth: 1,
     };
 
-    encoder.dispatch_threads(thread_groups, thread_group_size);
+    encoder.dispatch_threads(thread_groups, threads_per_thread_group);
     encoder.end_encoding();
     command_buffer.commit();
     command_buffer.wait_until_completed();
 
-    // TODO: remove me: for debugging
-    let debug_idx_ptr = debug_idx_buffer.contents() as *const u32;
-    let debug_buckets_ptr = debug_bucket_buffer.contents() as *const G;
-    let mut debug_idx = vec![0; total_threads as usize];
-    let mut debug_buckets = vec![G::zero(); bucket_size as usize];
-    for i in 0..total_threads as usize {
-        unsafe {
-            debug_idx[i] = *debug_idx_ptr.add(i);
-        }
-    }
-    for i in 0..bucket_size as usize {
-        unsafe {
-            debug_buckets[i] = *debug_buckets_ptr.add(i);
-        }
-    }
+    let s_shared = points_from_gpu_buffer(&s_shared_buffer, num_limbs, p, rinv);
 
-    // println!("debug idx: {:?}", debug_idx);
-    // println!("debug buckets: {:?}", debug_buckets);
-    println!("debug r: {:?}", read_buffer(&debug_r_buffer, 1)[0]);
-
-    let s_shared_ptr = s_shared_buffer.contents() as *const G;
-    let mut s_shared = vec![G::zero(); total_threads as usize];
-    for i in 0..total_threads as usize {
-        unsafe {
-            let point = *s_shared_ptr.add(i);
-            s_shared[i] = point;
-        }
-    }
-
-    let m_shared_ptr = m_shared_buffer.contents() as *const G;
-    let mut m_shared = vec![G::zero(); bucket_size as usize];
-    for i in 0..bucket_size as usize {
-        unsafe {
-            let point = *m_shared_ptr.add(i);
-            m_shared[i] = point;
-        }
-    }
-
-    (s_shared, m_shared)
+    s_shared.iter().sum::<G>()
 }
 
 // This is very naive way to implement the bucket reduction
 // computing $\sum_{i=1}^{len} i * buckets[i]$
-fn cpu_bucket_point_reduction(buckets: &Vec<G>) -> G {
+fn cpu_naive_bpr(buckets: &Vec<G>) -> G {
     buckets
-        .iter()
+        .par_iter()
         .enumerate()
-        .map(|(i, &b)| b * (ScalarField::from((i + 1) as u64)))
-        .sum::<G>()
+        .fold(
+            || G::zero(),
+            |acc, (i, p)| acc + *p * ScalarField::from((i + 1) as u64),
+        )
+        .sum()
 }
 
-// TODO: still need to check if the results are correct
-fn cpu_bpr_stage_1(buckets: &Vec<G>) -> (Vec<G>, Vec<G>) {
-    let total_threads = 4 as usize;
+// This immitates the parallel bucket point reduction algortihm in GPU.
+// TODO: 1. This algorithm only supports even bucket size (2N), we have to find a way to deal with odd input size.
+// TODO: 2. make total thread dynamic
+fn cpu_parallel_bpr(buckets: &Vec<G>) -> G {
+    let total_threads = 4 as usize; // TODO: To make this dynamic
     let bucket_size = buckets.len() as usize;
-    let r = (bucket_size + total_threads as usize - 1) / total_threads as usize; // Ceiling division
-    println!("r: {}", r);
+    let r = (bucket_size + total_threads - 1) / total_threads;
+    let mut s = vec![G::zero(); total_threads];
+    let mut m = vec![G::zero(); total_threads];
 
-    let mut s = vec![G::zero(); total_threads + 1];
-    let mut m = vec![G::zero(); bucket_size + 1];
-
-    for tid in 1..=total_threads {
-        s[tid - 1] = G::zero();
+    for gid in 0..total_threads {
         for l in 1..=r {
-            let m_idx = (tid - 1) * r + l;
-            if m_idx > bucket_size {
-                break;
-            }
-            // println!("tid: {}, l: {}, midx: {}, tid*r-l: {}", tid, l, m_idx, tid * r - l);
             if l != 1 {
-                m[m_idx] = m[m_idx - 1] + buckets[tid * r - l];
-                s[tid - 1] = s[tid - 1] + m[m_idx];
+                m[gid] = m[gid] + buckets[(gid + 1) * r - l];
+                s[gid] = s[gid] + m[gid];
             } else {
-                m[m_idx] = buckets[tid * r + 1 - l];
-                s[tid - 1] = m[m_idx];
+                m[gid] = buckets[(gid + 1) * r - 1];
+                s[gid] = m[gid];
             }
         }
     }
 
-    (s, m)
+    let mut result_arr: Vec<G> = vec![];
+    for i in 0..total_threads {
+        result_arr.push(s[i] + (m[i] * ScalarField::from((r * i) as u64)));
+    }
+
+    result_arr.iter().sum::<G>()
 }
 
 #[test]
-pub fn test_bpr_stage_1() {
+pub fn test_pbpr_simple_input() {
     let generator = G::generator();
-    let c: u32 = 3;
-    let bucket_size = (1 << c) - 1; // 7
+    let c: u32 = 16;
+    let bucket_size = 1 << c;
     let buckets = (1..=bucket_size)
-        .map(|_| generator * ScalarField::from(2))
+        .map(|i| generator * ScalarField::from(i as u64))
         .collect::<Vec<G>>();
 
-    let r = bucket_size / 4;
-    println!("r: {:?}", r);
+    let cpu_naive_result = cpu_naive_bpr(&buckets);
+    let cpu_pbpr_result = cpu_parallel_bpr(&buckets);
+    let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
 
-    let (expected_s, expected_m) = cpu_bpr_stage_1(&buckets);
-    let (s, m) = gpu_bpr_stage_1(&buckets);
+    assert_eq!(gpu_pbpr_result, cpu_naive_result);
+    assert_eq!(gpu_pbpr_result, cpu_pbpr_result);
+}
 
-    println!("expected_s: {:?}\n", expected_s);
-    println!("s: {:?}\n", s);
+#[test]
+fn test_pbpr_random_inputs() {
+    let generator = G::generator();
+    let mut rng = thread_rng();
+    let bucket_size = vec![10, 11, 12, 13, 14, 15];
 
-    println!("expected_m: {:?}\n", expected_m);
-    println!("m: {:?}\n", m);
-
-    // assert_eq!(expected_s, s, "S_shared: GPU and CPU results don't match");
-    // assert_eq!(expected_m, m, "M_shared: GPU and CPU results don't match");
+    for size in bucket_size {
+        let buckets = (0..(1 << size))
+            .map(|_| generator * ScalarField::rand(&mut rng))
+            .collect::<Vec<G>>();
+        let naive_result = cpu_naive_bpr(&buckets);
+        let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
+    
+        assert_eq!(gpu_pbpr_result, naive_result);
+    }
 }
