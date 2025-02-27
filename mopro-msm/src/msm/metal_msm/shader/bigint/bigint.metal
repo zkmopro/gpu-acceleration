@@ -117,6 +117,24 @@ bool is_bigint_zero(BigInt x) {
     return true;
 }
 
+// Conversion functions
+BigIntWide bigint_to_wide(BigInt x) {
+    BigIntWide res = bigint_zero_wide();
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        res.limbs[i] = x.limbs[i];
+    }
+    return res;
+}
+
+BigInt bigint_from_wide(BigIntWide x) {
+    BigInt res = bigint_zero();
+    // ignore the last limb
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        res.limbs[i] = x.limbs[i];
+    }
+    return res;
+}
+
 // Overload Operators
 constexpr BigInt operator+(const BigInt lhs, const BigInt rhs) {
     return bigint_add_unsafe(lhs, rhs).value;
