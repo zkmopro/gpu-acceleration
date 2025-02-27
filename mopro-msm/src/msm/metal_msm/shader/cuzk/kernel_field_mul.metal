@@ -4,8 +4,8 @@ using namespace metal;
 #include "barrett_reduction.metal"
 
 kernel void run(
-    device BigInt* a [[ buffer(0) ]],
-    device BigInt* b [[ buffer(1) ]],
+    device BigIntWide* a [[ buffer(0) ]],
+    device BigIntWide* b [[ buffer(1) ]],
     device BigInt* res [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {

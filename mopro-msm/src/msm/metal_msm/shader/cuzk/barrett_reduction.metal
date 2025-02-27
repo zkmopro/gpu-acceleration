@@ -5,11 +5,11 @@ using namespace metal;
 #include <metal_math>
 #include "../field/ff.metal"
 
-BigIntExtraWide mul(BigInt a, BigInt b) {
+BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide res = bigint_zero_extra_wide();
     
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        for (uint j = 0; j < NUM_LIMBS; j++) {
+    for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
+        for (uint j = 0; j < NUM_LIMBS_WIDE; j++) {
             ulong c = (ulong)a.limbs[i] * (ulong)b.limbs[j];
             res.limbs[i+j] += c & MASK;
             res.limbs[i+j+1] += c >> LOG_LIMB_SIZE;
@@ -68,9 +68,9 @@ BigInt barrett_reduce(BigIntExtraWide a) {
     BigInt mu = get_mu();
 
     BigInt a_hi = get_higher_with_slack(a);
-    BigIntExtraWide l = mul(a_hi, mu);
+    BigIntExtraWide l = mul(bigint_to_wide(a_hi), bigint_to_wide(mu));
     BigInt l_hi = get_higher_with_slack(l);
-    BigIntExtraWide lp = mul(l_hi, p);
+    BigIntExtraWide lp = mul(bigint_to_wide(l_hi), bigint_to_wide(p));
 
     // Subtract lp from original a
     BigIntResultExtraWide sub_result = sub_512(a, lp);
@@ -90,7 +90,7 @@ BigInt barrett_reduce(BigIntExtraWide a) {
     return ff_reduce(r, p);
 }
 
-BigInt field_mul(BigInt a, BigInt b) {
+BigInt field_mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide xy = mul(a, b);
     return barrett_reduce(xy);
 }

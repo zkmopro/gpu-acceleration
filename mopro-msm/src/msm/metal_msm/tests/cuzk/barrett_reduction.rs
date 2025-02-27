@@ -86,9 +86,10 @@ pub fn test_barrett_reduce_with_mont_params() {
 pub fn test_field_mul_with_mont_params() {
     let log_limb_size = 16;
     let num_limbs = 16;
+    let num_limbs_wide = num_limbs + 1;
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
     let r = calc_mont_radix(num_limbs, log_limb_size);
-    let (rinv, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
+    let (_, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
     let nsafe = calc_nsafe(log_limb_size);
 
     let mut rng = thread_rng();
@@ -99,12 +100,12 @@ pub fn test_field_mul_with_mont_params() {
 
     // Calculate expected result using Arkworks
     let a_in_ark: BigInt<4> = a.clone().try_into().unwrap();
-    let r_in_ark: BigInt<4> = r.clone().try_into().unwrap();
+    let r_in_ark: BigInt<6> = r.clone().try_into().unwrap(); // r has 257 bits when 16-bit limbs are used for BN254
 
     // Prepare Metal buffers
     let device = get_default_device();
-    let a_limbs = a_in_ark.to_limbs(num_limbs, log_limb_size);
-    let r_limbs = r_in_ark.to_limbs(num_limbs, log_limb_size);
+    let a_limbs = a_in_ark.to_limbs(num_limbs_wide, log_limb_size);
+    let r_limbs = r_in_ark.to_limbs(num_limbs_wide, log_limb_size);
     let a_buf = create_buffer(&device, &a_limbs);
     let r_buf = create_buffer(&device, &r_limbs);
     let res_buf = create_empty_buffer(&device, num_limbs);
@@ -150,13 +151,16 @@ pub fn test_field_mul_with_mont_params() {
 
     let result_limbs: Vec<u32> = read_buffer(&res_buf, num_limbs);
     let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
-    assert_eq!(result, expected.clone().try_into().unwrap());
-
-    // verify correctness by restoring expected from montgomery form
-    let a_in_field = BaseField::from_bigint(a_in_ark).unwrap();
-    let expected_restored = (&expected * &rinv) % &p;
     assert_eq!(
-        expected_restored,
-        a_in_field.into_bigint().try_into().unwrap()
+        result,
+        expected.clone().try_into().unwrap(),
+        "result is not equal to expected"
+    );
+
+    // verify correctness by restoring expected value using Arkworks (Montgomery form)
+    let a_in_field = BaseField::from_bigint(a_in_ark).unwrap();
+    assert_eq!(
+        result, a_in_field.0,
+        "result is not equal to arkworks result in Montgomery form"
     );
 }

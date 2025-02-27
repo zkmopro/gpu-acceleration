@@ -349,9 +349,9 @@ mod tests {
         let mut rng = rand::thread_rng();
         let p: BigUint = BaseField::MODULUS.try_into().unwrap();
         let a = rng.gen_biguint_below(&p); // a has at most 254 bits
-        let r = calc_mont_radix(num_limbs, log_limb_size); // r has 255 bits
+        let r = calc_mont_radix(num_limbs, log_limb_size); // r has 257 bits
 
-        let mont_a = &a * &r; // mont_a has at most 509 bits
+        let mont_a = &a * &r; // mont_a has at most 511 bits
 
         let mont_a_bigint512: BigInt<8> = mont_a.try_into().unwrap();
         let mont_a_limbs = mont_a_bigint512.to_limbs(num_limbs_extra_wide, log_limb_size);
