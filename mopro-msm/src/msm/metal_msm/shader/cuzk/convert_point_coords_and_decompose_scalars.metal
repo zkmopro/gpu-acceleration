@@ -6,12 +6,12 @@ using namespace metal;
 #include "extract_word_from_bytes_le.metal"
 
 kernel void convert_point_coords_and_decompose_scalars(
-    device const uint * coords       [[buffer(0)]],
-    device const uint * scalars      [[buffer(1)]],
-    constant uint & input_size       [[buffer(2)]],
-    device BigInt * point_x          [[buffer(3)]],
-    device BigInt * point_y          [[buffer(4)]],
-    device uint * chunks             [[buffer(5)]],
+    device const uint* coords       [[buffer(0)]],
+    device const uint* scalars      [[buffer(1)]],
+    constant uint& input_size       [[buffer(2)]],
+    device BigInt* point_x          [[buffer(3)]],
+    device BigInt* point_y          [[buffer(4)]],
+    device uint* chunks             [[buffer(5)]],
     uint3 gid                        [[thread_position_in_grid]]
 )
 {
@@ -55,15 +55,15 @@ kernel void convert_point_coords_and_decompose_scalars(
         y_bigint.limbs[i] = extract_word_from_bytes_le(y_bytes, i, LOG_LIMB_SIZE);
     }
 
-    uint shift = (((NUM_LIMBS * LOG_LIMB_SIZE) - 256u) + 16u) - LOG_LIMB_SIZE;
+    uint shift = (((NUM_LIMBS * LOG_LIMB_SIZE) - 254u) + 16u) - LOG_LIMB_SIZE;
 
     x_bigint.limbs[NUM_LIMBS - 1] = x_bytes[0] >> shift;
     y_bigint.limbs[NUM_LIMBS - 1] = y_bytes[0] >> shift;
 
     // Convert x,y to Montgomery form: X = x * R mod p, Y = y * R mod p.
-    BigInt r = get_r();
-    BigInt x_mont = field_mul(x_bigint, r);
-    BigInt y_mont = field_mul(y_bigint, r);
+    BigIntWide r = get_r();
+    BigInt x_mont = field_mul(bigint_to_wide(x_bigint), r);
+    BigInt y_mont = field_mul(bigint_to_wide(y_bigint), r);
 
     // Store them in point_x, point_y
     point_x[id] = x_mont;
@@ -75,45 +75,39 @@ kernel void convert_point_coords_and_decompose_scalars(
         uint s = scalars[id * 8u + i];
         uint hi = s >> 16u;
         uint lo = s & 0xFFFFu;
-        scalar_bytes[15u - (i * 2u)]     = lo;
+        scalar_bytes[15u - (i * 2u)] = lo;
         scalar_bytes[15u - (i * 2u) - 1u] = hi;
     }
 
-    // an array of `NUM_SUBTASKS` chunks, each chunk is CHUNK_SIZE bits from the scalar.
-
+    // Extract wNAF representation. each chunk is CHUNK_SIZE bits from the scalar.
     uint chunks_arr[NUM_SUBTASKS];
     for (uint i = 0; i < NUM_SUBTASKS; i++) {
-        uint w = extract_word_from_bytes_le(scalar_bytes, i, CHUNK_SIZE);
-        chunks_arr[i] = w;
+        chunks_arr[i] = extract_word_from_bytes_le(scalar_bytes, i, CHUNK_SIZE);
     }
 
-    // The last chunk is special if (NUM_SUBTASKS * CHUNK_SIZE > 256)
+    // The last chunk is special if (NUM_SUBTASKS * CHUNK_SIZE > 254)
     chunks_arr[NUM_SUBTASKS - 1] =
-        scalar_bytes[0] >> ( ((NUM_SUBTASKS * CHUNK_SIZE - 256u) + 16u) - CHUNK_SIZE);
+        scalar_bytes[0] >> ( ((NUM_SUBTASKS * CHUNK_SIZE - 254u) + 16u) - CHUNK_SIZE);
 
-    // 3) Signed wNAF
+    // 3) Signed wNAF in the range [−(l−1), (l−1)]
     uint l = NUM_COLUMNS;
     uint s = l / 2u;
 
     int signed_slices[NUM_SUBTASKS];
-    int carry = 0;
+    uint carry = 0;
     for (uint i = 0; i < NUM_SUBTASKS; i++) {
-        int slice_val = int(chunks_arr[i]) + carry;
+        int slice_val = int(chunks_arr[i] + carry);
         if (slice_val >= int(s)) {
-            slice_val -= int(l);
-            carry = 1;
-        } else if (slice_val < 0) {
-            slice_val += int(l);
-            carry = -1;
-        } else {
-            carry = 0;
+            slice_val = (int(l) - slice_val) * (-1);
+            carry = 1u;
+        }
+        else {
+            carry = 0u;
         }
         signed_slices[i] = slice_val;
     }
 
-    // Typically you want a separate location for each subtask. 
-    // The total size might be `NUM_SUBTASKS * input_size`.
-    // Make sure your `chunks` buffer is large enough.
+    // Store final (non-negative) values into chunks
     for (uint i = 0; i < NUM_SUBTASKS; i++) {
         uint offset = i * input_size;
         // shift negative slices by +s to keep them in [0, l) range
