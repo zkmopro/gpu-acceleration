@@ -172,7 +172,7 @@ fn test_pbpr_random_inputs() {
             .collect::<Vec<G>>();
         let naive_result = cpu_naive_bpr(&buckets);
         let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
-    
+
         assert_eq!(gpu_pbpr_result, naive_result);
     }
 }
