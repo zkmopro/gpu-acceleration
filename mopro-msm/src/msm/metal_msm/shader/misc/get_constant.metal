@@ -25,9 +25,9 @@ BigInt get_n0() {
     return n0;
 }
 
-BigInt get_r() {
-    BigInt r;
-    for (uint i = 0; i < NUM_LIMBS; i++) {
+BigIntWide get_r() {
+    BigIntWide r;
+    for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
         r.limbs[i] = MONT_RADIX[i];
     }
     return r;

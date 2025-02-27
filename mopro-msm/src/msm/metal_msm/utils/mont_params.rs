@@ -29,10 +29,6 @@ pub fn calc_nsafe(log_limb_size: u32) -> usize {
 }
 
 pub fn calc_mont_radix(num_limbs: usize, log_limb_size: u32) -> BigUint {
-    // for bn254, we use 255 bits for the montgomery radix
-    if num_limbs as u32 * log_limb_size == 256 {
-        return BigUint::from(2u32).pow(255u32);
-    }
     BigUint::from(2u32).pow(num_limbs as u32 * log_limb_size)
 }
 
@@ -132,13 +128,6 @@ pub fn calc_num_limbs(log_limb_size: u32, p_bitwidth: usize) -> usize {
     while num_limbs * l <= p_bitwidth {
         num_limbs += 1;
     }
-
-    if p_bitwidth == 256 && log_limb_size == 15 {
-        return 19;
-    }
-
-    // TODO: account for cases like (15, 377) where num_limbs should be 27?
-
     num_limbs
 }
 

@@ -10,7 +10,7 @@ kernel void test_get_n0(device BigInt* result) {
     *result = get_n0();
 }
 
-kernel void test_get_r(device BigInt* result) {
+kernel void test_get_r(device BigIntWide* result) {
     *result = get_r();
 }
 

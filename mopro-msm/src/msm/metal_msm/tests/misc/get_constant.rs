@@ -132,6 +132,7 @@ pub fn test_get_p() {
     assert_eq!(result, expected);
 }
 
+/// for 16-bit limbs, r has 257 bits
 #[test]
 pub fn test_get_r() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
@@ -182,9 +183,9 @@ pub fn test_get_r() {
     command_buffer.wait_until_completed();
 
     let result_limbs: Vec<u32> = read_buffer(&result_buf, NUM_LIMBS_WIDE);
-    let result = BigInt::from_limbs(&result_limbs, LOG_LIMB_SIZE);
+    let result = BigInt::<6>::from_limbs(&result_limbs, LOG_LIMB_SIZE);
 
-    let expected: BigInt<4> = calc_mont_radix(NUM_LIMBS, LOG_LIMB_SIZE)
+    let expected: BigInt<6> = calc_mont_radix(NUM_LIMBS, LOG_LIMB_SIZE)
         .try_into()
         .unwrap();
     let expected_limbs = expected.to_limbs(NUM_LIMBS_WIDE, LOG_LIMB_SIZE);
