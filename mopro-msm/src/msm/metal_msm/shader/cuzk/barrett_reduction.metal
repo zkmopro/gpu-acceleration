@@ -4,8 +4,17 @@ using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
 #include "../field/ff.metal"
-#include <metal_logging>
-constant os_log logger(/*subsystem=*/"barret_reduction", /*category=*/"abc");
+
+#if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
+    #include <metal_logging>
+    // Create our real logger.
+    constant os_log logger(/*subsystem=*/"barret_reduction", /*category=*/"metal");
+    // Define the log macro to forward to logger_kernel.log_info.
+    #define LOG_DEBUG_DUPL(...) logger.log_debug(__VA_ARGS__)
+#else
+    // For older Metal versions, define a dummy macro that does nothing.
+    #define LOG_DEBUG_DUPL(...) ((void)0)
+#endif
 
 
 BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
@@ -68,7 +77,7 @@ BigInt get_higher_with_slack(BigIntExtraWide a) {
 
 BigInt barrett_reduce(BigIntExtraWide a) {
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        logger.log_info("res.limbs[%u] = %u", i, a.limbs[i]);
+        LOG_DEBUG_DUPL("res.limbs[%u] = %u", i, a.limbs[i]);
     }
 
     BigInt p = get_p();
