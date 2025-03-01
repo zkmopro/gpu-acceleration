@@ -42,8 +42,8 @@ pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -
         .join(input_filename);
     let c = input_path.clone().into_os_string().into_string().unwrap();
 
-    let ir = input_path.clone().into_os_string().into_string().unwrap();
-    let ir = format!("{}.ir", ir);
+    let lib = input_path.clone().into_os_string().into_string().unwrap();
+    let lib = format!("{}.lib", lib);
 
     let exe = if cfg!(target_os = "ios") {
         Command::new("xcrun")
@@ -51,10 +51,13 @@ pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -
                 "-sdk",
                 "iphoneos",
                 "metal",
-                "-c",
-                c.as_str(),
+                "-std=metal3.2",
+                "-target",
+                "air64-apple-ios18.0",
+                "-fmetal-enable-logging",
                 "-o",
-                ir.as_str(),
+                lib.as_str(),
+                c.as_str(),
             ])
             .output()
             .expect("failed to compile")
@@ -64,32 +67,14 @@ pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -
                 "-sdk",
                 "macosx",
                 "metal",
-                "-c",
-                c.as_str(),
+                "-std=metal3.2",
+                "-target",
+                "air64-apple-macos15.0",
+                "-fmetal-enable-logging",
                 "-o",
-                ir.as_str(),
+                lib.as_str(),
+                c.as_str(),
             ])
-            .output()
-            .expect("failed to compile")
-    } else {
-        panic!("Unsupported architecture");
-    };
-
-    if exe.stderr.len() != 0 {
-        panic!("{}", String::from_utf8(exe.stderr).unwrap());
-    }
-
-    let lib = input_path.clone().into_os_string().into_string().unwrap();
-    let lib = format!("{}.lib", lib);
-
-    let exe = if cfg!(target_os = "ios") {
-        Command::new("xcrun")
-            .args(["-sdk", "iphoneos", "metal", ir.as_str(), "-o", lib.as_str()])
-            .output()
-            .expect("failed to compile")
-    } else if cfg!(target_os = "macos") {
-        Command::new("xcrun")
-            .args(["-sdk", "macosx", "metal", ir.as_str(), "-o", lib.as_str()])
             .output()
             .expect("failed to compile")
     } else {
