@@ -62,7 +62,6 @@ Jacobian jacobian_add_2007_bl(
     BigInt z2 = b.z;
 
     // First compute z coordinates
-    // First compute z coordinates
     BigInt z1z1 = mont_mul_cios(z1, z1, p);
     BigInt z2z2 = mont_mul_cios(z2, z2, p);
     BigInt u1 = mont_mul_cios(x1, z2z2, p);
