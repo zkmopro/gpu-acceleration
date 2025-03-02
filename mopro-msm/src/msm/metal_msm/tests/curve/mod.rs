@@ -7,4 +7,6 @@ pub mod jacobian_dbl_2009_l;
 #[cfg(test)]
 pub mod jacobian_madd_2007_bl;
 #[cfg(test)]
+pub mod jacobian_neg;
+#[cfg(test)]
 pub mod jacobian_scalar_mul;
