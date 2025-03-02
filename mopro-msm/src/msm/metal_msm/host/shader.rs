@@ -100,6 +100,49 @@ pub fn write_constants(
     let slack = num_limbs as u32 * log_limb_size - BaseField::MODULUS_BIT_SIZE;
     let num_limbs_wide = num_limbs + 1;
     let num_limbs_extra_wide = num_limbs * 2;
+
+    // MSM instance params
+    let input_size = BaseField::MODULUS_BIT_SIZE / 32;
+    let chunk_size = if input_size >= 65536 { 16 } else { 4 };
+    let num_columns = 2u32.pow(chunk_size);
+    let num_rows = (input_size as f32 / num_columns as f32).ceil() as u32;
+    let num_subtasks = (256 as f32 / chunk_size as f32).ceil() as u32;
+
+    let mut c_workgroup_size = 64;
+    let mut c_num_x_workgroups = 128;
+    let mut c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    let c_num_z_workgroups = 1;
+
+    if input_size <= 256 {
+        c_workgroup_size = input_size;
+        c_num_x_workgroups = 1;
+        c_num_y_workgroups = 1;
+    } else if input_size > 256 && input_size <= 32768 {
+        c_workgroup_size = 64;
+        c_num_x_workgroups = 4;
+        c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    } else if input_size > 32768 && input_size <= 65536 {
+        c_workgroup_size = 256;
+        c_num_x_workgroups = 8;
+        c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    } else if input_size > 65536 && input_size <= 131072 {
+        c_workgroup_size = 256;
+        c_num_x_workgroups = 8;
+        c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    } else if input_size > 131072 && input_size <= 262144 {
+        c_workgroup_size = 256;
+        c_num_x_workgroups = 32;
+        c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    } else if input_size > 262144 && input_size <= 524288 {
+        c_workgroup_size = 256;
+        c_num_x_workgroups = 32;
+        c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    } else if input_size > 524288 && input_size <= 1048576 {
+        c_workgroup_size = 256;
+        c_num_x_workgroups = 32;
+        c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+    }
+
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
@@ -124,6 +167,14 @@ pub fn write_constants(
     data += format!("#define N0 {}\n", n0).as_str();
     data += format!("#define NSAFE {}\n", nsafe).as_str();
     data += format!("#define SLACK {}\n", slack).as_str();
+    data += format!("#define CHUNK_SIZE {}\n", chunk_size).as_str();
+    data += format!("#define NUM_COLUMNS {}\n", num_columns).as_str();
+    data += format!("#define NUM_ROWS {}\n", num_rows).as_str();
+    data += format!("#define NUM_SUBTASKS {}\n", num_subtasks).as_str();
+    data += format!("#define WORKGROUP_SIZE {}\n", c_workgroup_size).as_str();
+    data += format!("#define NUM_X_WORKGROUPS {}\n", c_num_x_workgroups).as_str();
+    data += format!("#define NUM_Y_WORKGROUPS {}\n", c_num_y_workgroups).as_str();
+    data += format!("#define NUM_Z_WORKGROUPS {}\n", c_num_z_workgroups).as_str();
 
     let mu_limbs = mu_in_ark.to_limbs(num_limbs, log_limb_size);
     write_constant_array!(data, "BARRETT_MU", mu_limbs, "NUM_LIMBS");
