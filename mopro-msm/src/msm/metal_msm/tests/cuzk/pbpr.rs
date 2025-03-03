@@ -8,10 +8,28 @@ use ark_std::{rand::thread_rng, UniformRand, Zero};
 use metal::*;
 use num_bigint::BigUint;
 use rayon::prelude::*;
-use std::cmp::min;
+use std::time::Instant;
+
+fn closest_power_of_two(n: usize) -> usize {
+    if n <= 1 {
+        return 1;
+    }
+    // if already a power-of-two, return it immediately
+    if n.is_power_of_two() {
+        return n;
+    }
+    // lower: the highest power-of-two less than n.
+    // upper: the next power-of-two greater than n.
+    let lower = 1 << (usize::BITS - n.leading_zeros() - 1);
+    let upper = lower << 1;
+    if n - lower <= upper - n {
+        lower
+    } else {
+        upper
+    }
+}
 
 // Implements parallel bucket reduction in GPU
-// TODO: 1. current algorithm does not support odd bucket size (should be 2N)
 fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let mont_params = MontgomeryParams::default();
     let log_limb_size: u32 = 16;
@@ -42,7 +60,19 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let thread_group_height =
         pipeline_state.max_total_threads_per_threadgroup() / thread_group_width;
 
-    let total_threads = min(4096, bucket_size.next_power_of_two()); // TODO: To make this dynamic
+    let max_group_threads = pipeline_state.max_total_threads_per_threadgroup();
+
+    let optimal_threads = max_group_threads;
+
+    let candidate = if bucket_size < optimal_threads as usize {
+        bucket_size
+    } else {
+        optimal_threads as usize // This is wrong, since we're workloading just a single TG,
+                                 // The thing is that this gives the best performance so far
+                                 // But we need to introduce cross kernel synchronisation to improve this.
+    };
+
+    let total_threads = closest_power_of_two(candidate) as usize;
 
     let grid_width = (total_threads as f64).sqrt().ceil() as u64;
     let grid_height = (total_threads as u64 + grid_width - 1) / grid_width;
@@ -105,7 +135,7 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
 }
 
 // This is a very naive way to implement the bucket reduction
-// computing $\sum_{i=1}^{len} i * buckets[i]$
+// computing sum_{i=1}^{len} i * buckets[i]
 fn cpu_naive_bpr(buckets: &Vec<G>) -> G {
     buckets
         .par_iter()
@@ -118,8 +148,7 @@ fn cpu_naive_bpr(buckets: &Vec<G>) -> G {
 }
 
 // This immitates the parallel bucket point reduction algortihm in GPU.
-// TODO: 1. This algorithm only supports even bucket size (2N), we have to find a way to deal with odd input size.
-// TODO: 2. make total thread dynamic
+// TODO: 1. make total thread dynamic
 fn cpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let total_threads = 4 as usize; // TODO: To make this dynamic
     let bucket_size = buckets.len() as usize;
@@ -150,7 +179,7 @@ fn cpu_parallel_bpr(buckets: &Vec<G>) -> G {
 #[test]
 pub fn test_pbpr_simple_input() {
     let generator = G::generator();
-    let c: u32 = 16;
+    let c: u32 = 17;
     let bucket_size = 1 << c;
     let buckets = (1..=bucket_size)
         .map(|i| generator * ScalarField::from(i as u64))
@@ -158,7 +187,11 @@ pub fn test_pbpr_simple_input() {
 
     let cpu_naive_result = cpu_naive_bpr(&buckets);
     let cpu_pbpr_result = cpu_parallel_bpr(&buckets);
+
+    let start = Instant::now();
     let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
+    let duration = start.elapsed();
+    println!("gpu_parallel_bpr execution time: {:?}", duration);
 
     assert_eq!(gpu_pbpr_result, cpu_naive_result);
     assert_eq!(gpu_pbpr_result, cpu_pbpr_result);
@@ -175,7 +208,13 @@ fn test_pbpr_random_inputs() {
             .map(|_| generator * ScalarField::rand(&mut rng))
             .collect::<Vec<G>>();
         let naive_result = cpu_naive_bpr(&buckets);
+        let start = Instant::now();
         let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
+        let duration = start.elapsed();
+        println!(
+            "Size: {}, gpu_parallel_bpr execution time: {:?}",
+            size, duration
+        );
         assert_eq!(gpu_pbpr_result, naive_result);
     }
 }
