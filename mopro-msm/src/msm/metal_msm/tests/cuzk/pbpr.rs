@@ -12,8 +12,6 @@ use std::cmp::min;
 
 // Implements parallel bucket reduction in GPU
 // TODO: 1. current algorithm does not support odd bucket size (should be 2N)
-// TODO: 2. current total threads is fixed, we should change it into dynamic
-// TODO: 3. we should also dynamically dispatch the threadgroup_size and threads_per_threadgroup
 fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let mont_params = MontgomeryParams::default();
     let log_limb_size: u32 = 16;
@@ -27,10 +25,42 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let bucket_size = buckets.len();
     let bucket_buffer = points_to_gpu_buffer(buckets, num_limbs, &device);
 
+    let library_path = compile_metal("../mopro-msm/src/msm/metal_msm/shader/cuzk", "pbpr.metal");
+    let library = device.new_library_with_file(library_path).unwrap();
+    let kernel = library.get_function("parallel_bpr", None).unwrap();
+
+    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
+    pipeline_state_descriptor.set_compute_function(Some(&kernel));
+
+    let pipeline_state = device
+        .new_compute_pipeline_state_with_function(
+            pipeline_state_descriptor.compute_function().unwrap(),
+        )
+        .unwrap();
+
+    let thread_group_width = pipeline_state.thread_execution_width();
+    let thread_group_height =
+        pipeline_state.max_total_threads_per_threadgroup() / thread_group_width;
+
     let total_threads = min(4096, bucket_size.next_power_of_two()); // TODO: To make this dynamic
 
+    let grid_width = (total_threads as f64).sqrt().ceil() as u64;
+    let grid_height = (total_threads as u64 + grid_width - 1) / grid_width;
+
+    let threads_per_thread_group = MTLSize {
+        width: thread_group_width,
+        height: thread_group_height,
+        depth: 1,
+    };
+
+    let threads_total = MTLSize {
+        width: grid_width,
+        height: grid_height,
+        depth: 1,
+    };
+
     let total_threads_buffer = create_buffer(&device, &vec![total_threads as u32]);
-    let bucket_size_buffer = create_buffer(&device, &vec![bucket_size as u32]);
+    let grid_width_buffer = create_buffer(&device, &vec![grid_width as u32]);
 
     let m_shared = vec![G::zero(); total_threads];
     let s_shared = vec![G::zero(); total_threads];
@@ -40,6 +70,7 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
 
     let num_subtask = (bucket_size + total_threads - 1) / total_threads;
     let num_subtask_buffer = create_buffer(&device, &vec![num_subtask as u32]);
+
     // set up command queue and encoder
     let command_queue = device.new_command_queue();
     let command_buffer = command_queue.new_command_buffer();
@@ -53,43 +84,17 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
         n0,
         nsafe,
     );
-    let library_path = compile_metal("../mopro-msm/src/msm/metal_msm/shader/cuzk", "pbpr.metal");
-    let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library.get_function("parallel_bpr", None).unwrap();
-
-    // set up pipeline
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
-
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
 
     encoder.set_compute_pipeline_state(&pipeline_state);
 
     encoder.set_buffer(0, Some(&bucket_buffer), 0);
     encoder.set_buffer(1, Some(&m_shared_buffer), 0);
     encoder.set_buffer(2, Some(&s_shared_buffer), 0);
-    encoder.set_buffer(3, Some(&bucket_size_buffer), 0);
+    encoder.set_buffer(3, Some(&grid_width_buffer), 0);
     encoder.set_buffer(4, Some(&total_threads_buffer), 0);
     encoder.set_buffer(5, Some(&num_subtask_buffer), 0);
 
-    // TODO: make this dynamic
-    let threads_per_thread_group = MTLSize {
-        width: 256,
-        height: 1,
-        depth: 1,
-    };
-
-    let thread_group_count = MTLSize {
-        width: ((total_threads + 256 - 1) / 256) as u64,
-        height: 1,
-        depth: 1,
-    };
-
-    encoder.dispatch_thread_groups(thread_group_count, threads_per_thread_group);
+    encoder.dispatch_threads(threads_total, threads_per_thread_group);
     encoder.end_encoding();
     command_buffer.commit();
     command_buffer.wait_until_completed();

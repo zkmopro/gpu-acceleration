@@ -4,20 +4,21 @@ using namespace metal;
 #include "../misc/get_constant.metal"
 
 kernel void parallel_bpr(
-    constant Jacobian* buckets [[ buffer(0) ]],
-    device Jacobian* m_shared [[ buffer(1) ]],
-    device Jacobian* s_shared [[ buffer(2) ]],
-    constant uint32_t& bucket_size [[ buffer(3) ]],
-    constant uint32_t& total_threads [[ buffer(4) ]],
-    constant uint32_t& r [[ buffer(5) ]],
-    uint gid [[ thread_position_in_grid ]]
-) {     
-    // first version: 
+    constant Jacobian* buckets         [[ buffer(0) ]],
+    device Jacobian* m_shared          [[ buffer(1) ]],
+    device Jacobian* s_shared          [[ buffer(2) ]],
+    constant uint32_t& grid_width      [[ buffer(3) ]],
+    constant uint32_t& total_threads   [[ buffer(4) ]],
+    constant uint32_t& r               [[ buffer(5) ]],
+    uint2 tid                          [[ thread_position_in_grid ]]
+) {
+    // Convert the 2D thread coordinate into a flat index.
+    uint gid = tid.y * grid_width + tid.x;
     if (gid >= total_threads) {
         return;
     }
 
-    // Accumulating buckets to s_shared and m_shared using 0-based indexing
+    // Accumulating buckets into s_shared and m_shared using 0-based indexing.
     for (uint32_t l = 1; l <= r; l++) {
         if (l != 1) {
             m_shared[gid] = m_shared[gid] + buckets[(gid + 1) * r - l];
