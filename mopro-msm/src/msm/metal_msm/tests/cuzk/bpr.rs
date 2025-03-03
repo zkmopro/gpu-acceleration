@@ -40,7 +40,7 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
 
     let num_subtask = (bucket_size + total_threads as usize - 1) / total_threads as usize;
     let num_subtask_buffer = create_buffer(&device, &vec![num_subtask as u32]);
-    println!("r: {}", num_subtask);
+
     // set up command queue and encoder
     let command_queue = device.new_command_queue();
     let command_buffer = command_queue.new_command_buffer();
