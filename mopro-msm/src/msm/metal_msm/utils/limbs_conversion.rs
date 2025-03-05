@@ -309,6 +309,7 @@ mod tests {
     use num_bigint::{BigUint, RandBigInt};
 
     #[test]
+    #[serial_test::serial]
     fn test_within_bigint256() {
         let num_limbs = 16;
         let log_limb_size = 16;
@@ -320,6 +321,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_within_bigint384() {
         let num_limbs = 16;
         let num_limbs_wide = num_limbs + 1;
@@ -341,6 +343,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_within_bigint512() {
         let num_limbs = 16;
         let num_limbs_extra_wide = num_limbs * 2;

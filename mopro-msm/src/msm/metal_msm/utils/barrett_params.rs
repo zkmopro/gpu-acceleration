@@ -16,6 +16,7 @@ mod tests {
     use num_bigint::BigUint;
 
     #[test]
+    #[serial_test::serial]
     fn test_calc_barrett_mu_bn254() {
         let p: BigUint = BaseField::MODULUS.try_into().unwrap();
         let mu = calc_barrett_mu(&p);
