@@ -1,5 +1,7 @@
 // adapted from: https://github.com/geometryxyz/msl-secp256k1
 #pragma once
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdivision-by-zero" // to avoid warning on debug build, but we should always know what NSAFE is
 
 using namespace metal;
 #include <metal_stdlib>
@@ -166,3 +168,4 @@ BigInt mont_mul_cios(
 
     return result;
 }
+#pragma clang diagnostic pop
