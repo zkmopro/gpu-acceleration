@@ -14,6 +14,7 @@ const NUM_LIMBS_WIDE: usize = 17;
 const LOG_LIMB_SIZE: u32 = 16;
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_n0() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -74,6 +75,7 @@ pub fn test_get_n0() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_p() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -134,6 +136,7 @@ pub fn test_get_p() {
 
 /// for 16-bit limbs, r has 257 bits
 #[test]
+#[serial_test::serial]
 pub fn test_get_r() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -195,6 +198,7 @@ pub fn test_get_r() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_p_wide() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -254,6 +258,7 @@ pub fn test_get_p_wide() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_bn254_zero() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -319,6 +324,7 @@ pub fn test_get_bn254_zero() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_bn254_one() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -384,6 +390,7 @@ pub fn test_get_bn254_one() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_bn254_zero_mont() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -462,6 +469,7 @@ pub fn test_get_bn254_zero_mont() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_bn254_one_mont() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 
@@ -540,6 +548,7 @@ pub fn test_get_bn254_one_mont() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_get_mu() {
     prepare_constants(NUM_LIMBS, LOG_LIMB_SIZE);
 

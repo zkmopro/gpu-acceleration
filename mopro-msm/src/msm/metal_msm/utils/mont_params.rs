@@ -99,6 +99,7 @@ pub mod tests {
     use num_bigint::BigUint;
 
     #[test]
+    #[serial_test::serial]
     pub fn test_calc_rinv_and_n0() {
         // Use the BN254 base field as a known example
         let p: BigUint = BaseField::MODULUS.try_into().unwrap();

@@ -285,6 +285,7 @@ pub mod tests {
     use super::*;
 
     #[test]
+    #[serial_test::serial]
     pub fn test_compile() {
         let lib_filepath = compile_metal(
             "../mopro-msm/src/msm/metal_msm/shader",
@@ -294,6 +295,7 @@ pub mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     pub fn test_write_constants() {
         write_constants("../mopro-msm/src/msm/metal_msm/shader", 16, 16, 25481, 1);
     }

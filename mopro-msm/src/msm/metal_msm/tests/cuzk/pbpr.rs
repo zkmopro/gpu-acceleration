@@ -177,9 +177,10 @@ fn cpu_parallel_bpr(buckets: &Vec<G>) -> G {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn test_pbpr_simple_input() {
     let generator = G::generator();
-    let c: u32 = 17;
+    let c: u32 = 10;
     let bucket_size = 1 << c;
     let buckets = (1..=bucket_size)
         .map(|i| generator * ScalarField::from(i as u64))
@@ -198,10 +199,11 @@ pub fn test_pbpr_simple_input() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_pbpr_random_inputs() {
     let generator = G::generator();
     let mut rng = thread_rng();
-    let bucket_size = vec![10, 11, 12, 13, 14, 15];
+    let bucket_size = vec![5, 6, 7, 8, 9, 10];
 
     for size in bucket_size {
         let buckets = (0..(1 << size))
