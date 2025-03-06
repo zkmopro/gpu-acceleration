@@ -197,6 +197,22 @@ Jacobian jacobian_scalar_mul(
     return result;
 }
 
+Jacobian jacobian_neg(
+    Jacobian a,
+    BigInt p
+) {
+    if (is_jacobian_zero(a)) { return a; }
+
+    // Negate Y (mod p): newY = p - Y
+    BigInt negY = ff_sub(p, a.y, p);
+
+    Jacobian result;
+    result.x = a.x;
+    result.y = negY;
+    result.z = a.z;
+    return result;
+}
+
 // Override operators in Jacobian
 Jacobian operator+(Jacobian a, Jacobian b) {
     BigInt p = get_p();
