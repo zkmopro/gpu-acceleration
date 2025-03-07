@@ -22,13 +22,9 @@ BigInt conditional_reduce(
 /// An optimised variant of the Montgomery product algorithm from
 /// https://github.com/mitschabaude/montgomery#13-x-30-bit-multiplication.
 /// Known to work with 12 and 13-bit limbs.
-BigInt mont_mul_optimised(
-    BigInt x,
-    BigInt y,
-    BigInt p
-) {
+BigInt mont_mul_optimised(BigInt x, BigInt y) {
+    BigInt p = get_p();
     BigInt s = bigint_zero();
-
     for (uint i = 0; i < NUM_LIMBS; i ++) {
         uint t = s.limbs[0] + x.limbs[i] * y.limbs[0];
         uint tprime = t & MASK;
@@ -55,11 +51,8 @@ BigInt mont_mul_optimised(
 /// An modified variant of the Montgomery product algorithm from
 /// https://github.com/mitschabaude/montgomery#13-x-30-bit-multiplication.
 /// Known to work with 14 and 15-bit limbs.
-BigInt mont_mul_modified(
-    BigInt x,
-    BigInt y,
-    BigInt p
-) {
+BigInt mont_mul_modified(BigInt x, BigInt y) {
+    BigInt p = get_p();
     BigInt s = bigint_zero();
 
     for (uint i = 0; i < NUM_LIMBS; i ++) {
@@ -99,13 +92,11 @@ BigInt mont_mul_modified(
 /// The CIOS method for Montgomery multiplication from Tolga Acar's thesis:
 /// High-Speed Algorithms & Architectures For Number-Theoretic Cryptosystems
 /// https://www.proquest.com/openview/1018972f191afe55443658b28041c118/1
-BigInt mont_mul_cios(
-    BigInt x,
-    BigInt y,
-    BigInt p
-) {
-    uint t[NUM_LIMBS + 2] = {0};  // Extra space for carries
+BigInt mont_mul_cios(BigInt x, BigInt y) {
+    BigInt p = get_p();
+
     BigInt result;
+    uint t[NUM_LIMBS + 2] = {0};  // Extra space for carries
     
     for (uint i = 0; i < NUM_LIMBS; i++) {
         // Step 1: Multiply and add

@@ -20,8 +20,8 @@ bool jacobian_eq(
     return true;
 }
 
-bool is_jacobian_zero(Jacobian p) {
-    return is_bigint_zero(p.z);
+bool is_jacobian_zero(Jacobian a) {
+    return is_bigint_zero(a.z);
 }
 
 constexpr bool operator==(const Jacobian lhs, const Jacobian rhs) {

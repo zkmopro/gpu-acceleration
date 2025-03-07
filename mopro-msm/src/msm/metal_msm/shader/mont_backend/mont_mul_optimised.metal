@@ -8,14 +8,8 @@ using namespace metal;
 kernel void run(
     device BigInt* lhs [[ buffer(0) ]],
     device BigInt* rhs [[ buffer(1) ]],
-    device BigInt* prime [[ buffer(2) ]],
-    device BigInt* result [[ buffer(3) ]],
+    device BigInt* result [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt a = *lhs;
-    BigInt b = *rhs;
-    BigInt p = *prime;
-
-    BigInt res = mont_mul_optimised(a, b, p);
-    *result = res;
+    *result = mont_mul_optimised(*lhs, *rhs);
 }

@@ -103,7 +103,7 @@ BigInt barrett_reduce(BigIntExtraWide a) {
         r.limbs[i] = r_wide.limbs[i];
     }
 
-    return ff_reduce(r, p);
+    return ff_reduce(r);
 }
 
 BigInt field_mul(BigIntWide a, BigIntWide b) {
