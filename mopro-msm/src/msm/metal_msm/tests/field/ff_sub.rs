@@ -41,7 +41,6 @@ pub fn test_ff_sub() {
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
     let b_buf = create_buffer(&device, &b.to_limbs(num_limbs, log_limb_size));
-    let p_buf = create_buffer(&device, &p.to_limbs(num_limbs, log_limb_size));
     let result_buf = create_empty_buffer(&device, num_limbs);
 
     // (a - b) % p
@@ -103,8 +102,7 @@ pub fn test_ff_sub() {
     encoder.set_compute_pipeline_state(&pipeline_state);
     encoder.set_buffer(0, Some(&a_buf), 0);
     encoder.set_buffer(1, Some(&b_buf), 0);
-    encoder.set_buffer(2, Some(&p_buf), 0);
-    encoder.set_buffer(3, Some(&result_buf), 0);
+    encoder.set_buffer(2, Some(&result_buf), 0);
 
     let thread_group_count = MTLSize {
         width: 1,

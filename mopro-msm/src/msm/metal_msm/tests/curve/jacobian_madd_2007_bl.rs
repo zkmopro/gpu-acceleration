@@ -63,7 +63,6 @@ pub fn test_jacobian_add_2007_bl() {
     let bxr = (&bx * &r) % &p;
     let byr = (&by * &r) % &p;
 
-    let p_limbs = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let axr_limbs = ark_ff::BigInt::<4>::try_from(axr.clone())
         .unwrap()
         .to_limbs(num_limbs, log_limb_size);
@@ -81,7 +80,6 @@ pub fn test_jacobian_add_2007_bl() {
         .to_limbs(num_limbs, log_limb_size);
 
     let device = get_default_device();
-    let prime_buf = create_buffer(&device, &p_limbs);
     let axr_buf = create_buffer(&device, &axr_limbs);
     let ayr_buf = create_buffer(&device, &ayr_limbs);
     let azr_buf = create_buffer(&device, &azr_limbs);
@@ -121,15 +119,14 @@ pub fn test_jacobian_add_2007_bl() {
         .unwrap();
 
     encoder.set_compute_pipeline_state(&pipeline_state);
-    encoder.set_buffer(0, Some(&prime_buf), 0);
-    encoder.set_buffer(1, Some(&axr_buf), 0);
-    encoder.set_buffer(2, Some(&ayr_buf), 0);
-    encoder.set_buffer(3, Some(&azr_buf), 0);
-    encoder.set_buffer(4, Some(&bxr_buf), 0);
-    encoder.set_buffer(5, Some(&byr_buf), 0);
-    encoder.set_buffer(6, Some(&result_xr_buf), 0);
-    encoder.set_buffer(7, Some(&result_yr_buf), 0);
-    encoder.set_buffer(8, Some(&result_zr_buf), 0);
+    encoder.set_buffer(0, Some(&axr_buf), 0);
+    encoder.set_buffer(1, Some(&ayr_buf), 0);
+    encoder.set_buffer(2, Some(&azr_buf), 0);
+    encoder.set_buffer(3, Some(&bxr_buf), 0);
+    encoder.set_buffer(4, Some(&byr_buf), 0);
+    encoder.set_buffer(5, Some(&result_xr_buf), 0);
+    encoder.set_buffer(6, Some(&result_yr_buf), 0);
+    encoder.set_buffer(7, Some(&result_zr_buf), 0);
 
     let thread_group_count = MTLSize {
         width: 1,

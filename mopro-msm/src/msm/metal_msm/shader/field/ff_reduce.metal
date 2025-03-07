@@ -7,9 +7,8 @@ using namespace metal;
 
 kernel void run(
     device BigInt* a [[ buffer(0) ]],
-    device BigInt* prime [[ buffer(1) ]],
-    device BigInt* res [[ buffer(2) ]],
+    device BigInt* res [[ buffer(1) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *res = ff_reduce(*a, *prime);
+    *res = ff_reduce(*a);
 }

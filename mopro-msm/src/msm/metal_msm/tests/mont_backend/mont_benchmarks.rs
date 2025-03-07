@@ -84,13 +84,11 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         .unwrap()
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
-    let p_limbs = &BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
 
     let device = get_default_device();
 
     let a_buf = create_buffer(&device, &ar_limbs);
     let b_buf = create_buffer(&device, &br_limbs);
-    let p_buf = create_buffer(&device, &p_limbs);
     let cost_buf = create_buffer(&device, &vec![cost as u32]);
     let result_buf = create_empty_buffer(&device, num_limbs);
 
@@ -126,9 +124,8 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
     encoder.set_compute_pipeline_state(&pipeline_state);
     encoder.set_buffer(0, Some(&a_buf), 0);
     encoder.set_buffer(1, Some(&b_buf), 0);
-    encoder.set_buffer(2, Some(&p_buf), 0);
-    encoder.set_buffer(3, Some(&cost_buf), 0);
-    encoder.set_buffer(4, Some(&result_buf), 0);
+    encoder.set_buffer(2, Some(&cost_buf), 0);
+    encoder.set_buffer(3, Some(&result_buf), 0);
 
     let thread_group_count = MTLSize {
         width: 1,
@@ -162,10 +159,6 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
     }
 
     let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
-
-    // assert!(result == expected.try_into().unwrap());
-    // assert!(result_limbs == expected_limbs);
-
     if result == expected.try_into().unwrap() && result_limbs == expected_limbs {
         Ok(elapsed)
     } else {

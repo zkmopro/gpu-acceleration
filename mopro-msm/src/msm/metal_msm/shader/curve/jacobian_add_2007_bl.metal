@@ -6,19 +6,17 @@ using namespace metal;
 #include "jacobian.metal"
 
 kernel void run(
-    device BigInt* prime [[ buffer(0) ]],
-    device BigInt* a_xr [[ buffer(1) ]],
-    device BigInt* a_yr [[ buffer(2) ]],
-    device BigInt* a_zr [[ buffer(3) ]],
-    device BigInt* b_xr [[ buffer(4) ]],
-    device BigInt* b_yr [[ buffer(5) ]],
-    device BigInt* b_zr [[ buffer(6) ]],
-    device BigInt* result_xr [[ buffer(7) ]],
-    device BigInt* result_yr [[ buffer(8) ]],
-    device BigInt* result_zr [[ buffer(9) ]],
+    device BigInt* a_xr [[ buffer(0) ]],
+    device BigInt* a_yr [[ buffer(1) ]],
+    device BigInt* a_zr [[ buffer(2) ]],
+    device BigInt* b_xr [[ buffer(3) ]],
+    device BigInt* b_yr [[ buffer(4) ]],
+    device BigInt* b_zr [[ buffer(5) ]],
+    device BigInt* result_xr [[ buffer(6) ]],
+    device BigInt* result_yr [[ buffer(7) ]],
+    device BigInt* result_zr [[ buffer(8) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt p = *prime;
     BigInt x1 = *a_xr;
     BigInt y1 = *a_yr;
     BigInt z1 = *a_zr;
@@ -29,7 +27,7 @@ kernel void run(
     Jacobian a; a.x = x1; a.y = y1; a.z = z1;
     Jacobian b; b.x = x2; b.y = y2; b.z = z2;
 
-    Jacobian res = jacobian_add_2007_bl(a, b, p);
+    Jacobian res = jacobian_add_2007_bl(a, b);
     *result_xr = res.x;
     *result_yr = res.y;
     *result_zr = res.z;

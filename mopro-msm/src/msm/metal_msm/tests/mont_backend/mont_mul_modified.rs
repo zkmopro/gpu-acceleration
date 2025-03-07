@@ -59,10 +59,6 @@ pub fn do_test(log_limb_size: u32) {
         &device,
         &b_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size),
     );
-    let p_buf = create_buffer(
-        &device,
-        &BaseField::MODULUS.to_limbs(num_limbs, log_limb_size),
-    );
     let result_buf = create_empty_buffer(&device, num_limbs);
 
     let command_queue = device.new_command_queue();
@@ -97,8 +93,7 @@ pub fn do_test(log_limb_size: u32) {
     encoder.set_compute_pipeline_state(&pipeline_state);
     encoder.set_buffer(0, Some(&a_buf), 0);
     encoder.set_buffer(1, Some(&b_buf), 0);
-    encoder.set_buffer(2, Some(&p_buf), 0);
-    encoder.set_buffer(3, Some(&result_buf), 0);
+    encoder.set_buffer(2, Some(&result_buf), 0);
 
     let thread_group_count = MTLSize {
         width: 1,

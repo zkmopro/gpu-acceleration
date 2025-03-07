@@ -37,7 +37,6 @@ pub fn test_ff_reduce_a_less_than_p() {
     let a_limbs = a.to_limbs(num_limbs, log_limb_size);
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a_limbs);
-    let p_buf = create_buffer(&device, &p.to_limbs(num_limbs, log_limb_size));
     let result_buf = create_empty_buffer(&device, num_limbs);
 
     let command_queue = device.new_command_queue();
@@ -71,8 +70,7 @@ pub fn test_ff_reduce_a_less_than_p() {
 
     encoder.set_compute_pipeline_state(&pipeline_state);
     encoder.set_buffer(0, Some(&a_buf), 0);
-    encoder.set_buffer(1, Some(&p_buf), 0);
-    encoder.set_buffer(2, Some(&result_buf), 0);
+    encoder.set_buffer(1, Some(&result_buf), 0);
 
     let thread_group_count = MTLSize {
         width: 1,
@@ -137,7 +135,6 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
     let a_limbs = a.to_limbs(num_limbs, log_limb_size);
     let device = get_default_device();
     let a_buf = create_buffer(&device, &a_limbs);
-    let p_buf = create_buffer(&device, &p.to_limbs(num_limbs, log_limb_size));
     let result_buf = create_empty_buffer(&device, num_limbs);
 
     let command_queue = device.new_command_queue();
@@ -171,8 +168,7 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
 
     encoder.set_compute_pipeline_state(&pipeline_state);
     encoder.set_buffer(0, Some(&a_buf), 0);
-    encoder.set_buffer(1, Some(&p_buf), 0);
-    encoder.set_buffer(2, Some(&result_buf), 0);
+    encoder.set_buffer(1, Some(&result_buf), 0);
 
     let thread_group_count = MTLSize {
         width: 1,

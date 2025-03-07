@@ -42,7 +42,6 @@ kernel void smvp(
 
     const uint subtask_idx = id / half_columns;
 
-    const BigInt p = get_p();
     Jacobian inf = get_bn254_zero_mont();
 
     // an offset for each subtask's row_ptr
@@ -75,7 +74,7 @@ kernel void smvp(
             b.y = new_point_y[idx];
             b.z = get_bn254_one_mont().z;
 
-            sum = jacobian_add_2007_bl(sum, b, p);
+            sum = jacobian_add_2007_bl(sum, b);
 
             // Debug for correct input points
             LOG_DEBUG("new_point_x[%u].limbs[0]: %u", idx, new_point_x[idx].limbs[0]);
@@ -86,7 +85,7 @@ kernel void smvp(
         if (half_columns > row_idx) {
             // Negative bucket => flip sign of sum
             bucket_idx = half_columns - row_idx;
-            sum = jacobian_neg(sum, p);
+            sum = jacobian_neg(sum);
         } else {
             // Positive bucket
             bucket_idx = row_idx - half_columns;
@@ -105,7 +104,7 @@ kernel void smvp(
                 bucket_val.z = bucket_z[bi];
 
                 // sum = oldBucket + sum
-                sum = jacobian_add_2007_bl(bucket_val, sum, p);
+                sum = jacobian_add_2007_bl(bucket_val, sum);
             }
 
             // Store the result in bucket arrays
@@ -116,22 +115,9 @@ kernel void smvp(
 
         // Debug for correct sum
         if (id == 0) {
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[0]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[1]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[2]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[3]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[4]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[5]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[6]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[7]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[8]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[9]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[10]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[11]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[12]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[13]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[14]);
-            LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[15]);
+            for (uint i = 0; i < NUM_LIMBS; i++) {
+                LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[i]);
+            }
         }
     }
 }
