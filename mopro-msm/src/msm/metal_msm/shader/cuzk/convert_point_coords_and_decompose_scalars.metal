@@ -6,15 +6,14 @@ using namespace metal;
 #include "extract_word_from_bytes_le.metal"
 
 kernel void convert_point_coords_and_decompose_scalars(
-    device const uint* coords       [[buffer(0)]],
-    device const uint* scalars      [[buffer(1)]],
-    constant uint& input_size       [[buffer(2)]],
-    device BigInt* point_x          [[buffer(3)]],
-    device BigInt* point_y          [[buffer(4)]],
-    device uint* chunks             [[buffer(5)]],
-    uint3 gid                        [[thread_position_in_grid]]
-)
-{
+    device const uint* coords           [[buffer(0)]],
+    device const uint* scalars          [[buffer(1)]],
+    constant uint& input_size           [[buffer(2)]],
+    device FieldElement* point_x        [[buffer(3)]],
+    device FieldElement* point_y        [[buffer(4)]],
+    device uint* chunks                 [[buffer(5)]],
+    uint3 gid                           [[thread_position_in_grid]]
+) {
     uint gidx = gid.x;
     uint gidy = gid.y;
     uint id   = gidx * NUM_Y_WORKGROUPS + gidy;
@@ -62,8 +61,8 @@ kernel void convert_point_coords_and_decompose_scalars(
 
     // Convert x,y to Montgomery form: X = x * R mod p, Y = y * R mod p.
     BigIntWide r = get_r();
-    BigInt x_mont = field_mul(bigint_to_wide(x_bigint), r);
-    BigInt y_mont = field_mul(bigint_to_wide(y_bigint), r);
+    FieldElement x_mont = field_mul(bigint_to_wide(x_bigint), r);
+    FieldElement y_mont = field_mul(bigint_to_wide(y_bigint), r);
 
     // Store them in point_x, point_y
     point_x[id] = x_mont;

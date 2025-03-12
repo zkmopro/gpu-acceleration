@@ -9,37 +9,33 @@ using namespace metal;
 #include "./utils.metal"
 
 Jacobian jacobian_dbl_2009_l(Jacobian pt) {
-    BigInt x = pt.x;
-    BigInt y = pt.y;
-    BigInt z = pt.z;
+    FieldElement x = pt.x;
+    FieldElement y = pt.y;
+    FieldElement z = pt.z;
 
-    BigInt a = mont_mul_cios(x, x);
-    BigInt b = mont_mul_cios(y, y);
-    BigInt c = mont_mul_cios(b, b);
-    BigInt x1b = ff_add(x, b);
-    BigInt x1b2 = mont_mul_cios(x1b, x1b);
-    BigInt ac = ff_add(a, c);
-    BigInt x1b2ac = ff_sub(x1b2, ac);
-    BigInt d = ff_add(x1b2ac, x1b2ac);
-    BigInt a2 = ff_add(a, a);
-    BigInt e = ff_add(a2, a);
-    BigInt f = mont_mul_cios(e, e);
-    BigInt d2 = ff_add(d, d);
-    BigInt x3 = ff_sub(f, d2);
-    BigInt c2 = ff_add(c, c);
-    BigInt c4 = ff_add(c2, c2);
-    BigInt c8 = ff_add(c4, c4);
-    BigInt dx3 = ff_sub(d, x3);
-    BigInt edx3 = mont_mul_cios(e, dx3);
-    BigInt y3 = ff_sub(edx3, c8);
-    BigInt y1z1 = mont_mul_cios(y, z);
-    BigInt z3 = ff_add(y1z1, y1z1);
+    FieldElement a = x * x;
+    FieldElement b = y * y;
+    FieldElement c = b * b;
+    FieldElement x1b = x + b;
+    FieldElement x1b2 = x1b * x1b;
+    FieldElement ac = a + c;
+    FieldElement x1b2ac = x1b2 - ac;
+    FieldElement d = x1b2ac + x1b2ac;
+    FieldElement a2 = a + a;
+    FieldElement e = a2 + a;
+    FieldElement f = e * e;
+    FieldElement d2 = d + d;
+    FieldElement x3 = f - d2;
+    FieldElement c2 = c + c;
+    FieldElement c4 = c2 + c2;
+    FieldElement c8 = c4 + c4;
+    FieldElement dx3 = d - x3;
+    FieldElement edx3 = e * dx3;
+    FieldElement y3 = edx3 - c8;
+    FieldElement y1z1 = y * z;
+    FieldElement z3 = y1z1 + y1z1;
 
-    Jacobian result;
-    result.x = x3;
-    result.y = y3;
-    result.z = z3;
-    return result;
+    return Jacobian{ .x = x3, .y = y3, .z = z3 };
 }
 
 Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
@@ -47,129 +43,114 @@ Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
     if (is_jacobian_zero(b)) return a;
     if (a == b) return jacobian_dbl_2009_l(a);
 
-    BigInt x1 = a.x;
-    BigInt y1 = a.y;
-    BigInt z1 = a.z;
-    BigInt x2 = b.x;
-    BigInt y2 = b.y;
-    BigInt z2 = b.z;
+    FieldElement x1 = a.x;
+    FieldElement y1 = a.y;
+    FieldElement z1 = a.z;
+    FieldElement x2 = b.x;
+    FieldElement y2 = b.y;
+    FieldElement z2 = b.z;
 
     // First compute z coordinates
-    BigInt z1z1 = mont_mul_cios(z1, z1);
-    BigInt z2z2 = mont_mul_cios(z2, z2);
-    BigInt u1 = mont_mul_cios(x1, z2z2);
-    BigInt u2 = mont_mul_cios(x2, z1z1);
-    BigInt y1z2 = mont_mul_cios(y1, z2);
-    BigInt s1 = mont_mul_cios(y1z2, z2z2);
+    FieldElement z1z1 = z1 * z1;
+    FieldElement z2z2 = z2 * z2;
+    FieldElement u1 = x1 * z2z2;
+    FieldElement u2 = x2 * z1z1;
+    FieldElement y1z2 = y1 * z2;
+    FieldElement s1 = y1z2 * z2z2;
 
-    BigInt y2z1 = mont_mul_cios(y2, z1);
-    BigInt s2 = mont_mul_cios(y2z1, z1z1);
-    BigInt h = ff_sub(u2, u1);
-    BigInt h2 = ff_add(h, h);
-    BigInt i = mont_mul_cios(h2, h2);
-    BigInt j = mont_mul_cios(h, i);
+    FieldElement y2z1 = y2 * z1;
+    FieldElement s2 = y2z1 * z1z1;
+    FieldElement h = u2 - u1;
+    FieldElement h2 = h + h;
+    FieldElement i = h2 * h2;
+    FieldElement j = h * i;
 
-    BigInt s2s1 = ff_sub(s2, s1);
-    BigInt r = ff_add(s2s1, s2s1);
-    BigInt v = mont_mul_cios(u1, i);
-    BigInt v2 = ff_add(v, v);
-    BigInt r2 = mont_mul_cios(r, r);
-    BigInt jv2 = ff_add(j, v2);
-    BigInt x3 = ff_sub(r2, jv2);
+    FieldElement s2s1 = s2 - s1;
+    FieldElement r = s2s1 + s2s1;
+    FieldElement v = u1 * i;
+    FieldElement v2 = v + v;
+    FieldElement r2 = r * r;
+    FieldElement jv2 = j + v2;
+    FieldElement x3 = r2 - jv2;
 
-    BigInt vx3 = ff_sub(v, x3);
-    BigInt rvx3 = mont_mul_cios(r, vx3);
-    BigInt s12 = ff_add(s1, s1);
-    BigInt s12j = mont_mul_cios(s12, j);
-    BigInt y3 = ff_sub(rvx3, s12j);
+    FieldElement vx3 = v - x3;
+    FieldElement rvx3 = r * vx3;
+    FieldElement s12 = s1 + s1;
+    FieldElement s12j = s12 * j;
+    FieldElement y3 = rvx3 - s12j;
 
-    BigInt z1z2 = mont_mul_cios(z1, z2);
-    BigInt z1z2h = mont_mul_cios(z1z2, h);
-    BigInt z3 = ff_add(z1z2h, z1z2h);
+    FieldElement z1z2 = z1 * z2;
+    FieldElement z1z2h = z1z2 * h;
+    FieldElement z3 = z1z2h + z1z2h;
 
-    Jacobian result;
-    result.x = x3;
-    result.y = y3;
-    result.z = z3;
-    return result;
+    return Jacobian{ .x = x3, .y = y3, .z = z3 };
 }
 
 // Notice that this algo only takes standard form instead of Montgomery form
 // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-madd-2007-bl
 Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
-    BigInt x1 = a.x;
-    BigInt y1 = a.y;
-    BigInt z1 = a.z;
-    BigInt x2 = b.x;
-    BigInt y2 = b.y;
+    FieldElement x1 = a.x;
+    FieldElement y1 = a.y;
+    FieldElement z1 = a.z;
+    FieldElement x2 = b.x;
+    FieldElement y2 = b.y;
 
     // Z1Z1 = Z1^2
-    BigInt z1z1 = mont_mul_cios(z1, z1);
+    FieldElement z1z1 = z1 * z1;
     
     // U2 = X2*Z1Z1
-    BigInt u2 = mont_mul_cios(x2, z1z1);
+    FieldElement u2 = x2 * z1z1;
     
     // S2 = Y2*Z1*Z1Z1
-    BigInt temp_s2 = mont_mul_cios(y2, z1);
-    BigInt s2 = mont_mul_cios(temp_s2, z1z1);
+    FieldElement temp_s2 = y2 * z1;
+    FieldElement s2 = temp_s2 * z1z1;
     
     // H = U2-X1
-    BigInt h = ff_sub(u2, x1);
+    FieldElement h = u2 - x1;
     
     // HH = H^2
-    BigInt hh = mont_mul_cios(h, h);
+    FieldElement hh = h * h;
     
     // I = 4*HH
-    BigInt i = ff_add(hh, hh); // *2
-    i = ff_add(i, i);          // *4
+    FieldElement i = hh + hh; // *2
+    i = i + i;  // *4
     
     // J = H*I
-    BigInt j = mont_mul_cios(h, i);
+    FieldElement j = h * i;
     
     // r = 2*(S2-Y1)
-    BigInt s2_minus_y1 = ff_sub(s2, y1);
-    BigInt r = ff_add(s2_minus_y1, s2_minus_y1);
+    FieldElement s2_minus_y1 = s2 - y1;
+    FieldElement r = s2_minus_y1 + s2_minus_y1;
     
     // V = X1*I
-    BigInt v = mont_mul_cios(x1, i);
+    FieldElement v = x1 * i;
     
     // X3 = r^2-J-2*V
-    BigInt r2 = mont_mul_cios(r, r);
-    BigInt v2 = ff_add(v, v);
-    BigInt jv2 = ff_add(j, v2);
-    BigInt x3 = ff_sub(r2, jv2);
+    FieldElement r2 = r * r;
+    FieldElement v2 = v + v;
+    FieldElement jv2 = j + v2;
+    FieldElement x3 = r2 - jv2;
     
     // Y3 = r*(V-X3)-2*Y1*J
-    BigInt v_minus_x3 = ff_sub(v, x3);
-    BigInt r_vmx3 = mont_mul_cios(r, v_minus_x3);
-    BigInt y1j = mont_mul_cios(y1, j);
-    BigInt y1j2 = ff_add(y1j, y1j);
-    BigInt y3 = ff_sub(r_vmx3, y1j2);
+    FieldElement v_minus_x3 = v - x3;
+    FieldElement r_vmx3 = r * v_minus_x3;
+    FieldElement y1j = y1 * j;
+    FieldElement y1j2 = y1j + y1j;
+    FieldElement y3 = r_vmx3 - y1j2;
     
     // Z3 = (Z1+H)^2-Z1Z1-HH
-    BigInt z1_plus_h = ff_add(z1, h);
-    BigInt z1_plus_h_squared = mont_mul_cios(z1_plus_h, z1_plus_h);
-    BigInt temp = ff_sub(z1_plus_h_squared, z1z1);
-    BigInt z3 = ff_sub(temp, hh);
+    FieldElement z1_plus_h = z1 + h;
+    FieldElement z1_plus_h_squared = z1_plus_h * z1_plus_h;
+    FieldElement temp = z1_plus_h_squared - z1z1;
+    FieldElement z3 = temp - hh;
     
-    Jacobian result;
-    result.x = x3;
-    result.y = y3;
-    result.z = z3;
-    return result;
+    return Jacobian{ .x = x3, .y = y3, .z = z3 };
 }
 
-Jacobian jacobian_scalar_mul(
-    Jacobian point,
-    uint scalar
-) {
+Jacobian jacobian_scalar_mul(Jacobian point, uint scalar) {
     // Handle special cases first
-    if (scalar == 0 || is_bigint_zero(point.z)) {
-        return get_bn254_zero_mont();
-    }
-    if (scalar == 1) {
-        return point;
-    }
+    if (scalar == 0 || is_bigint_zero(point.z.value)) return get_bn254_zero_mont();
+    if (scalar == 1) return point;
 
     Jacobian result = get_bn254_zero_mont();
     Jacobian temp = point;
@@ -182,25 +163,28 @@ Jacobian jacobian_scalar_mul(
         temp = jacobian_dbl_2009_l(temp);
         s = s >> 1;
     }
-    
     return result;
 }
 
 Jacobian jacobian_neg(Jacobian a) {
-    if (is_jacobian_zero(a)) { return a; }
+    if (is_jacobian_zero(a)) return a;
 
     // Negate Y (mod p): newY = p - Y
-    BigInt p = get_p();
-    BigInt negY = ff_sub(p, a.y);
+    FieldElement p = FieldElement{ .value = a.x.modulus, .modulus = a.x.modulus };  // TODO: refactor this
+    FieldElement negY = p - a.y;
 
-    Jacobian result;
-    result.x = a.x;
-    result.y = negY;
-    result.z = a.z;
-    return result;
+    return Jacobian{ .x = a.x, .y = negY, .z = a.z };
 }
 
 // Override operators in Jacobian
 constexpr Jacobian operator+(const Jacobian lhs, const Jacobian rhs) {
     return jacobian_add_2007_bl(lhs, rhs);
+}
+
+constexpr Jacobian operator+(const Jacobian lhs, const Affine rhs) {
+    return jacobian_madd_2007_bl(lhs, rhs);
+}
+
+constexpr Jacobian operator-(const Jacobian pt) {
+    return jacobian_neg(pt);
 }

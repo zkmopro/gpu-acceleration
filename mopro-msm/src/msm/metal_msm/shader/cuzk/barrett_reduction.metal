@@ -75,7 +75,7 @@ BigInt get_higher_with_slack(BigIntExtraWide a) {
     return out;
 }
 
-BigInt barrett_reduce(BigIntExtraWide a) {
+FieldElement barrett_reduce(BigIntExtraWide a) {
     for (uint i = 0; i < NUM_LIMBS; i++) {
         LOG_DEBUG_DUPL("res.limbs[%u] = %u", i, a.limbs[i]);
     }
@@ -98,15 +98,18 @@ BigInt barrett_reduce(BigIntExtraWide a) {
         r_wide = add_512(r_wide, p_wide).value;
     }
 
-    BigInt r = bigint_zero();
+    FieldElement res = {
+        .value = bigint_zero(),
+        .modulus = get_p()
+    };
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        r.limbs[i] = r_wide.limbs[i];
+        res.value.limbs[i] = r_wide.limbs[i];
     }
 
-    return ff_reduce(r);
+    return ff_reduce(res);
 }
 
-BigInt field_mul(BigIntWide a, BigIntWide b) {
+FieldElement field_mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide xy = mul(a, b);
     return barrett_reduce(xy);
 }

@@ -16,17 +16,18 @@ kernel void run(
     device BigInt* result_zr [[ buffer(7) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt x1 = *a_xr;
-    BigInt y1 = *a_yr;
-    BigInt z1 = *a_zr;
-    BigInt x2 = *b_xr;
-    BigInt y2 = *b_yr;
+    BigInt p = get_p();
+    FieldElement x1 = FieldElement{ .value = *a_xr, .modulus = p };
+    FieldElement y1 = FieldElement{ .value = *a_yr, .modulus = p };
+    FieldElement z1 = FieldElement{ .value = *a_zr, .modulus = p };
+    FieldElement x2 = FieldElement{ .value = *b_xr, .modulus = p };
+    FieldElement y2 = FieldElement{ .value = *b_yr, .modulus = p };
 
-    Jacobian a; a.x = x1; a.y = y1; a.z = z1;
-    Affine b; b.x = x2; b.y = y2;
+    Jacobian a = Jacobian{ .x = x1, .y = y1, .z = z1 };
+    Affine b = Affine{ .x = x2, .y = y2 };
 
-    Jacobian res = jacobian_madd_2007_bl(a, b);
-    *result_xr = res.x;
-    *result_yr = res.y;
-    *result_zr = res.z;
+    Jacobian res = a + b;
+    *result_xr = res.x.value;
+    *result_yr = res.y.value;
+    *result_zr = res.z.value;
 }

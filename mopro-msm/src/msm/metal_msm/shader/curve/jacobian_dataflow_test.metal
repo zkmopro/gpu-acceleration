@@ -1,4 +1,3 @@
-
 using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>

@@ -11,5 +11,9 @@ kernel void run(
     device BigInt* result [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *result = mont_mul_optimised(*lhs, *rhs);
+    BigInt p = get_p();
+    FieldElement lhs_field = { .value = *lhs, .modulus = p };
+    FieldElement rhs_field = { .value = *rhs, .modulus = p };
+    FieldElement res_field = mont_mul_optimised(lhs_field, rhs_field);
+    *result = res_field.value;
 }

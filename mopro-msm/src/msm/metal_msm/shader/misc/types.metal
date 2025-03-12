@@ -2,6 +2,7 @@
 
 using namespace metal;
 #include <metal_stdlib>
+#include "../constants.metal"
 
 struct BigInt {
     array<uint, NUM_LIMBS> limbs;
@@ -30,13 +31,19 @@ struct BigIntResultExtraWide {
     bool carry;
 };
 
+// wrapper around BigInt to avoid having to pass modulus around
+struct FieldElement {
+    BigInt value;
+    BigInt modulus;
+};
+
 struct Jacobian {
-    BigInt x;
-    BigInt y;
-    BigInt z;
+    FieldElement x;
+    FieldElement y;
+    FieldElement z;
 };
 
 struct Affine {
-    BigInt x;
-    BigInt y;
+    FieldElement x;
+    FieldElement y;
 };

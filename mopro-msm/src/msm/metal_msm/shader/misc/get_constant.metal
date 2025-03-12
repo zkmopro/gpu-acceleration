@@ -2,7 +2,6 @@
 
 using namespace metal;
 #include <metal_stdlib>
-#include "../constants.metal"
 #include "../misc/types.metal"
 
 BigInt get_mu() {
@@ -84,9 +83,9 @@ BigIntExtraWide bigint_zero_extra_wide() {
 Jacobian get_bn254_zero() {
     Jacobian zero;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        zero.x.limbs[i] = BN254_ZERO_X[i];
-        zero.y.limbs[i] = BN254_ZERO_Y[i];
-        zero.z.limbs[i] = BN254_ZERO_Z[i];
+        zero.x.value.limbs[i] = BN254_ZERO_X[i];
+        zero.y.value.limbs[i] = BN254_ZERO_Y[i];
+        zero.z.value.limbs[i] = BN254_ZERO_Z[i];
     }
     return zero;
 }
@@ -94,9 +93,9 @@ Jacobian get_bn254_zero() {
 Jacobian get_bn254_one() {
     Jacobian one;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        one.x.limbs[i] = BN254_ONE_X[i];
-        one.y.limbs[i] = BN254_ONE_Y[i];
-        one.z.limbs[i] = BN254_ONE_Z[i];
+        one.x.value.limbs[i] = BN254_ONE_X[i];
+        one.y.value.limbs[i] = BN254_ONE_Y[i];
+        one.z.value.limbs[i] = BN254_ONE_Z[i];
     }
     return one;
 }
@@ -104,9 +103,9 @@ Jacobian get_bn254_one() {
 Jacobian get_bn254_zero_mont() {
     Jacobian zero;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        zero.x.limbs[i] = BN254_ZERO_XR[i];
-        zero.y.limbs[i] = BN254_ZERO_YR[i];
-        zero.z.limbs[i] = BN254_ZERO_ZR[i];
+        zero.x.value.limbs[i] = BN254_ZERO_XR[i];
+        zero.y.value.limbs[i] = BN254_ZERO_YR[i];
+        zero.z.value.limbs[i] = BN254_ZERO_ZR[i];
     }
     return zero;
 }
@@ -114,9 +113,9 @@ Jacobian get_bn254_zero_mont() {
 Jacobian get_bn254_one_mont() {
     Jacobian one;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        one.x.limbs[i] = BN254_ONE_XR[i];
-        one.y.limbs[i] = BN254_ONE_YR[i];
-        one.z.limbs[i] = BN254_ONE_ZR[i];
+        one.x.value.limbs[i] = BN254_ONE_XR[i];
+        one.y.value.limbs[i] = BN254_ONE_YR[i];
+        one.z.value.limbs[i] = BN254_ONE_ZR[i];
     }
     return one;
 }

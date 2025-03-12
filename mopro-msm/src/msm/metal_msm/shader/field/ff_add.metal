@@ -11,5 +11,10 @@ kernel void run(
     device BigInt* res [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *res = ff_add(*a, *b);
+    // wrap into FieldElement
+    BigInt p = get_p();
+    FieldElement a_field = { .value = *a, .modulus = p };
+    FieldElement b_field = { .value = *b, .modulus = p };
+    FieldElement res_field = a_field + b_field;
+    *res = res_field.value;
 }
