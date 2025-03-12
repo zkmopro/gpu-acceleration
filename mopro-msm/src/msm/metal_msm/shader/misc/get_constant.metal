@@ -4,6 +4,38 @@ using namespace metal;
 #include <metal_stdlib>
 #include "../misc/types.metal"
 
+#define INIT_LIMB(i) BN254_BASEFIELD_MODULUS[i]
+
+// for 16-bit mont_mul_cios (optimised for BN254)
+#define LIMBS_16 INIT_LIMB(0), INIT_LIMB(1), INIT_LIMB(2), INIT_LIMB(3), \
+                 INIT_LIMB(4), INIT_LIMB(5), INIT_LIMB(6), INIT_LIMB(7), \
+                 INIT_LIMB(8), INIT_LIMB(9), INIT_LIMB(10), INIT_LIMB(11), \
+                 INIT_LIMB(12), INIT_LIMB(13), INIT_LIMB(14), INIT_LIMB(15)
+// for 15-bit mont_mul_modified
+#define LIMBS_17 INIT_LIMB(0), INIT_LIMB(1), INIT_LIMB(2), INIT_LIMB(3), \
+                 INIT_LIMB(4), INIT_LIMB(5), INIT_LIMB(6), INIT_LIMB(7), \
+                 INIT_LIMB(8), INIT_LIMB(9), INIT_LIMB(10), INIT_LIMB(11), \
+                 INIT_LIMB(12), INIT_LIMB(13), INIT_LIMB(14), INIT_LIMB(15), \
+                 INIT_LIMB(16)
+// for 13-bit mont_mul_optimised
+#define LIMBS_20 INIT_LIMB(0), INIT_LIMB(1), INIT_LIMB(2), INIT_LIMB(3), \
+                 INIT_LIMB(4), INIT_LIMB(5), INIT_LIMB(6), INIT_LIMB(7), \
+                 INIT_LIMB(8), INIT_LIMB(9), INIT_LIMB(10), INIT_LIMB(11), \
+                 INIT_LIMB(12), INIT_LIMB(13), INIT_LIMB(14), INIT_LIMB(15), \
+                 INIT_LIMB(16), INIT_LIMB(17), INIT_LIMB(18), INIT_LIMB(19)
+
+// Since modulus is constantly used, we initialize it here
+// and return its ptr when needed
+constant BigInt modulus = {
+#if (NUM_LIMBS == 16)
+    LIMBS_16
+#elif (NUM_LIMBS == 17)
+    LIMBS_17
+#elif (NUM_LIMBS == 20)
+    LIMBS_20
+#endif
+};
+
 BigInt get_mu() {
     BigInt mu;
     for (uint i = 0; i < NUM_LIMBS; i++) {
@@ -15,12 +47,10 @@ BigInt get_mu() {
 BigInt get_n0() {
     BigInt n0;
     uint tmp = N0;
-    
     for (uint i = 0; i < NUM_LIMBS; i++) {
         n0.limbs[i] = tmp & MASK;
         tmp >>= LOG_LIMB_SIZE;
     }
-    
     return n0;
 }
 
@@ -32,12 +62,9 @@ BigIntWide get_r() {
     return r;
 }
 
-BigInt get_p() {
-    BigInt p;
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        p.limbs[i] = BN254_BASEFIELD_MODULUS[i];
-    }
-    return p;
+/// Returns a reference to the modulus
+constant BigInt* get_p() {
+    return &modulus;
 }
 
 BigIntWide get_p_wide() {

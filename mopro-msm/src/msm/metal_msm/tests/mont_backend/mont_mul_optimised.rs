@@ -17,12 +17,6 @@ use rand::thread_rng;
 
 #[test]
 #[serial_test::serial]
-pub fn test_mont_mul_12() {
-    do_test(12);
-}
-
-#[test]
-#[serial_test::serial]
 pub fn test_mont_mul_13() {
     do_test(13);
 }
