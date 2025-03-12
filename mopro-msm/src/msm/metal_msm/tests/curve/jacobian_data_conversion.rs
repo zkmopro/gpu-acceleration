@@ -20,7 +20,6 @@ fn test_jacobian_dataflow() {
 
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let res = calc_rinv_and_n0(&p, &r, log_limb_size);
-    let rinv = res.0;
     let n0 = res.1;
     let nsafe = calc_nsafe(log_limb_size);
 
@@ -73,7 +72,7 @@ fn test_jacobian_dataflow() {
     command_buffer.commit();
     command_buffer.wait_until_completed();
 
-    let result_points: Vec<G> = points_from_gpu_buffer(&output_buffer, num_limbs, p, rinv);
+    let result_points: Vec<G> = points_from_gpu_buffer(&output_buffer, num_limbs);
     for i in 0..points.len() {
         assert_eq!(points[i] * ScalarField::from(2 as u64), result_points[i]);
     }
