@@ -384,11 +384,7 @@ pub fn test_pbpr_simple_input() {
 
     let cpu_naive_result = cpu_naive_bpr(&buckets);
     let cpu_pbpr_result = cpu_parallel_bpr(&buckets);
-
-    let start = Instant::now();
     let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
-    let duration = start.elapsed();
-    println!("gpu_parallel_bpr execution time: {:?}", duration);
 
     assert_eq!(gpu_pbpr_result, cpu_naive_result);
     assert_eq!(gpu_pbpr_result, cpu_pbpr_result);
@@ -406,13 +402,7 @@ fn test_pbpr_random_inputs() {
             .map(|_| generator * ScalarField::rand(&mut rng))
             .collect::<Vec<G>>();
         let naive_result = cpu_naive_bpr(&buckets);
-        let start = Instant::now();
         let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
-        let duration = start.elapsed();
-        println!(
-            "Size: {}, gpu_parallel_bpr execution time: {:?}",
-            size, duration
-        );
         assert_eq!(gpu_pbpr_result, naive_result);
     }
 }
