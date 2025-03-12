@@ -17,13 +17,12 @@ kernel void run(
     device BigInt* result_zr [[ buffer(8) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt p = get_p();
-    FieldElement x1 = FieldElement{ .value = *a_xr, .modulus = p };
-    FieldElement y1 = FieldElement{ .value = *a_yr, .modulus = p };
-    FieldElement z1 = FieldElement{ .value = *a_zr, .modulus = p };
-    FieldElement x2 = FieldElement{ .value = *b_xr, .modulus = p };
-    FieldElement y2 = FieldElement{ .value = *b_yr, .modulus = p };
-    FieldElement z2 = FieldElement{ .value = *b_zr, .modulus = p };
+    FieldElement x1 = FieldElement{ *a_xr };
+    FieldElement y1 = FieldElement{ *a_yr };
+    FieldElement z1 = FieldElement{ *a_zr };
+    FieldElement x2 = FieldElement{ *b_xr };
+    FieldElement y2 = FieldElement{ *b_yr };
+    FieldElement z2 = FieldElement{ *b_zr };
 
     Jacobian a = Jacobian{ .x = x1, .y = y1, .z = z1 };
     Jacobian b = Jacobian{ .x = x2, .y = y2, .z = z2 };

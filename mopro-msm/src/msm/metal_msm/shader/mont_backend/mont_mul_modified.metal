@@ -11,9 +11,8 @@ kernel void run(
     device BigInt* result [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt p = get_p();
-    FieldElement lhs_field = { .value = *lhs, .modulus = p };
-    FieldElement rhs_field = { .value = *rhs, .modulus = p };
+    FieldElement lhs_field = { *lhs };
+    FieldElement rhs_field = { *rhs };
     FieldElement res_field = mont_mul_modified(lhs_field, rhs_field);
     *result = res_field.value;
 }

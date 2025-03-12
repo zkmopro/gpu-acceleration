@@ -8,15 +8,15 @@ using namespace metal;
 
 /// Reduce if the value is greater than the modulus
 FieldElement ff_reduce(FieldElement a) {
-    BigIntResult sub_res = bigint_sub(a.value, a.modulus);
+    BigIntResult sub_res = bigint_sub(a.value, *get_p());
     if (sub_res.carry == 1) return a;
-    return FieldElement{ .value = sub_res.value, .modulus = a.modulus };
+    return FieldElement{ sub_res.value };
 }
 
 /// Reduce once if the value is greater than the modulus
 FieldElement ff_conditional_reduce(FieldElement a) {
-    if (a.value >= a.modulus) {
-        a.value = a.value - a.modulus;
+    if (a.value >= *get_p()) {
+        a.value = a.value - *get_p();
     }
     return a;
 }
@@ -24,7 +24,6 @@ FieldElement ff_conditional_reduce(FieldElement a) {
 FieldElement ff_add(FieldElement a, FieldElement b) {
     FieldElement res;
     res.value = a.value + b.value;
-    res.modulus = a.modulus;
     return ff_reduce(res);
 }
 
@@ -37,9 +36,9 @@ FieldElement ff_sub(FieldElement a, FieldElement b) {
     else {
         // p - (b - a)
         BigInt diff = b.value - a.value;
-        sub_res = a.modulus - diff;
+        sub_res = *get_p() - diff;
     }
-    return FieldElement{ .value = sub_res, .modulus = a.modulus };
+    return FieldElement{ sub_res };
 }
 
 // Overload Operators

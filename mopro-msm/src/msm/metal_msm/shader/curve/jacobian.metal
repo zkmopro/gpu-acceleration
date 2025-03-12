@@ -170,7 +170,7 @@ Jacobian jacobian_neg(Jacobian a) {
     if (is_jacobian_zero(a)) return a;
 
     // Negate Y (mod p): newY = p - Y
-    FieldElement p = FieldElement{ .value = a.x.modulus, .modulus = a.x.modulus };  // TODO: refactor this
+    FieldElement p = FieldElement{ *get_p() };
     FieldElement negY = p - a.y;
 
     return Jacobian{ .x = a.x, .y = negY, .z = a.z };

@@ -12,9 +12,8 @@ kernel void run(
     uint gid [[ thread_position_in_grid ]]
 ) {
     // wrap into FieldElement
-    BigInt p = get_p();
-    FieldElement a_field = { .value = *a, .modulus = p };
-    FieldElement b_field = { .value = *b, .modulus = p };
+    FieldElement a_field = { *a };
+    FieldElement b_field = { *b };
     FieldElement res_field = a_field + b_field;
     *res = res_field.value;
 }

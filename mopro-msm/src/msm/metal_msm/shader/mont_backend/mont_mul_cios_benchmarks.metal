@@ -10,9 +10,8 @@ kernel void run(
     device BigInt* result [[ buffer(3) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    BigInt p = get_p();
-    FieldElement lhs_field = { .value = *lhs, .modulus = p };
-    FieldElement rhs_field = { .value = *rhs, .modulus = p };
+    FieldElement lhs_field = { *lhs };
+    FieldElement rhs_field = { *rhs };
     array<uint, 1> cost_arr = *cost;
 
     // calculate lhs^3 * rhs
