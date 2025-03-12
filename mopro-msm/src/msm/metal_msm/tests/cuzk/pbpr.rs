@@ -10,7 +10,6 @@ use ark_std::{rand::thread_rng, UniformRand, Zero};
 use metal::*;
 use num_bigint::BigUint;
 use rayon::prelude::*;
-use std::time::Instant;
 
 fn closest_power_of_two(n: usize) -> usize {
     if n <= 1 {
