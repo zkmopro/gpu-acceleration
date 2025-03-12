@@ -2,7 +2,7 @@ use crate::msm::metal_msm::host::gpu::create_buffer;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
 use ark_bn254::{Fq as BaseField, FqConfig, G1Projective as G};
-use ark_ff::{biginteger::arithmetic as fa, BigInt, MontBackend, MontConfig, PrimeField};
+use ark_ff::{biginteger::arithmetic as fa, BigInt, MontConfig, PrimeField};
 use metal::*;
 use num_bigint::BigUint;
 
@@ -78,12 +78,7 @@ pub fn points_to_gpu_buffer(points: &[G], num_limbs: usize, device: &Device) -> 
     create_buffer(&device, &all_point_data)
 }
 
-pub fn points_from_gpu_buffer(
-    buffer: &Buffer,
-    num_limbs: usize,
-    p: BigUint,
-    rinv: BigUint,
-) -> Vec<G> {
+pub fn points_from_gpu_buffer(buffer: &Buffer, num_limbs: usize) -> Vec<G> {
     let log_limb_size = 16;
     let point_size = num_limbs * 3;
     let total_u32s = buffer.length() as usize / std::mem::size_of::<u32>();

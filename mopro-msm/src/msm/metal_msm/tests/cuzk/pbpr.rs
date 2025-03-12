@@ -1,4 +1,4 @@
-use crate::msm::metal_msm::host::gpu::{create_buffer, create_empty_buffer, get_default_device};
+use crate::msm::metal_msm::host::gpu::{create_buffer, get_default_device};
 use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
 use crate::msm::metal_msm::utils::data_conversion::{
     points_from_gpu_buffer, points_to_gpu_buffer, raw_reduction,
@@ -37,9 +37,7 @@ fn closest_power_of_two(n: usize) -> usize {
 fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let mont_params = MontgomeryParams::default();
     let log_limb_size: u32 = 16;
-    let p: BigUint = mont_params.p;
     let num_limbs = mont_params.num_limbs;
-    let rinv = mont_params.rinv;
     let n0 = mont_params.n0;
     let nsafe = mont_params.nsafe;
 
@@ -133,7 +131,7 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     command_buffer.commit();
     command_buffer.wait_until_completed();
 
-    let s_shared = points_from_gpu_buffer(&s_shared_buffer, num_limbs, p, rinv);
+    let s_shared = points_from_gpu_buffer(&s_shared_buffer, num_limbs);
 
     s_shared.iter().sum::<G>()
 }
