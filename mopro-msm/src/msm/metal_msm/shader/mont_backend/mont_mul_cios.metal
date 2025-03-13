@@ -11,5 +11,8 @@ kernel void run(
     device BigInt* result [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *result = mont_mul_cios(*lhs, *rhs);
+    FieldElement lhs_field = { *lhs };
+    FieldElement rhs_field = { *rhs };
+    FieldElement res_field = mont_mul_cios(lhs_field, rhs_field);
+    *result = res_field.value;
 }

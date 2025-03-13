@@ -15,16 +15,16 @@ using namespace metal;
 #endif
 
 kernel void smvp(
-    device const uint*     row_ptr         [[ buffer(0) ]],
-    device const uint*     val_idx         [[ buffer(1) ]],
-    device const BigInt*   new_point_x     [[ buffer(2) ]],
-    device const BigInt*   new_point_y     [[ buffer(3) ]],
-    device BigInt*         bucket_x        [[ buffer(4) ]],
-    device BigInt*         bucket_y        [[ buffer(5) ]],
-    device BigInt*         bucket_z        [[ buffer(6) ]],
-    constant uint4&        params          [[ buffer(7) ]],
-    uint3                  gid             [[thread_position_in_grid]],
-    uint3                  tid             [[thread_position_in_threadgroup]]
+    device const uint*          row_ptr         [[ buffer(0) ]],
+    device const uint*          val_idx         [[ buffer(1) ]],
+    device const FieldElement*  new_point_x     [[ buffer(2) ]],
+    device const FieldElement*  new_point_y     [[ buffer(3) ]],
+    device FieldElement*        bucket_x        [[ buffer(4) ]],
+    device FieldElement*        bucket_y        [[ buffer(5) ]],
+    device FieldElement*        bucket_z        [[ buffer(6) ]],
+    constant uint4&             params          [[ buffer(7) ]],
+    uint3                       gid             [[thread_position_in_grid]],
+    uint3                       tid             [[thread_position_in_threadgroup]]
 ) {
     const uint input_size        = params[0];
     const uint num_y_workgroups  = params[1];
@@ -69,15 +69,16 @@ kernel void smvp(
         Jacobian sum = inf;
         for (uint k = row_begin; k < row_end; k++) {
             const uint idx = val_idx[ (subtask_idx + subtask_offset) * input_size + k ];
-            Jacobian b;
-            b.x = new_point_x[idx];
-            b.y = new_point_y[idx];
-            b.z = get_bn254_one_mont().z;
+            Jacobian b = {
+                .x = new_point_x[idx],
+                .y = new_point_y[idx],
+                .z = get_bn254_one_mont().z
+            };
 
-            sum = jacobian_add_2007_bl(sum, b);
+            sum = sum + b;
 
             // Debug for correct input points
-            LOG_DEBUG("new_point_x[%u].limbs[0]: %u", idx, new_point_x[idx].limbs[0]);
+            LOG_DEBUG("new_point_x[%u].value.limbs[0]: %u", idx, new_point_x[idx].value.limbs[0]);
         }
 
         // In short Weierstrass, negation = flip sign of Y mod p: jacobian_neg.
@@ -85,7 +86,7 @@ kernel void smvp(
         if (half_columns > row_idx) {
             // Negative bucket => flip sign of sum
             bucket_idx = half_columns - row_idx;
-            sum = jacobian_neg(sum);
+            sum = -sum;
         } else {
             // Positive bucket
             bucket_idx = row_idx - half_columns;
@@ -98,13 +99,14 @@ kernel void smvp(
             // If j == 1, add to the existing bucket at index `bi`.
             if (j == 1) {
                 // Load the previous partial sum from bucket_{x,y,z}, interpret as Jacobian
-                Jacobian bucket_val;
-                bucket_val.x = bucket_x[bi];
-                bucket_val.y = bucket_y[bi];
-                bucket_val.z = bucket_z[bi];
+                Jacobian bucket_val = {
+                    .x = bucket_x[bi],
+                    .y = bucket_y[bi],
+                    .z = bucket_z[bi]
+                };
 
                 // sum = oldBucket + sum
-                sum = jacobian_add_2007_bl(bucket_val, sum);
+                sum = bucket_val + sum;
             }
 
             // Store the result in bucket arrays
@@ -116,7 +118,7 @@ kernel void smvp(
         // Debug for correct sum
         if (id == 0) {
             for (uint i = 0; i < NUM_LIMBS; i++) {
-                LOG_DEBUG("sum[%u].x: %u", id, sum.x.limbs[i]);
+                LOG_DEBUG("sum[%u].x.value.limbs[%u]: %u", id, i, sum.x.value.limbs[i]);
             }
         }
     }

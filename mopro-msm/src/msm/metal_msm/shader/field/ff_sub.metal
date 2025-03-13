@@ -11,5 +11,9 @@ kernel void run(
     device BigInt* res [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *res = ff_sub(*a, *b);
+    // wrap into FieldElement
+    FieldElement a_field = { *a };
+    FieldElement b_field = { *b };
+    FieldElement res_field = a_field - b_field;
+    *res = res_field.value;
 }
