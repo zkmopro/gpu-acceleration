@@ -96,6 +96,14 @@ fn test_sparse_matrix_transposition() {
         let csc_val_idxs: Vec<u32> =
             read_buffer(&all_csc_val_idxs_buf, num_subtasks * input_size as usize);
 
+        // Drop the buffers after reading the results
+        drop(all_csr_col_idx_buf);
+        drop(all_csc_col_ptr_buf);
+        drop(all_csc_val_idxs_buf);
+        drop(all_curr_buf);
+        drop(params_buf);
+        drop(command_queue);
+
         // Validate each subtask
         for subtask in 0..num_subtasks {
             let offset = subtask * (n as usize + 1);

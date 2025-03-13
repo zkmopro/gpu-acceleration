@@ -94,6 +94,12 @@ pub fn test_bigint_sub_no_underflow() {
 
     let result = BigInt::from_limbs(&result_limbs, log_limb_size);
     assert_eq!(result, expected);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(b_buf);
+    drop(result_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -180,4 +186,10 @@ fn test_bigint_sub_underflow() {
 
     let result = BigInt::from_limbs(&result_limbs, log_limb_size);
     assert_eq!(result, expected);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(b_buf);
+    drop(result_buf);
+    drop(command_queue);
 }

@@ -137,6 +137,15 @@ fn test_point_coords_conversion() {
     let x_result = read_buffer(&point_x_buf, num_limbs);
     let y_result = read_buffer(&point_y_buf, num_limbs);
 
+    // Drop the buffers after reading the results
+    drop(coords_buf);
+    drop(scalars_buf);
+    drop(input_size_buf);
+    drop(point_x_buf);
+    drop(point_y_buf);
+    drop(chunks_buf);
+    drop(command_queue);
+
     assert_eq!(x_result, x_mont_in_ark_limbs, "X conversion mismatch");
     assert_eq!(y_result, y_mont_in_ark_limbs, "Y conversion mismatch");
 }

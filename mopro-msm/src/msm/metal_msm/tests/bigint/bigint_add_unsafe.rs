@@ -94,4 +94,10 @@ pub fn test_bigint_add_unsafe() {
 
     let result = BigInt::from_limbs(&result_limbs, log_limb_size);
     assert_eq!(result, expected);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(b_buf);
+    drop(result_buf);
+    drop(command_queue);
 }

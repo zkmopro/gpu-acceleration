@@ -115,6 +115,12 @@ pub fn do_test(log_limb_size: u32) {
 
     assert!(result == expected.try_into().unwrap());
     assert!(result_limbs == expected_limbs);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(b_buf);
+    drop(result_buf);
+    drop(command_queue);
 }
 
 #[test]

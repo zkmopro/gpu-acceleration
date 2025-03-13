@@ -123,4 +123,10 @@ pub fn test_ff_add() {
 
     assert!(result == expected);
     assert!(result_limbs == expected_limbs);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(b_buf);
+    drop(result_buf);
+    drop(command_queue);
 }

@@ -97,6 +97,12 @@ fn jacobian_scalar_mul_kernel(point: G, scalar: u32, name: &str) -> G {
 
     let result_slice = read_buffer(&result_buf, num_limbs * 3);
 
+    // Drop the buffers after reading the results
+    drop(input_buf);
+    drop(scalar_buf);
+    drop(result_buf);
+    drop(command_queue);
+
     let result_xr = &result_slice[..num_limbs];
     let result_yr = &result_slice[num_limbs..2 * num_limbs];
     let result_zr = &result_slice[2 * num_limbs..];

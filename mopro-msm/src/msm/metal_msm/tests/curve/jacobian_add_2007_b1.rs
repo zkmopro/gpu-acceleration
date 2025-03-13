@@ -134,6 +134,18 @@ fn jacobian_add_2007_bl_kernel(a: G, b: G, name: &str) -> G {
     let result_yr_limbs: Vec<u32> = read_buffer(&result_yr_buf, num_limbs);
     let result_zr_limbs: Vec<u32> = read_buffer(&result_zr_buf, num_limbs);
 
+    // Drop the buffers after reading the results
+    drop(axr_buf);
+    drop(ayr_buf);
+    drop(azr_buf);
+    drop(bxr_buf);
+    drop(byr_buf);
+    drop(bzr_buf);
+    drop(result_xr_buf);
+    drop(result_yr_buf);
+    drop(result_zr_buf);
+    drop(command_queue);
+
     let result_xr: BigUint = BigInt::<4>::from_limbs(&result_xr_limbs, log_limb_size)
         .try_into()
         .unwrap();

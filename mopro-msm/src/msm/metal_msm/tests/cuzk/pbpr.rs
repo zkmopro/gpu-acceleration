@@ -292,6 +292,21 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let m_shared_y_ptr = m_shared_y_buffer.contents() as *const u32;
     let m_shared_z_ptr = m_shared_z_buffer.contents() as *const u32;
 
+    // Drop the buffers after reading the results
+    drop(buckets_x_buffer);
+    drop(buckets_y_buffer);
+    drop(buckets_z_buffer);
+    drop(m_shared_x_buffer);
+    drop(m_shared_y_buffer);
+    drop(m_shared_z_buffer);
+    drop(s_shared_x_buffer);
+    drop(s_shared_y_buffer);
+    drop(s_shared_z_buffer);
+    drop(grid_width_buffer);
+    drop(total_threads_buffer);
+    drop(num_subtask_buffer);
+    drop(command_queue);
+
     let mut m_shared_x_result = vec![0u32; total_threads * num_limbs];
     let mut m_shared_y_result = vec![0u32; total_threads * num_limbs];
     let mut m_shared_z_result = vec![0u32; total_threads * num_limbs];

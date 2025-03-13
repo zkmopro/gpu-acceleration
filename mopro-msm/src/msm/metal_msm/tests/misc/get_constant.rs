@@ -72,6 +72,10 @@ pub fn test_get_n0() {
 
     assert_eq!(result, expected);
     assert_eq!(result_limbs, expected_limbs);
+
+    // Drop the buffers after reading the results
+    drop(result_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -132,6 +136,10 @@ pub fn test_get_p() {
 
     assert_eq!(result_limbs, expected_limbs);
     assert_eq!(result, expected);
+
+    // Drop the buffers after reading the results
+    drop(result_buf);
+    drop(command_queue);
 }
 
 /// for 16-bit limbs, r has 257 bits
@@ -195,6 +203,10 @@ pub fn test_get_r() {
 
     assert_eq!(result_limbs, expected_limbs);
     assert_eq!(result, expected);
+
+    // Drop the buffers after reading the results
+    drop(result_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -255,6 +267,10 @@ pub fn test_get_p_wide() {
 
     assert_eq!(result_limbs, expected_limbs);
     assert_eq!(result, expected);
+
+    // Drop the buffers after reading the results
+    drop(result_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -321,6 +337,12 @@ pub fn test_get_bn254_zero() {
     let result = G::new(result_x.into(), result_y.into(), result_z.into());
     let expected = G::zero();
     assert!(result == expected);
+
+    // Drop the buffers after reading the results
+    drop(result_x_buf);
+    drop(result_y_buf);
+    drop(result_z_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -387,6 +409,12 @@ pub fn test_get_bn254_one() {
     let result = G::new(result_x.into(), result_y.into(), result_z.into());
     let expected = G::generator();
     assert!(result == expected);
+
+    // Drop the buffers after reading the results
+    drop(result_x_buf);
+    drop(result_y_buf);
+    drop(result_z_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -466,6 +494,12 @@ pub fn test_get_bn254_zero_mont() {
     let result = G::new(result_x.into(), result_y.into(), result_z.into());
     let expected = G::zero();
     assert!(result == expected);
+
+    // Drop the buffers after reading the results
+    drop(result_xr_buf);
+    drop(result_yr_buf);
+    drop(result_zr_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -545,6 +579,12 @@ pub fn test_get_bn254_one_mont() {
     let result = G::new(result_x.into(), result_y.into(), result_z.into());
     let expected = G::generator();
     assert!(result == expected);
+
+    // Drop the buffers after reading the results
+    drop(result_xr_buf);
+    drop(result_yr_buf);
+    drop(result_zr_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -606,6 +646,10 @@ pub fn test_get_mu() {
 
     assert_eq!(result_limbs, expected_limbs);
     assert_eq!(result, expected_mu);
+
+    // Drop the buffers after reading the results
+    drop(result_buf);
+    drop(command_queue);
 }
 
 // Helper to calculate constants

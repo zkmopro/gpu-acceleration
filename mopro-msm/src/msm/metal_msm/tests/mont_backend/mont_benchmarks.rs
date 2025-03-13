@@ -158,12 +158,17 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         panic!("Pointer is null");
     }
 
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(b_buf);
+    drop(cost_buf);
+    drop(result_buf);
+    drop(command_queue);
+
     let result = BigInt::<4>::from_limbs(&result_limbs, log_limb_size);
     if result == expected.try_into().unwrap() && result_limbs == expected_limbs {
         Ok(elapsed)
     } else {
         Err("Benchmark failed: results do not match expected values".to_string())
     }
-
-    // return elapsed;
 }

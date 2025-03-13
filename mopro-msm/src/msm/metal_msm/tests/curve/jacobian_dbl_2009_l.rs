@@ -136,4 +136,13 @@ pub fn test_jacobian_dbl_2009_l() {
 
     let result = G::new(result_x.into(), result_y.into(), result_z.into());
     assert!(result == expected);
+
+    // Drop the buffers after reading the results
+    drop(axr_buf);
+    drop(ayr_buf);
+    drop(azr_buf);
+    drop(result_xr_buf);
+    drop(result_yr_buf);
+    drop(result_zr_buf);
+    drop(command_queue);
 }

@@ -165,4 +165,10 @@ pub fn test_field_mul_with_mont_params() {
         result, a_in_field.0,
         "result is not equal to arkworks result in Montgomery form"
     );
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(r_buf);
+    drop(res_buf);
+    drop(command_queue);
 }

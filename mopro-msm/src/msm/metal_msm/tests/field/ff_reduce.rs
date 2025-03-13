@@ -95,6 +95,11 @@ pub fn test_ff_reduce_a_less_than_p() {
 
     assert!(result == a);
     assert!(result_limbs == a_limbs);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(result_buf);
+    drop(command_queue);
 }
 
 #[test]
@@ -193,4 +198,9 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
 
     assert!(result == expected);
     assert!(result_limbs == expected_limbs);
+
+    // Drop the buffers after reading the results
+    drop(a_buf);
+    drop(result_buf);
+    drop(command_queue);
 }

@@ -76,4 +76,9 @@ fn test_jacobian_dataflow() {
     for i in 0..points.len() {
         assert_eq!(points[i] * ScalarField::from(2 as u64), result_points[i]);
     }
+
+    // Drop the buffers after reading the results
+    drop(input_buffer);
+    drop(output_buffer);
+    drop(command_queue);
 }
