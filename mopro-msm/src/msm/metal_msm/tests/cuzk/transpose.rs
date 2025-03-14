@@ -1,18 +1,19 @@
-use crate::msm::metal_msm::host::gpu::{
-    create_buffer, create_empty_buffer, get_default_device, read_buffer,
-};
-use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use metal::*;
+use crate::msm::metal_msm::tests::common::*;
 use rand::Rng;
 
 #[test]
 #[serial_test::serial]
 fn test_sparse_matrix_transposition() {
-    let device = get_default_device();
+    let config = MetalTestConfig {
+        log_limb_size: 16,
+        num_limbs: 16,
+        shader_file: "cuzk/transpose.metal".to_string(),
+        kernel_name: "transpose".to_string(),
+    };
 
-    // Random test parameters
+    let mut helper = MetalTestHelper::new();
     let mut rng = rand::thread_rng();
-    const NUM_TESTS: usize = 10; // Number of random test cases
+    const NUM_TESTS: usize = 10;
     const MAX_SUBTASKS: usize = 4;
     const MAX_COLS: u32 = 8;
     const MAX_INPUT_SIZE: u32 = 100;
@@ -22,89 +23,45 @@ fn test_sparse_matrix_transposition() {
         let n = rng.gen_range(2..=MAX_COLS);
         let input_size = rng.gen_range(1..=MAX_INPUT_SIZE);
 
-        // Generate random CSR data
+        // Generate test data
         let mut all_csr_col_idx = Vec::new();
         let mut expected_results = Vec::new();
 
         for _ in 0..num_subtasks {
-            // Generate random column indices for this subtask
             let cols = (0..input_size)
                 .map(|_| rng.gen_range(0..n))
                 .collect::<Vec<u32>>();
-
-            // Compute expected CSC results on CPU
             let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&cols, n);
             expected_results.push((expected_col_ptr, expected_val_idxs));
-
-            // Add to global CSR buffer
             all_csr_col_idx.extend_from_slice(&cols);
         }
 
-        // Create Metal buffers
-        let all_csr_col_idx_buf = create_buffer(&device, &all_csr_col_idx);
-        let all_csc_col_ptr_buf = create_empty_buffer(&device, num_subtasks * (n as usize + 1));
-        let all_csc_val_idxs_buf = create_empty_buffer(&device, num_subtasks * input_size as usize);
-        let all_curr_buf = create_empty_buffer(&device, num_subtasks * n as usize);
+        // Create buffers
+        let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
+        let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
+        let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
+        let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
+        let params_buf = helper.create_input_buffer(&vec![n, input_size]);
 
-        let params = vec![n, input_size];
-        let params_buf = create_buffer(&device, &params);
+        // Execute shader
+        let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
+        let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
-        // Compile and setup pipeline (same as before)
-        write_constants("../mopro-msm/src/msm/metal_msm/shader", 16, 16, 0, 0);
-        let library_path = compile_metal(
-            "../mopro-msm/src/msm/metal_msm/shader/cuzk",
-            "transpose.metal",
+        helper.execute_shader(
+            &config,
+            &[&all_csr_col_idx_buf, &params_buf],
+            &[&all_csc_col_ptr_buf, &all_csc_val_idxs_buf, &all_curr_buf],
+            &thread_group_count,
+            &thread_group_size,
         );
-        let library = device.new_library_with_file(library_path).unwrap();
-        let kernel = library.get_function("transpose", None).unwrap();
 
-        // Build the pipeline
-        let command_queue = device.new_command_queue();
-        let command_buffer = command_queue.new_command_buffer();
-        let compute_pass_descriptor = ComputePassDescriptor::new();
-        let encoder =
-            command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
+        // Read results
+        let csc_col_ptr =
+            helper.read_results(&all_csc_col_ptr_buf, num_subtasks * (n as usize + 1));
+        let csc_val_idxs =
+            helper.read_results(&all_csc_val_idxs_buf, num_subtasks * input_size as usize);
 
-        let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-        pipeline_state_descriptor.set_compute_function(Some(&kernel));
-        let pipeline_state = device
-            .new_compute_pipeline_state_with_function(
-                pipeline_state_descriptor.compute_function().unwrap(),
-            )
-            .unwrap();
-
-        encoder.set_compute_pipeline_state(&pipeline_state);
-
-        encoder.set_buffer(0, Some(&all_csr_col_idx_buf), 0);
-        encoder.set_buffer(1, Some(&all_csc_col_ptr_buf), 0);
-        encoder.set_buffer(2, Some(&all_csc_val_idxs_buf), 0);
-        encoder.set_buffer(3, Some(&all_curr_buf), 0);
-        encoder.set_buffer(4, Some(&params_buf), 0);
-
-        encoder.dispatch_threads(
-            MTLSize::new(num_subtasks as u64, 1, 1),
-            MTLSize::new(1, 1, 1),
-        );
-        encoder.end_encoding();
-
-        command_buffer.commit();
-        command_buffer.wait_until_completed();
-
-        // Verify results
-        let csc_col_ptr: Vec<u32> =
-            read_buffer(&all_csc_col_ptr_buf, num_subtasks * (n as usize + 1));
-        let csc_val_idxs: Vec<u32> =
-            read_buffer(&all_csc_val_idxs_buf, num_subtasks * input_size as usize);
-
-        // Drop the buffers after reading the results
-        drop(all_csr_col_idx_buf);
-        drop(all_csc_col_ptr_buf);
-        drop(all_csc_val_idxs_buf);
-        drop(all_curr_buf);
-        drop(params_buf);
-        drop(command_queue);
-
-        // Validate each subtask
+        // Validation (same as before)
         for subtask in 0..num_subtasks {
             let offset = subtask * (n as usize + 1);
             let expected_col_ptr = &expected_results[subtask].0;
@@ -126,6 +83,7 @@ fn test_sparse_matrix_transposition() {
                 subtask, expected_vals, actual_vals
             );
         }
+        helper.drop_all_buffers();
     }
 }
 

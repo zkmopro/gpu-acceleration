@@ -3,10 +3,10 @@ using namespace metal;
 
 kernel void transpose(
     device const uint* all_csr_col_idx       [[buffer(0)]],
-    device atomic_uint* all_csc_col_ptr      [[buffer(1)]],
-    device uint* all_csc_val_idxs            [[buffer(2)]],
-    device atomic_uint* all_curr             [[buffer(3)]],
-    constant uint2& params                   [[buffer(4)]],
+    constant uint2& params                   [[buffer(1)]],
+    device atomic_uint* all_csc_col_ptr      [[buffer(2)]],
+    device uint* all_csc_val_idxs            [[buffer(3)]],
+    device atomic_uint* all_curr             [[buffer(4)]],
     uint gid [[thread_position_in_grid]]
 ) {
     // Subtask index (equivalent to thread ID)
