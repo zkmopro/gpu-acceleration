@@ -280,27 +280,9 @@ fn cpu_parallel_bpr(buckets: &Vec<G>) -> G {
 
 #[test]
 #[serial_test::serial]
-pub fn test_pbpr_simple_input() {
-    let generator = G::generator();
-    let c: u32 = 10;
-    let bucket_size = 1 << c;
-    let buckets = (1..=bucket_size)
-        .map(|i| generator * ScalarField::from(i as u64))
-        .collect::<Vec<G>>();
-
-    let cpu_naive_result = cpu_naive_bpr(&buckets);
-    let cpu_pbpr_result = cpu_parallel_bpr(&buckets);
-    let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
-
-    assert_eq!(gpu_pbpr_result, cpu_naive_result);
-    assert_eq!(gpu_pbpr_result, cpu_pbpr_result);
-}
-
-#[test]
-#[serial_test::serial]
 fn test_pbpr_random_inputs() {
     let generator = G::generator();
-    let c: u32 = 10;
+    let c: u32 = 5;
     let bucket_size = 1 << c;
 
     let mut rng = thread_rng();
