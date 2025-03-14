@@ -62,19 +62,36 @@ pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -
             .output()
             .expect("failed to compile")
     } else if cfg!(target_os = "macos") {
-        Command::new("xcrun")
-            .args([
-                "-sdk",
-                "macosx",
-                "metal",
+        let macos_version = std::process::Command::new("sw_vers")
+            .args(["-productVersion"])
+            .output()
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|version| {
+                version
+                    .trim()
+                    .split('.')
+                    .next()
+                    .and_then(|major| major.parse::<u32>().ok())
+            })
+            .unwrap_or(0);
+
+        let mut args = vec!["-sdk", "macosx", "metal"];
+
+        // Only specify Metal 3.2 for metal logging if macOS version is 15.0 or higher
+        if macos_version >= 15 {
+            args.extend([
                 "-std=metal3.2",
                 "-target",
                 "air64-apple-macos15.0",
                 "-fmetal-enable-logging",
-                "-o",
-                lib.as_str(),
-                c.as_str(),
-            ])
+            ]);
+        }
+
+        args.extend(["-o", lib.as_str(), c.as_str()]);
+
+        Command::new("xcrun")
+            .args(args)
             .output()
             .expect("failed to compile")
     } else {
