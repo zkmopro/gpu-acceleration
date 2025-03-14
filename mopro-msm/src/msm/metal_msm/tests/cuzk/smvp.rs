@@ -160,6 +160,17 @@ fn test_smvp() {
     let bucket_y_out_limbs: Vec<u32> = read_buffer(&bucket_y_buf, 8 * num_limbs);
     let bucket_z_out_limbs: Vec<u32> = read_buffer(&bucket_z_buf, 8 * num_limbs);
 
+    // Drop the buffers after reading the results
+    drop(row_ptr_buf);
+    drop(val_idx_buf);
+    drop(new_point_x_buf);
+    drop(new_point_y_buf);
+    drop(bucket_x_buf);
+    drop(bucket_y_buf);
+    drop(bucket_z_buf);
+    drop(params_buf);
+    drop(command_queue);
+
     // ------------------------------------------------------------------
     // CPU reference check and smvp logic
     //

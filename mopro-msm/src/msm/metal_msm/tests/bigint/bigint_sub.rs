@@ -1,183 +1,70 @@
-// adapted from: https://github.com/geometryxyz/msl-secp256k1
-
-use crate::msm::metal_msm::host::gpu::{
-    create_buffer, create_empty_buffer, get_default_device, read_buffer,
-};
-use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
+use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+
 use ark_ff::{BigInt, BigInteger, UniformRand};
 use ark_std::rand;
-use metal::*;
 
 #[test]
 #[serial_test::serial]
 pub fn test_bigint_sub_no_underflow() {
-    // adjusted by bn254 scalar bits and mont_mul cios optimal limb size
-    let log_limb_size = 16;
-    let num_limbs = 16;
-
-    // Create two test numbers that do not cause underflow
-    let mut rng = rand::thread_rng();
-    let (a, b, expected) = loop {
-        let a = BigInt::<4>::rand(&mut rng);
-        let b = BigInt::<4>::rand(&mut rng);
-
-        let mut expected = a.clone();
-        let underflow = expected.sub_with_borrow(&b);
-
-        // Break the loop if subtraction does not underflow
-        if !underflow {
-            break (a, b, expected);
-        }
-    };
-
-    let device = get_default_device();
-    let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
-    let b_buf = create_buffer(&device, &b.to_limbs(num_limbs, log_limb_size));
-    let result_buf = create_empty_buffer(&device, num_limbs);
-
-    let command_queue = device.new_command_queue();
-    let command_buffer = command_queue.new_command_buffer();
-
-    let compute_pass_descriptor = ComputePassDescriptor::new();
-    let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
-
-    write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
-        num_limbs,
-        log_limb_size,
-        0,
-        0,
-    );
-    let library_path = compile_metal(
-        "../mopro-msm/src/msm/metal_msm/shader/bigint",
-        "bigint_sub.metal",
-    );
-    let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library.get_function("run", None).unwrap();
-
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
-
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
-
-    encoder.set_compute_pipeline_state(&pipeline_state);
-    encoder.set_buffer(0, Some(&a_buf), 0);
-    encoder.set_buffer(1, Some(&b_buf), 0);
-    encoder.set_buffer(2, Some(&result_buf), 0);
-
-    let thread_group_count = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-
-    let thread_group_size = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-
-    encoder.dispatch_thread_groups(thread_group_count, thread_group_size);
-    encoder.end_encoding();
-
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
-
-    let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
-    let expected_limbs = expected.to_limbs(num_limbs, log_limb_size);
-    assert_eq!(result_limbs, expected_limbs);
-
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
-    assert_eq!(result, expected);
+    let (a, b, expected) = generate_test_values(false);
+    run_bigint_sub_test(a, b, expected);
 }
 
 #[test]
 #[serial_test::serial]
 fn test_bigint_sub_underflow() {
-    let num_limbs = 16;
-    let log_limb_size = 16;
+    let (a, b, expected) = generate_test_values(true);
+    run_bigint_sub_test(a, b, expected);
+}
 
-    // Create two test numbers that cause underflow
+fn run_bigint_sub_test(a: BigInt<4>, b: BigInt<4>, expected: BigInt<4>) {
+    let config = MetalTestConfig {
+        log_limb_size: 16,
+        num_limbs: 16,
+        shader_file: "bigint/bigint_sub.metal".to_string(),
+        kernel_name: "run".to_string(),
+    };
+
+    let mut helper = MetalTestHelper::new();
+
+    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let b_buf = helper.create_input_buffer(&b.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_output_buffer(config.num_limbs);
+
+    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
+    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
+
+    helper.execute_shader(
+        &config,
+        &[&a_buf, &b_buf],
+        &[&result_buf],
+        &thread_group_count,
+        &thread_group_size,
+    );
+
+    let result_limbs = helper.read_results(&result_buf, config.num_limbs);
+    let expected_limbs = expected.to_limbs(config.num_limbs, config.log_limb_size);
+    assert_eq!(result_limbs, expected_limbs, "Limb representation mismatch");
+
+    let result = BigInt::from_limbs(&result_limbs, config.log_limb_size);
+    assert_eq!(result, expected, "BigInt result mismatch");
+
+    helper.drop_all_buffers();
+}
+
+fn generate_test_values(require_underflow: bool) -> (BigInt<4>, BigInt<4>, BigInt<4>) {
     let mut rng = rand::thread_rng();
-    let (a, b, expected) = loop {
+
+    loop {
         let a = BigInt::<4>::rand(&mut rng);
         let b = BigInt::<4>::rand(&mut rng);
 
         let mut expected = a.clone();
         let underflow = expected.sub_with_borrow(&b);
 
-        // Break the loop if subtraction does not underflow
-        if underflow {
-            break (a, b, expected);
+        if underflow == require_underflow {
+            return (a, b, expected);
         }
-    };
-
-    let device = get_default_device();
-    let a_buf = create_buffer(&device, &a.to_limbs(num_limbs, log_limb_size));
-    let b_buf = create_buffer(&device, &b.to_limbs(num_limbs, log_limb_size));
-    let result_buf = create_empty_buffer(&device, num_limbs);
-
-    let command_queue = device.new_command_queue();
-    let command_buffer = command_queue.new_command_buffer();
-
-    let compute_pass_descriptor = ComputePassDescriptor::new();
-    let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
-
-    write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
-        num_limbs,
-        log_limb_size,
-        0,
-        0,
-    );
-    let library_path = compile_metal(
-        "../mopro-msm/src/msm/metal_msm/shader/bigint",
-        "bigint_sub.metal",
-    );
-    let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library.get_function("run", None).unwrap();
-
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
-
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
-
-    encoder.set_compute_pipeline_state(&pipeline_state);
-    encoder.set_buffer(0, Some(&a_buf), 0);
-    encoder.set_buffer(1, Some(&b_buf), 0);
-    encoder.set_buffer(2, Some(&result_buf), 0);
-
-    let thread_group_count = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-
-    let thread_group_size = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-
-    encoder.dispatch_thread_groups(thread_group_count, thread_group_size);
-    encoder.end_encoding();
-
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
-
-    let result_limbs: Vec<u32> = read_buffer(&result_buf, num_limbs);
-    let expected_limbs = expected.to_limbs(num_limbs, log_limb_size);
-    assert_eq!(result_limbs, expected_limbs);
-
-    let result = BigInt::from_limbs(&result_limbs, log_limb_size);
-    assert_eq!(result, expected);
+    }
 }

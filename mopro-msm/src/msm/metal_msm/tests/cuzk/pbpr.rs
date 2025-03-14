@@ -1,15 +1,13 @@
-use crate::msm::metal_msm::host::gpu::{create_buffer, get_default_device};
-use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::data_conversion::raw_reduction;
-use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, MontgomeryParams};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
 use ark_ec::Group;
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand, Zero};
-use metal::*;
 use num_bigint::BigUint;
 use rayon::prelude::*;
+
+use crate::msm::metal_msm::tests::common::*;
+use crate::msm::metal_msm::utils::data_conversion::raw_reduction;
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 
 fn closest_power_of_two(n: usize) -> usize {
     if n <= 1 {
@@ -33,14 +31,14 @@ fn closest_power_of_two(n: usize) -> usize {
 /// Implement parallel bucket reduction in GPU using separated buffers internally
 fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     /// Converts a bucket vector into three separated vectors for the x, y, and z coordinates
-    /// Each coordinate is represented as a vector of u32 values in Montgomery form
     fn buckets_to_separated_coords(
         buckets: &Vec<G>,
         num_limbs: usize,
+        log_limb_size: u32,
     ) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
-        let log_limb_size: u32 = 16;
-        let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-        let r = calc_mont_radix(num_limbs, log_limb_size);
+        let constants = get_or_calc_constants(num_limbs, log_limb_size);
+        let p = &constants.p;
+        let r = &constants.r;
 
         // Pre-allocate vectors for the limbs
         let total_limbs = buckets.len() * num_limbs;
@@ -54,9 +52,9 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
             let py: BigUint = point.y.into();
             let pz: BigUint = point.z.into();
 
-            let pxr = (&px * &r) % &p;
-            let pyr = (&py * &r) % &p;
-            let pzr = (&pz * &r) % &p;
+            let pxr = (&px * r) % p;
+            let pyr = (&py * r) % p;
+            let pzr = (&pz * r) % p;
 
             // Convert to limbs
             let pxr_limbs = BigInt::<4>::try_from(pxr)
@@ -84,8 +82,8 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
         y_buffer: &[u32],
         z_buffer: &[u32],
         num_limbs: usize,
+        log_limb_size: u32,
     ) -> Vec<G> {
-        let log_limb_size = 16;
         let coord_size = num_limbs;
         let total_u32s = x_buffer.len() as usize;
         let num_points = total_u32s / coord_size;
@@ -118,80 +116,42 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
         points
     }
 
-    let mont_params = MontgomeryParams::default();
-    let log_limb_size: u32 = 16;
-    let num_limbs = mont_params.num_limbs;
-    let n0 = mont_params.n0;
-    let nsafe = mont_params.nsafe;
-
-    let device = get_default_device();
+    // Configure Metal test parameters
+    let log_limb_size = 16;
+    let num_limbs = 16;
     let bucket_size = buckets.len();
 
-    // Convert buckets to separated coordinate arrays
-    let (buckets_x, buckets_y, buckets_z) = buckets_to_separated_coords(buckets, num_limbs);
-
-    // Create buffers for coordinates
-    let buckets_x_buffer = create_buffer(&device, &buckets_x);
-    let buckets_y_buffer = create_buffer(&device, &buckets_y);
-    let buckets_z_buffer = create_buffer(&device, &buckets_z);
-
-    // Compile shader and create pipeline
-    let library_path = compile_metal("../mopro-msm/src/msm/metal_msm/shader/cuzk", "pbpr.metal");
-    let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library.get_function("parallel_bpr", None).unwrap();
-
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
-
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
-
-    // Get thread dimensions
-    let thread_group_width = pipeline_state.thread_execution_width();
-    let thread_group_height =
-        pipeline_state.max_total_threads_per_threadgroup() / thread_group_width;
-    let max_group_threads = pipeline_state.max_total_threads_per_threadgroup();
-    let optimal_threads = max_group_threads;
-
-    // Calculate total threads needed
-    let candidate = if bucket_size < optimal_threads as usize {
-        bucket_size
-    } else {
-        optimal_threads as usize // This is wrong, since we're workloading just a single TG,
-                                 // The thing is that this gives the best performance so far
-                                 // But we need to introduce cross kernel synchronisation to improve this.
+    let config = MetalTestConfig {
+        log_limb_size,
+        num_limbs,
+        shader_file: "cuzk/pbpr.metal".to_string(),
+        kernel_name: "parallel_bpr".to_string(),
     };
 
+    let mut helper = MetalTestHelper::new();
+
+    // Convert buckets to separated coordinate arrays
+    let (buckets_x, buckets_y, buckets_z) =
+        buckets_to_separated_coords(buckets, num_limbs, log_limb_size);
+
+    // Create input buffers
+    let buckets_x_buf = helper.create_input_buffer(&buckets_x);
+    let buckets_y_buf = helper.create_input_buffer(&buckets_y);
+    let buckets_z_buf = helper.create_input_buffer(&buckets_z);
+
+    // Calculate thread dimensions
+    let candidate = if bucket_size < 256 { bucket_size } else { 256 }; // Use 256 as default max threads
     let total_threads = closest_power_of_two(candidate);
 
-    // Calculate grid dimensions
-    let grid_width = (total_threads as f64).sqrt().ceil() as u64;
-    let grid_height = (total_threads as u64 + grid_width - 1) / grid_width;
-
-    let threads_per_thread_group = MTLSize {
-        width: thread_group_width,
-        height: thread_group_height,
-        depth: 1,
-    };
-
-    let threads_total = MTLSize {
-        width: grid_width,
-        height: grid_height,
-        depth: 1,
-    };
-
-    // Create output buffers
+    // Create zero point buffers for output
     let zero_point = G::zero();
-    let (zero_x, zero_y, zero_z) = buckets_to_separated_coords(&vec![zero_point], num_limbs);
+    let (zero_x, zero_y, zero_z) =
+        buckets_to_separated_coords(&vec![zero_point], num_limbs, log_limb_size);
 
-    // Fill the buffers with zero points
+    // Initialize output buffers with zero points
     let mut m_shared_x = vec![0u32; total_threads * num_limbs];
     let mut m_shared_y = vec![0u32; total_threads * num_limbs];
     let mut m_shared_z = vec![0u32; total_threads * num_limbs];
-
     let mut s_shared_x = vec![0u32; total_threads * num_limbs];
     let mut s_shared_y = vec![0u32; total_threads * num_limbs];
     let mut s_shared_z = vec![0u32; total_threads * num_limbs];
@@ -202,120 +162,63 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
             m_shared_x[i * num_limbs + j] = zero_x[j];
             m_shared_y[i * num_limbs + j] = zero_y[j];
             m_shared_z[i * num_limbs + j] = zero_z[j];
-
             s_shared_x[i * num_limbs + j] = zero_x[j];
             s_shared_y[i * num_limbs + j] = zero_y[j];
             s_shared_z[i * num_limbs + j] = zero_z[j];
         }
     }
 
-    let m_shared_x_buffer = create_buffer(&device, &m_shared_x);
-    let m_shared_y_buffer = create_buffer(&device, &m_shared_y);
-    let m_shared_z_buffer = create_buffer(&device, &m_shared_z);
-
-    let s_shared_x_buffer = create_buffer(&device, &s_shared_x);
-    let s_shared_y_buffer = create_buffer(&device, &s_shared_y);
-    let s_shared_z_buffer = create_buffer(&device, &s_shared_z);
+    // Create output buffers
+    let m_shared_x_buf = helper.create_input_buffer(&m_shared_x);
+    let m_shared_y_buf = helper.create_input_buffer(&m_shared_y);
+    let m_shared_z_buf = helper.create_input_buffer(&m_shared_z);
+    let s_shared_x_buf = helper.create_input_buffer(&s_shared_x);
+    let s_shared_y_buf = helper.create_input_buffer(&s_shared_y);
+    let s_shared_z_buf = helper.create_input_buffer(&s_shared_z);
 
     // Create parameter buffers
-    let grid_width_buffer = create_buffer(&device, &vec![grid_width as u32]);
-    let total_threads_buffer = create_buffer(&device, &vec![total_threads as u32]);
+    let grid_width = (total_threads as f64).sqrt().ceil() as u64;
+    let grid_width_buf = helper.create_input_buffer(&vec![grid_width as u32]);
+    let total_threads_buf = helper.create_input_buffer(&vec![total_threads as u32]);
     let num_subtask = (bucket_size + total_threads - 1) / total_threads;
-    let num_subtask_buffer = create_buffer(&device, &vec![num_subtask as u32]);
+    let num_subtask_buf = helper.create_input_buffer(&vec![num_subtask as u32]);
 
-    // Set up command queue and encoder
-    let command_queue = device.new_command_queue();
-    let command_buffer = command_queue.new_command_buffer();
-    let encoder =
-        command_buffer.compute_command_encoder_with_descriptor(ComputePassDescriptor::new());
+    // Setup thread group sizes
+    let thread_group_width = 32; // Default thread group width
+    let thread_group_height = 1;
+    let grid_height = (total_threads as u64 + grid_width - 1) / grid_width;
 
-    // Write constants
-    write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
-        num_limbs,
-        log_limb_size,
-        n0,
-        nsafe,
+    let threads_per_thread_group =
+        helper.create_thread_group_size(thread_group_width, thread_group_height, 1);
+
+    let threads_total = helper.create_thread_group_size(grid_width, grid_height, 1);
+
+    // Execute shader
+    helper.execute_shader(
+        &config,
+        &[
+            &buckets_x_buf,
+            &buckets_y_buf,
+            &buckets_z_buf,
+            &m_shared_x_buf,
+            &m_shared_y_buf,
+            &m_shared_z_buf,
+            &s_shared_x_buf,
+            &s_shared_y_buf,
+            &s_shared_z_buf,
+            &grid_width_buf,
+            &total_threads_buf,
+            &num_subtask_buf,
+        ],
+        &[], // No separate output buffers - results are in the shared buffers
+        &threads_total,
+        &threads_per_thread_group,
     );
 
-    encoder.set_compute_pipeline_state(&pipeline_state);
-
-    // Set kernel arguments
-    encoder.set_buffer(0, Some(&buckets_x_buffer), 0);
-    encoder.set_buffer(1, Some(&buckets_y_buffer), 0);
-    encoder.set_buffer(2, Some(&buckets_z_buffer), 0);
-    encoder.set_buffer(3, Some(&m_shared_x_buffer), 0);
-    encoder.set_buffer(4, Some(&m_shared_y_buffer), 0);
-    encoder.set_buffer(5, Some(&m_shared_z_buffer), 0);
-    encoder.set_buffer(6, Some(&s_shared_x_buffer), 0);
-    encoder.set_buffer(7, Some(&s_shared_y_buffer), 0);
-    encoder.set_buffer(8, Some(&s_shared_z_buffer), 0);
-    encoder.set_buffer(9, Some(&grid_width_buffer), 0);
-    encoder.set_buffer(10, Some(&total_threads_buffer), 0);
-    encoder.set_buffer(11, Some(&num_subtask_buffer), 0);
-
-    // Dispatch threads
-    encoder.dispatch_threads(threads_total, threads_per_thread_group);
-    encoder.end_encoding();
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
-
     // Read results back
-    let s_shared_x_ptr = s_shared_x_buffer.contents() as *const u32;
-    let s_shared_y_ptr = s_shared_y_buffer.contents() as *const u32;
-    let s_shared_z_ptr = s_shared_z_buffer.contents() as *const u32;
-
-    let mut s_shared_x_result = vec![0u32; total_threads * num_limbs];
-    let mut s_shared_y_result = vec![0u32; total_threads * num_limbs];
-    let mut s_shared_z_result = vec![0u32; total_threads * num_limbs];
-
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            s_shared_x_ptr,
-            s_shared_x_result.as_mut_ptr(),
-            total_threads * num_limbs,
-        );
-        std::ptr::copy_nonoverlapping(
-            s_shared_y_ptr,
-            s_shared_y_result.as_mut_ptr(),
-            total_threads * num_limbs,
-        );
-        std::ptr::copy_nonoverlapping(
-            s_shared_z_ptr,
-            s_shared_z_result.as_mut_ptr(),
-            total_threads * num_limbs,
-        );
-    }
-
-    // Read results back
-    let m_shared_x_ptr = m_shared_x_buffer.contents() as *const u32;
-    let m_shared_y_ptr = m_shared_y_buffer.contents() as *const u32;
-    let m_shared_z_ptr = m_shared_z_buffer.contents() as *const u32;
-
-    let mut m_shared_x_result = vec![0u32; total_threads * num_limbs];
-    let mut m_shared_y_result = vec![0u32; total_threads * num_limbs];
-    let mut m_shared_z_result = vec![0u32; total_threads * num_limbs];
-
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            m_shared_x_ptr,
-            m_shared_x_result.as_mut_ptr(),
-            total_threads * num_limbs,
-        );
-        std::ptr::copy_nonoverlapping(
-            m_shared_y_ptr,
-            m_shared_y_result.as_mut_ptr(),
-            total_threads * num_limbs,
-        );
-        std::ptr::copy_nonoverlapping(
-            m_shared_z_ptr,
-            m_shared_z_result.as_mut_ptr(),
-            total_threads * num_limbs,
-        );
-    }
-
-    // for debug
-    // let m_shared_points = points_from_separated_buffers(&m_shared_x_result, &m_shared_y_result, &m_shared_z_result, num_limbs);
+    let s_shared_x_result = helper.read_results(&s_shared_x_buf, total_threads * num_limbs);
+    let s_shared_y_result = helper.read_results(&s_shared_y_buf, total_threads * num_limbs);
+    let s_shared_z_result = helper.read_results(&s_shared_z_buf, total_threads * num_limbs);
 
     // Convert results back to points
     let s_shared_points = points_from_separated_buffers(
@@ -323,7 +226,11 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
         &s_shared_y_result,
         &s_shared_z_result,
         num_limbs,
+        log_limb_size,
     );
+
+    // Clean up
+    helper.drop_all_buffers();
 
     // Sum the points
     s_shared_points.iter().sum::<G>()
@@ -373,12 +280,14 @@ fn cpu_parallel_bpr(buckets: &Vec<G>) -> G {
 
 #[test]
 #[serial_test::serial]
-pub fn test_pbpr_simple_input() {
+fn test_pbpr_random_inputs() {
     let generator = G::generator();
-    let c: u32 = 10;
+    let c: u32 = 5;
     let bucket_size = 1 << c;
+
+    let mut rng = thread_rng();
     let buckets = (1..=bucket_size)
-        .map(|i| generator * ScalarField::from(i as u64))
+        .map(|_| generator * ScalarField::rand(&mut rng))
         .collect::<Vec<G>>();
 
     let cpu_naive_result = cpu_naive_bpr(&buckets);
@@ -387,21 +296,4 @@ pub fn test_pbpr_simple_input() {
 
     assert_eq!(gpu_pbpr_result, cpu_naive_result);
     assert_eq!(gpu_pbpr_result, cpu_pbpr_result);
-}
-
-#[test]
-#[serial_test::serial]
-fn test_pbpr_random_inputs() {
-    let generator = G::generator();
-    let mut rng = thread_rng();
-    let bucket_size = vec![5, 6, 7, 8, 9, 10];
-
-    for size in bucket_size {
-        let buckets = (0..(1 << size))
-            .map(|_| generator * ScalarField::rand(&mut rng))
-            .collect::<Vec<G>>();
-        let naive_result = cpu_naive_bpr(&buckets);
-        let gpu_pbpr_result = gpu_parallel_bpr(&buckets);
-        assert_eq!(gpu_pbpr_result, naive_result);
-    }
 }

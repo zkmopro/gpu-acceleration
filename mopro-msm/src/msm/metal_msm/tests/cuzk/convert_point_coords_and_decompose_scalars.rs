@@ -1,27 +1,30 @@
-use crate::msm::metal_msm::host::gpu::{
-    create_buffer, create_empty_buffer, get_default_device, read_buffer,
-};
-use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
-use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
 use ark_ec::{CurveGroup, Group};
 use ark_ff::{BigInt, PrimeField};
-use metal::*;
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
+
+use crate::msm::metal_msm::tests::common::*;
+use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 
 #[test]
 #[serial_test::serial]
 fn test_point_coords_conversion() {
-    // BN254 parameters
+    // Setup test config
     let log_limb_size = 16;
     let num_limbs = 16;
-    let p: BigUint = BaseField::MODULUS.try_into().unwrap();
 
-    let r = calc_mont_radix(num_limbs, log_limb_size);
-    let (_, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
-    let nsafe = calc_nsafe(log_limb_size);
+    let config = MetalTestConfig {
+        log_limb_size,
+        num_limbs,
+        shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
+        kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
+    };
+
+    let mut helper = MetalTestHelper::new();
+    let constants = get_or_calc_constants(num_limbs, log_limb_size);
+    let p = &constants.p;
+    let r = &constants.r;
 
     // We only need one scalar for the kernel call, but we won't test it here
     // So let's just supply zeros for the scalar array
@@ -33,8 +36,8 @@ fn test_point_coords_conversion() {
     let y: BigUint = point.y.into_bigint().try_into().unwrap();
 
     // Host-side: compute x_mont, y_mont
-    let x_mont = (&x * &r) % &p;
-    let y_mont = (&y * &r) % &p;
+    let x_mont = (&x * r) % p;
+    let y_mont = (&y * r) % p;
 
     // Convert them to ark_ff BigInt<4>, then to limbs
     let x_mont_in_ark: BigInt<4> = x_mont.clone().try_into().unwrap();
@@ -42,7 +45,7 @@ fn test_point_coords_conversion() {
     let x_mont_in_ark_limbs = x_mont_in_ark.to_limbs(num_limbs, log_limb_size);
     let y_mont_in_ark_limbs = y_mont_in_ark.to_limbs(num_limbs, log_limb_size);
 
-    // Convert unreduced x,y into `num_limbs` “halfword” limbs
+    // Convert unreduced x,y into `num_limbs` "halfword" limbs
     let x_in_ark: BigInt<4> = x.clone().try_into().unwrap();
     let y_in_ark: BigInt<4> = y.clone().try_into().unwrap();
     let x_limb = x_in_ark.to_limbs(num_limbs, log_limb_size);
@@ -63,80 +66,36 @@ fn test_point_coords_conversion() {
     let coords = [x_packed, y_packed].concat();
 
     // Setup Metal buffers
-    let device = get_default_device();
-    let coords_buf = create_buffer(&device, &coords);
-    let scalars_buf = create_buffer(&device, &scalars); // all zero
-    let input_size_buf = create_buffer(&device, &vec![1u32]); // only 1 point
+    let coords_buf = helper.create_input_buffer(&coords);
+    let scalars_buf = helper.create_input_buffer(&scalars);
+    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
 
     // Prepare output buffers for the kernel
-    let point_x_buf = create_empty_buffer(&device, num_limbs);
-    let point_y_buf = create_empty_buffer(&device, num_limbs);
+    let point_x_buf = helper.create_output_buffer(num_limbs);
+    let point_y_buf = helper.create_output_buffer(num_limbs);
+    let chunks_buf = helper.create_output_buffer(num_limbs);
 
-    // We also need a chunks buffer, but we won't actually check it in this test
-    let chunks_buf = create_empty_buffer(&device, num_limbs);
+    // Setup thread group sizes
+    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
+    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
-    // Build the pipeline
-    let command_queue = device.new_command_queue();
-    let command_buffer = command_queue.new_command_buffer();
-    let compute_pass_descriptor = ComputePassDescriptor::new();
-    let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
-
-    // Compile your metal source
-    write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
-        num_limbs,
-        log_limb_size,
-        n0,
-        nsafe,
+    // Execute the shader
+    helper.execute_shader(
+        &config,
+        &[&coords_buf, &scalars_buf, &input_size_buf],
+        &[&point_x_buf, &point_y_buf, &chunks_buf],
+        &thread_group_count,
+        &thread_group_size,
     );
-    let library_path = compile_metal(
-        "../mopro-msm/src/msm/metal_msm/shader/cuzk",
-        "convert_point_coords_and_decompose_scalars.metal",
-    );
-    let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library
-        .get_function("convert_point_coords_and_decompose_scalars", None)
-        .unwrap();
-
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
-
-    encoder.set_compute_pipeline_state(&pipeline_state);
-
-    // Match buffer indices to kernel signature
-    encoder.set_buffer(0, Some(&coords_buf), 0);
-    encoder.set_buffer(1, Some(&scalars_buf), 0);
-    encoder.set_buffer(2, Some(&input_size_buf), 0);
-    encoder.set_buffer(3, Some(&point_x_buf), 0);
-    encoder.set_buffer(4, Some(&point_y_buf), 0);
-    encoder.set_buffer(5, Some(&chunks_buf), 0);
-
-    // Dispatch
-    let tg_count = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-    let tg_size = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-    encoder.dispatch_thread_groups(tg_count, tg_size);
-    encoder.end_encoding();
-
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
 
     // Read back X,Y results and compare
-    let x_result = read_buffer(&point_x_buf, num_limbs);
-    let y_result = read_buffer(&point_y_buf, num_limbs);
+    let x_result = helper.read_results(&point_x_buf, num_limbs);
+    let y_result = helper.read_results(&point_y_buf, num_limbs);
 
+    // Clean up resources
+    helper.drop_all_buffers();
+
+    // Verify results
     assert_eq!(x_result, x_mont_in_ark_limbs, "X conversion mismatch");
     assert_eq!(y_result, y_mont_in_ark_limbs, "Y conversion mismatch");
 }
@@ -144,7 +103,7 @@ fn test_point_coords_conversion() {
 #[test]
 #[serial_test::serial]
 fn test_scalar_decomposition() {
-    // BN254 parameters
+    // Setup test config
     let log_limb_size = 16;
     let num_limbs = 16;
     let chunk_size = if BaseField::MODULUS_BIT_SIZE / 32 >= 65536 {
@@ -155,10 +114,14 @@ fn test_scalar_decomposition() {
     let num_subtasks = (256f32 / chunk_size as f32).ceil() as usize;
     let num_columns = 1 << chunk_size; // 2^chunk_size
 
-    let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-    let r = calc_mont_radix(num_limbs, log_limb_size);
-    let (_, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
-    let nsafe = calc_nsafe(log_limb_size);
+    let config = MetalTestConfig {
+        log_limb_size,
+        num_limbs,
+        shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
+        kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
+    };
+
+    let mut helper = MetalTestHelper::new();
 
     // For scalar test, we can provide dummy coords (X=0, Y=0)
     let coords = vec![0u32; 16]; // 16 zeros
@@ -174,77 +137,30 @@ fn test_scalar_decomposition() {
         .to_limbs(num_limbs, log_limb_size);
 
     // Setup Metal buffers
-    let device = get_default_device();
-    let coords_buf = create_buffer(&device, &coords); // dummy
-    let scalars_buf = create_buffer(&device, &scalars); // real scalar
-    let input_size_buf = create_buffer(&device, &vec![1u32]); // only 1 scalar
+    let coords_buf = helper.create_input_buffer(&coords);
+    let scalars_buf = helper.create_input_buffer(&scalars);
+    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
 
     // We'll ignore X,Y outputs, but we must pass them
-    let point_x_buf = create_empty_buffer(&device, num_limbs);
-    let point_y_buf = create_empty_buffer(&device, num_limbs);
+    let point_x_buf = helper.create_output_buffer(num_limbs);
+    let point_y_buf = helper.create_output_buffer(num_limbs);
+    let chunks_buf = helper.create_output_buffer(num_subtasks);
 
-    // The important output: chunk decomposition
-    let chunks_buf = create_empty_buffer(&device, num_subtasks);
+    // Setup thread group sizes
+    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
+    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
-    // Build the pipeline
-    let command_queue = device.new_command_queue();
-    let command_buffer = command_queue.new_command_buffer();
-    let compute_pass_descriptor = ComputePassDescriptor::new();
-    let encoder = command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
-
-    // Compile your metal source
-    write_constants(
-        "../mopro-msm/src/msm/metal_msm/shader",
-        num_limbs,
-        log_limb_size,
-        n0,
-        nsafe,
+    // Execute the shader
+    helper.execute_shader(
+        &config,
+        &[&coords_buf, &scalars_buf, &input_size_buf],
+        &[&point_x_buf, &point_y_buf, &chunks_buf],
+        &thread_group_count,
+        &thread_group_size,
     );
-    let library_path = compile_metal(
-        "../mopro-msm/src/msm/metal_msm/shader/cuzk",
-        "convert_point_coords_and_decompose_scalars.metal",
-    );
-    let library = device.new_library_with_file(library_path).unwrap();
-    let kernel = library
-        .get_function("convert_point_coords_and_decompose_scalars", None)
-        .unwrap();
-
-    let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-    pipeline_state_descriptor.set_compute_function(Some(&kernel));
-    let pipeline_state = device
-        .new_compute_pipeline_state_with_function(
-            pipeline_state_descriptor.compute_function().unwrap(),
-        )
-        .unwrap();
-
-    encoder.set_compute_pipeline_state(&pipeline_state);
-
-    // Buffer indices to match kernel
-    encoder.set_buffer(0, Some(&coords_buf), 0);
-    encoder.set_buffer(1, Some(&scalars_buf), 0);
-    encoder.set_buffer(2, Some(&input_size_buf), 0);
-    encoder.set_buffer(3, Some(&point_x_buf), 0);
-    encoder.set_buffer(4, Some(&point_y_buf), 0);
-    encoder.set_buffer(5, Some(&chunks_buf), 0);
-
-    let tg_count = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-    let tg_size = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-    encoder.dispatch_thread_groups(tg_count, tg_size);
-    encoder.end_encoding();
-
-    command_buffer.commit();
-    command_buffer.wait_until_completed();
 
     // Read back the chunk data from GPU
-    let gpu_chunks = read_buffer(&chunks_buf, num_subtasks);
+    let gpu_chunks = helper.read_results(&chunks_buf, num_subtasks);
 
     // Now replicate the GPU logic in Rust:
     // (1) build scalar_bytes[16]
@@ -280,17 +196,17 @@ fn test_scalar_decomposition() {
         }
     }
 
-    // (C) Extract chunk_size-bit words for all but the last chunk
+    // Calculate expected chunks
     let mut cpu_chunks = vec![0u32; num_subtasks];
     for i in 0..(num_subtasks - 1) {
         cpu_chunks[i] = extract_word_from_bytes_le_mock(&scalar_bytes, i as u32, chunk_size as u32);
     }
 
-    // (D) Last chunk for 254 bits: top 2 bits are unused
+    // Last chunk for 254 bits: top 2 bits are unused
     let shift_254 = ((num_subtasks as u32 * chunk_size as u32 - 254) + 16) - chunk_size as u32;
     cpu_chunks[num_subtasks - 1] = scalar_bytes[0] >> shift_254;
 
-    // (E) Sign logic
+    // Sign logic
     let l = num_columns;
     let s = l / 2;
     let mut carry = 0u32;
@@ -311,6 +227,10 @@ fn test_scalar_decomposition() {
         cpu_chunks[i] = (cpu_signed_slices[i] + s as i32) as u32;
     }
 
+    // Clean up resources
+    helper.drop_all_buffers();
+
+    // Verify results
     assert_eq!(
         gpu_chunks, cpu_chunks,
         "Scalar decomposition mismatch between GPU and CPU!"
