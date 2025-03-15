@@ -17,11 +17,11 @@ using namespace metal;
 kernel void smvp(
     device const uint*          row_ptr         [[ buffer(0) ]],
     device const uint*          val_idx         [[ buffer(1) ]],
-    device const FieldElement*  new_point_x     [[ buffer(2) ]],
-    device const FieldElement*  new_point_y     [[ buffer(3) ]],
-    device FieldElement*        bucket_x        [[ buffer(4) ]],
-    device FieldElement*        bucket_y        [[ buffer(5) ]],
-    device FieldElement*        bucket_z        [[ buffer(6) ]],
+    device const BigInt*        new_point_x     [[ buffer(2) ]],
+    device const BigInt*        new_point_y     [[ buffer(3) ]],
+    device BigInt*              bucket_x        [[ buffer(4) ]],
+    device BigInt*              bucket_y        [[ buffer(5) ]],
+    device BigInt*              bucket_z        [[ buffer(6) ]],
     constant uint4&             params          [[ buffer(7) ]],
     uint3                       gid             [[thread_position_in_grid]],
     uint3                       tid             [[thread_position_in_threadgroup]]
@@ -78,7 +78,7 @@ kernel void smvp(
             sum = sum + b;
 
             // Debug for correct input points
-            LOG_DEBUG("new_point_x[%u].value.limbs[0]: %u", idx, new_point_x[idx].value.limbs[0]);
+            LOG_DEBUG("new_point_x[%u].limbs[0]: %u", idx, new_point_x[idx].limbs[0]);
         }
 
         // In short Weierstrass, negation = flip sign of Y mod p: jacobian_neg.
@@ -118,7 +118,7 @@ kernel void smvp(
         // Debug for correct sum
         if (id == 0) {
             for (uint i = 0; i < NUM_LIMBS; i++) {
-                LOG_DEBUG("sum[%u].x.value.limbs[%u]: %u", id, i, sum.x.value.limbs[i]);
+                LOG_DEBUG("sum[%u].x.limbs[%u]: %u", id, i, sum.x.limbs[i]);
             }
         }
     }

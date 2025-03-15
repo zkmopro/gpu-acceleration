@@ -6,46 +6,27 @@ using namespace metal;
 #include <metal_math>
 #include "../bigint/bigint.metal"
 
-/// Reduce if the value is greater than the modulus
-FieldElement ff_reduce(FieldElement a) {
-    BigIntResult sub_res = bigint_sub(a.value, *get_p());
-    if (sub_res.carry == 1) return a;
-    return FieldElement{ sub_res.value };
+inline BigInt ff_reduce(BigInt a) {
+    BigInt p = MODULUS;
+    BigIntResult res = bigint_sub(a, p);
+    if (res.carry == 1) return a;
+    return res.value;
 }
 
-/// Reduce once if the value is greater than the modulus
-FieldElement ff_conditional_reduce(FieldElement a) {
-    if (a.value >= *get_p()) {
-        a.value = a.value - *get_p();
-    }
-    return a;
+inline BigInt ff_add(BigInt a, BigInt b) {
+    return ff_reduce(bigint_add_unsafe(a, b).value);
 }
 
-FieldElement ff_add(FieldElement a, FieldElement b) {
-    FieldElement res;
-    res.value = a.value + b.value;
-    return ff_reduce(res);
-}
+inline BigInt ff_sub(BigInt a, BigInt b) {
+    bool a_gte_b = bigint_gte(a, b);
 
-FieldElement ff_sub(FieldElement a, FieldElement b) {
-    bool a_gte_b = bigint_gte(a.value, b.value);
-    BigInt sub_res;
     if (a_gte_b) {
-        sub_res = a.value - b.value;
+        return bigint_sub(a, b).value;
     }
     else {
         // p - (b - a)
-        BigInt diff = b.value - a.value;
-        sub_res = *get_p() - diff;
+        BigInt p = MODULUS;
+        BigIntResult diff = bigint_sub(b, a);
+        return bigint_sub(p, diff.value).value;
     }
-    return FieldElement{ sub_res };
-}
-
-// Overload Operators
-constexpr FieldElement operator+(const FieldElement lhs, const FieldElement rhs) {
-    return ff_add(lhs, rhs);
-}
-
-constexpr FieldElement operator-(const FieldElement lhs, const FieldElement rhs) {
-    return ff_sub(lhs, rhs);
 }

@@ -4,7 +4,7 @@ using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
 
-uint32_t extract_word_from_bytes_le(
+inline uint32_t extract_word_from_bytes_le(
     const thread uint32_t* input,
     uint32_t word_idx,
     uint32_t chunk_size

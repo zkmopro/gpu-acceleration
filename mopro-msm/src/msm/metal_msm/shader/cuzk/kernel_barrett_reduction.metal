@@ -19,6 +19,6 @@ kernel void run(
     device BigInt* res [[ buffer(1) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *res = barrett_reduce(*a).value;
+    *res = barrett_reduce(*a);
     LOG_DEBUG("pointer: %p", res);
 }

@@ -5,15 +5,15 @@ using namespace metal;
 #include "../constants.metal"
 
 struct BigInt {
-    array<uint32_t, NUM_LIMBS> limbs;
+    array<uint, NUM_LIMBS> limbs;
 };
 
 struct BigIntWide {
-    array<uint32_t, NUM_LIMBS_WIDE> limbs;
+    array<uint, NUM_LIMBS_WIDE> limbs;
 };
 
 struct BigIntExtraWide {
-    array<uint32_t, NUM_LIMBS_EXTRA_WIDE> limbs;
+    array<uint, NUM_LIMBS_EXTRA_WIDE> limbs;
 };
 
 struct BigIntResult {
@@ -31,18 +31,13 @@ struct BigIntResultExtraWide {
     bool carry;
 };
 
-// wrapper around BigInt to avoid having to pass modulus around
-struct FieldElement {
-    BigInt value;
-};
-
 struct Jacobian {
-    FieldElement x;
-    FieldElement y;
-    FieldElement z;
+    BigInt x;
+    BigInt y;
+    BigInt z;
 };
 
 struct Affine {
-    FieldElement x;
-    FieldElement y;
+    BigInt x;
+    BigInt y;
 };

@@ -9,5 +9,5 @@ kernel void run(
     device BigInt* res [[ buffer(2) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    *res = field_mul(*a, *b).value;
+    *res = field_mul(*a, *b);
 }

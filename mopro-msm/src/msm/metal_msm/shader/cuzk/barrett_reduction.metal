@@ -75,17 +75,18 @@ BigInt get_higher_with_slack(BigIntExtraWide a) {
     return out;
 }
 
-FieldElement barrett_reduce(BigIntExtraWide a) {
+BigInt barrett_reduce(BigIntExtraWide a) {
     for (uint i = 0; i < NUM_LIMBS; i++) {
         LOG_DEBUG_DUPL("res.limbs[%u] = %u", i, a.limbs[i]);
     }
 
+    BigInt p = MODULUS;
     BigInt mu = get_mu();
 
     BigInt a_hi = get_higher_with_slack(a);
     BigIntExtraWide l = mul(bigint_to_wide(a_hi), bigint_to_wide(mu));
     BigInt l_hi = get_higher_with_slack(l);
-    BigIntExtraWide lp = mul(bigint_to_wide(l_hi), get_p_wide());
+    BigIntExtraWide lp = mul(bigint_to_wide(l_hi), bigint_to_wide(p));
 
     // Subtract lp from original a
     BigIntResultExtraWide sub_result = sub_512(a, lp);
@@ -97,14 +98,15 @@ FieldElement barrett_reduce(BigIntExtraWide a) {
         r_wide = add_512(r_wide, p_wide).value;
     }
 
-    FieldElement res = { bigint_zero() };
+    BigInt r = bigint_zero();
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        res.value.limbs[i] = r_wide.limbs[i];
+        r.limbs[i] = r_wide.limbs[i];
     }
-    return ff_reduce(res);
+
+    return ff_reduce(r);
 }
 
-FieldElement field_mul(BigIntWide a, BigIntWide b) {
+inline BigInt field_mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide xy = mul(a, b);
     return barrett_reduce(xy);
 }
