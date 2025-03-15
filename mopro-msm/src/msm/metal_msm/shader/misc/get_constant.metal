@@ -25,8 +25,7 @@ using namespace metal;
                  INIT_LIMB(16), INIT_LIMB(17), INIT_LIMB(18), INIT_LIMB(19)
 
 // Since modulus is constantly used, we initialize it here
-// and return its ptr when needed
-constant BigInt modulus = {
+constant BigInt MODULUS = {
 #if (NUM_LIMBS == 16)
     LIMBS_16
 #elif (NUM_LIMBS == 17)
@@ -60,11 +59,6 @@ BigIntWide get_r() {
         r.limbs[i] = MONT_RADIX[i];
     }
     return r;
-}
-
-/// Returns a reference to the modulus
-constant BigInt* get_p() {
-    return &modulus;
 }
 
 BigIntWide get_p_wide() {
@@ -110,9 +104,9 @@ BigIntExtraWide bigint_zero_extra_wide() {
 Jacobian get_bn254_zero() {
     Jacobian zero;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        zero.x.value.limbs[i] = BN254_ZERO_X[i];
-        zero.y.value.limbs[i] = BN254_ZERO_Y[i];
-        zero.z.value.limbs[i] = BN254_ZERO_Z[i];
+        zero.x.limbs[i] = BN254_ZERO_X[i];
+        zero.y.limbs[i] = BN254_ZERO_Y[i];
+        zero.z.limbs[i] = BN254_ZERO_Z[i];
     }
     return zero;
 }
@@ -120,9 +114,9 @@ Jacobian get_bn254_zero() {
 Jacobian get_bn254_one() {
     Jacobian one;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        one.x.value.limbs[i] = BN254_ONE_X[i];
-        one.y.value.limbs[i] = BN254_ONE_Y[i];
-        one.z.value.limbs[i] = BN254_ONE_Z[i];
+        one.x.limbs[i] = BN254_ONE_X[i];
+        one.y.limbs[i] = BN254_ONE_Y[i];
+        one.z.limbs[i] = BN254_ONE_Z[i];
     }
     return one;
 }
@@ -130,9 +124,9 @@ Jacobian get_bn254_one() {
 Jacobian get_bn254_zero_mont() {
     Jacobian zero;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        zero.x.value.limbs[i] = BN254_ZERO_XR[i];
-        zero.y.value.limbs[i] = BN254_ZERO_YR[i];
-        zero.z.value.limbs[i] = BN254_ZERO_ZR[i];
+        zero.x.limbs[i] = BN254_ZERO_XR[i];
+        zero.y.limbs[i] = BN254_ZERO_YR[i];
+        zero.z.limbs[i] = BN254_ZERO_ZR[i];
     }
     return zero;
 }
@@ -140,9 +134,9 @@ Jacobian get_bn254_zero_mont() {
 Jacobian get_bn254_one_mont() {
     Jacobian one;
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        one.x.value.limbs[i] = BN254_ONE_XR[i];
-        one.y.value.limbs[i] = BN254_ONE_YR[i];
-        one.z.value.limbs[i] = BN254_ONE_ZR[i];
+        one.x.limbs[i] = BN254_ONE_XR[i];
+        one.y.limbs[i] = BN254_ONE_YR[i];
+        one.z.limbs[i] = BN254_ONE_ZR[i];
     }
     return one;
 }

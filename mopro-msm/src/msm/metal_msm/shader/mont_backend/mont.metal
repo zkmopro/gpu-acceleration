@@ -8,46 +8,61 @@ using namespace metal;
 #include <metal_math>
 #include "../field/ff.metal"
 
+BigInt conditional_reduce(
+    BigInt x,
+    BigInt y
+) {
+    if (x >= y) {
+        return x - y;
+    }
+
+    return x;
+}
+
 /// An optimised variant of the Montgomery product algorithm from
 /// https://github.com/mitschabaude/montgomery#13-x-30-bit-multiplication.
 /// Known to work with 12 and 13-bit limbs.
-FieldElement mont_mul_optimised(FieldElement x, FieldElement y) {
-    FieldElement res = FieldElement{ bigint_zero() };
+BigInt mont_mul_optimised(BigInt x, BigInt y) {
+    BigInt p = MODULUS;
+    BigInt s = bigint_zero();
     for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint t = res.value.limbs[0] + x.value.limbs[i] * y.value.limbs[0];
+        uint t = s.limbs[0] + x.limbs[i] * y.limbs[0];
         uint tprime = t & MASK;
         uint qi = (N0 * tprime) & MASK;
-        uint c = (t + qi * (*get_p()).limbs[0]) >> LOG_LIMB_SIZE;
-        res.value.limbs[0] = res.value.limbs[1] + x.value.limbs[i] * y.value.limbs[1] + qi * (*get_p()).limbs[1] + c;
+        uint c = (t + qi * p.limbs[0]) >> LOG_LIMB_SIZE;
+        s.limbs[0] = s.limbs[1] + x.limbs[i] * y.limbs[1] + qi * p.limbs[1] + c;
 
         for (uint j = 2; j < NUM_LIMBS; j ++) {
-            res.value.limbs[j - 1] = res.value.limbs[j] + x.value.limbs[i] * y.value.limbs[j] + qi * (*get_p()).limbs[j];
+            s.limbs[j - 1] = s.limbs[j] + x.limbs[i] * y.limbs[j] + qi * p.limbs[j];
         }
-        res.value.limbs[NUM_LIMBS - 2] = x.value.limbs[i] * y.value.limbs[NUM_LIMBS - 1] + qi * (*get_p()).limbs[NUM_LIMBS - 1];
+        s.limbs[NUM_LIMBS - 2] = x.limbs[i] * y.limbs[NUM_LIMBS - 1] + qi * p.limbs[NUM_LIMBS - 1];
     }
 
     uint c = 0;
     for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint v = res.value.limbs[i] + c;
+        uint v = s.limbs[i] + c;
         c = v >> LOG_LIMB_SIZE;
-        res.value.limbs[i] = v & MASK;
+        s.limbs[i] = v & MASK;
     }
-    return ff_conditional_reduce(res);
+
+    return conditional_reduce(s, p);
 }
 
 /// An modified variant of the Montgomery product algorithm from
 /// https://github.com/mitschabaude/montgomery#13-x-30-bit-multiplication.
 /// Known to work with 14 and 15-bit limbs.
-FieldElement mont_mul_modified(FieldElement x, FieldElement y) {
-    FieldElement res = FieldElement{ bigint_zero() };
+BigInt mont_mul_modified(BigInt x, BigInt y) {
+    BigInt p = MODULUS;
+    BigInt s = bigint_zero();
+
     for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint t = res.value.limbs[0] + x.value.limbs[i] * y.value.limbs[0];
+        uint t = s.limbs[0] + x.limbs[i] * y.limbs[0];
         uint tprime = t & MASK;
         uint qi = (N0 * tprime) & MASK;
-        uint c = (t + qi * (*get_p()).limbs[0]) >> LOG_LIMB_SIZE;
+        uint c = (t + qi * p.limbs[0]) >> LOG_LIMB_SIZE;
 
         for (uint j = 1; j < NUM_LIMBS - 1; j ++) {
-            uint t = res.value.limbs[j] + x.value.limbs[i] * y.value.limbs[j] + qi * (*get_p()).limbs[j];
+            uint t = s.limbs[j] + x.limbs[i] * y.limbs[j] + qi * p.limbs[j];
             if ((j - 1) % NSAFE == 0) {
                 t = t + c;
             }
@@ -56,36 +71,38 @@ FieldElement mont_mul_modified(FieldElement x, FieldElement y) {
 
             if (j % NSAFE == 0) {
                 c = t >> LOG_LIMB_SIZE;
-                res.value.limbs[j - 1] = t & MASK;
-            }
-            else {
-                res.value.limbs[j - 1] = t;
+                s.limbs[j - 1] = t & MASK;
+            } else {
+                s.limbs[j - 1] = t;
             }
         }
-        res.value.limbs[NUM_LIMBS - 2] = x.value.limbs[i] * y.value.limbs[NUM_LIMBS - 1] + qi * (*get_p()).limbs[NUM_LIMBS - 1];
+        s.limbs[NUM_LIMBS - 2] = x.limbs[i] * y.limbs[NUM_LIMBS - 1] + qi * p.limbs[NUM_LIMBS - 1];
     }
 
     uint c = 0;
     for (uint i = 0; i < NUM_LIMBS; i ++) {
-        uint v = res.value.limbs[i] + c;
+        uint v = s.limbs[i] + c;
         c = v >> LOG_LIMB_SIZE;
-        res.value.limbs[i] = v & MASK;
+        s.limbs[i] = v & MASK;
     }
-    return ff_conditional_reduce(res);
+
+    return conditional_reduce(s, p);
 }
 
 /// The CIOS method for Montgomery multiplication from Tolga Acar's thesis:
 /// High-Speed Algorithms & Architectures For Number-Theoretic Cryptosystems
 /// https://www.proquest.com/openview/1018972f191afe55443658b28041c118/1
-FieldElement mont_mul_cios(FieldElement x, FieldElement y) {
-    FieldElement res = FieldElement{ bigint_zero() };
-    uint t[NUM_LIMBS + 2] = {0};  // Extra space for carries
+BigInt mont_mul_cios(BigInt x, BigInt y) {
+    BigInt p = MODULUS;
 
+    BigInt result;
+    uint t[NUM_LIMBS + 2] = {0};  // Extra space for carries
+    
     for (uint i = 0; i < NUM_LIMBS; i++) {
         // Step 1: Multiply and add
         uint c = 0;
         for (uint j = 0; j < NUM_LIMBS; j++) {
-            uint r = t[j] + x.value.limbs[j] * y.value.limbs[i] + c;
+            uint r = t[j] + x.limbs[j] * y.limbs[i] + c;
             c = r >> LOG_LIMB_SIZE;
             t[j] = r & MASK;
         }
@@ -95,11 +112,11 @@ FieldElement mont_mul_cios(FieldElement x, FieldElement y) {
 
         // Step 2: Reduce
         uint m = (t[0] * N0) & MASK;
-        r = t[0] + m * (*get_p()).limbs[0];
+        r = t[0] + m * p.limbs[0];
         c = r >> LOG_LIMB_SIZE;
 
         for (uint j = 1; j < NUM_LIMBS; j++) {
-            r = t[j] + m * (*get_p()).limbs[j] + c;
+            r = t[j] + m * p.limbs[j] + c;
             c = r >> LOG_LIMB_SIZE;
             t[j - 1] = r & MASK;
         }
@@ -114,37 +131,32 @@ FieldElement mont_mul_cios(FieldElement x, FieldElement y) {
     bool t_lt_p = false;
     for (uint idx = 0; idx < NUM_LIMBS; idx++) {
         uint i = NUM_LIMBS - 1 - idx;
-        if (t[i] < (*get_p()).limbs[i]) {
+        if (t[i] < p.limbs[i]) {
             t_lt_p = true;
             break;
-        } else if (t[i] > (*get_p()).limbs[i]) {
+        } else if (t[i] > p.limbs[i]) {
             break;
         }
     }
 
     if (t_lt_p) {
         for (uint i = 0; i < NUM_LIMBS; i++) {
-            res.value.limbs[i] = t[i];
+            result.limbs[i] = t[i];
         }
     } else {
         uint borrow = 0;
         for (uint i = 0; i < NUM_LIMBS; i++) {
-            uint diff = t[i] - (*get_p()).limbs[i] - borrow;
-            if (t[i] < ((*get_p()).limbs[i] + borrow)) {
+            uint diff = t[i] - p.limbs[i] - borrow;
+            if (t[i] < (p.limbs[i] + borrow)) {
                 diff += (1 << LOG_LIMB_SIZE);
                 borrow = 1;
             } else {
                 borrow = 0;
             }
-            res.value.limbs[i] = diff;
+            result.limbs[i] = diff;
         }
     }
-    return res;
-}
 
-// Overload Operators with Default Montgomery Multiplication for FieldElement
-constexpr FieldElement operator*(const FieldElement lhs, const FieldElement rhs) {
-    return mont_mul_cios(lhs, rhs);
+    return result;
 }
-
 #pragma clang diagnostic pop

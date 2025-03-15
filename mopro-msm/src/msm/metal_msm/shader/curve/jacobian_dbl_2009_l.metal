@@ -14,14 +14,14 @@ kernel void run(
     device BigInt* result_zr [[ buffer(5) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    FieldElement x1 = FieldElement{ *a_xr };
-    FieldElement y1 = FieldElement{ *a_yr };
-    FieldElement z1 = FieldElement{ *a_zr };
+    BigInt x1 = *a_xr;
+    BigInt y1 = *a_yr;
+    BigInt z1 = *a_zr;
 
-    Jacobian a = Jacobian{ .x = x1, .y = y1, .z = z1 };
+    Jacobian a; a.x = x1; a.y = y1; a.z = z1;
 
     Jacobian res = jacobian_dbl_2009_l(a);
-    *result_xr = res.x.value;
-    *result_yr = res.y.value;
-    *result_zr = res.z.value;
+    *result_xr = res.x;
+    *result_yr = res.y;
+    *result_zr = res.z;
 }

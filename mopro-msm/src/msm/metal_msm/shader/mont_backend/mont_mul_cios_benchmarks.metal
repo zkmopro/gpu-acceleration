@@ -10,14 +10,13 @@ kernel void run(
     device BigInt* result [[ buffer(3) ]],
     uint gid [[ thread_position_in_grid ]]
 ) {
-    FieldElement lhs_field = { *lhs };
-    FieldElement rhs_field = { *rhs };
+    BigInt a = *lhs;
+    BigInt b = *rhs;
     array<uint, 1> cost_arr = *cost;
 
-    // calculate lhs^3 * rhs
-    FieldElement c = mont_mul_cios(lhs_field, lhs_field);
+    BigInt c = mont_mul_cios(a, a);
     for (uint i = 1; i < cost_arr[0]; i ++) {
-        c = mont_mul_cios(c, lhs_field);
+        c = mont_mul_cios(c, a);
     }
-    *result = mont_mul_cios(c, rhs_field).value;
+    *result = mont_mul_cios(c, b);
 }
