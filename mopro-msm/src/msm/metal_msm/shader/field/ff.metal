@@ -6,30 +6,27 @@ using namespace metal;
 #include <metal_math>
 #include "../bigint/bigint.metal"
 
-BigInt ff_reduce(BigInt a) {
+inline BigInt ff_reduce(BigInt a) {
     BigInt p = MODULUS;
     BigIntResult res = bigint_sub(a, p);
     if (res.carry == 1) return a;
     return res.value;
 }
 
-BigInt ff_add(BigInt a, BigInt b) {
-    BigIntResult res = bigint_add_unsafe(a, b);
-    return ff_reduce(res.value);
+inline BigInt ff_add(BigInt a, BigInt b) {
+    return ff_reduce(bigint_add_unsafe(a, b).value);
 }
 
-BigInt ff_sub(BigInt a, BigInt b) {
+inline BigInt ff_sub(BigInt a, BigInt b) {
     bool a_gte_b = bigint_gte(a, b);
 
     if (a_gte_b) {
-        BigIntResult res = bigint_sub(a, b);
-        return res.value;
+        return bigint_sub(a, b).value;
     }
     else {
         // p - (b - a)
         BigInt p = MODULUS;
         BigIntResult diff = bigint_sub(b, a);
-        BigIntResult res = bigint_sub(p, diff.value);
-        return res.value;
+        return bigint_sub(p, diff.value).value;
     }
 }

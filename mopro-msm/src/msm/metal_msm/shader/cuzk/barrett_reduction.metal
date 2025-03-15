@@ -106,7 +106,7 @@ BigInt barrett_reduce(BigIntExtraWide a) {
     return ff_reduce(r);
 }
 
-BigInt field_mul(BigIntWide a, BigIntWide b) {
+inline BigInt field_mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide xy = mul(a, b);
     return barrett_reduce(xy);
 }

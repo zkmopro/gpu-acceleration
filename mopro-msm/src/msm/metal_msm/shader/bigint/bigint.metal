@@ -5,7 +5,7 @@ using namespace metal;
 #include "../misc/get_constant.metal"
 
 
-BigIntResult bigint_add_unsafe(
+inline BigIntResult bigint_add_unsafe(
     BigInt lhs,
     BigInt rhs
 ) {
@@ -20,7 +20,7 @@ BigIntResult bigint_add_unsafe(
     return res;
 }
 
-BigIntResultWide bigint_add_wide(
+inline BigIntResultWide bigint_add_wide(
     BigInt lhs,
     BigInt rhs
 ) {
@@ -38,7 +38,7 @@ BigIntResultWide bigint_add_wide(
     return res;
 }
 
-BigIntResult bigint_sub(
+inline BigIntResult bigint_sub(
     BigInt lhs,
     BigInt rhs
 ) {
@@ -57,7 +57,7 @@ BigIntResult bigint_sub(
 }
 
 
-BigIntResultWide bigint_sub_wide(
+inline BigIntResultWide bigint_sub_wide(
     BigIntWide lhs,
     BigIntWide rhs
 ) {
@@ -75,7 +75,7 @@ BigIntResultWide bigint_sub_wide(
     return res;
 }
 
-bool bigint_gte(
+inline bool bigint_gte(
     BigInt lhs,
     BigInt rhs
 ) {
@@ -88,7 +88,7 @@ bool bigint_gte(
     return true;
 }
 
-bool bigint_wide_gte(
+inline bool bigint_wide_gte(
     BigIntWide lhs,
     BigIntWide rhs
 ) {
@@ -100,7 +100,7 @@ bool bigint_wide_gte(
     return true;
 }
 
-bool bigint_eq(
+inline bool bigint_eq(
     BigInt lhs,
     BigInt rhs
 ) {
@@ -110,7 +110,7 @@ bool bigint_eq(
     return true;
 }
 
-bool is_bigint_zero(BigInt x) {
+inline bool is_bigint_zero(BigInt x) {
     for (uint i = 0; i < NUM_LIMBS; i++) {
         if (x.limbs[i] != 0) return false;
     }
@@ -118,7 +118,7 @@ bool is_bigint_zero(BigInt x) {
 }
 
 // Conversion functions
-BigIntWide bigint_to_wide(BigInt x) {
+inline BigIntWide bigint_to_wide(BigInt x) {
     BigIntWide res = bigint_zero_wide();
     for (uint i = 0; i < NUM_LIMBS; i++) {
         res.limbs[i] = x.limbs[i];
@@ -126,7 +126,7 @@ BigIntWide bigint_to_wide(BigInt x) {
     return res;
 }
 
-BigInt bigint_from_wide(BigIntWide x) {
+inline BigInt bigint_from_wide(BigIntWide x) {
     BigInt res = bigint_zero();
     // ignore the last limb
     for (uint i = 0; i < NUM_LIMBS; i++) {

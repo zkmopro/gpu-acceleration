@@ -8,7 +8,7 @@ using namespace metal;
 #include "../mont_backend/mont.metal"
 #include "./utils.metal"
 
-Jacobian jacobian_dbl_2009_l(Jacobian pt) {
+inline Jacobian jacobian_dbl_2009_l(Jacobian pt) {
     BigInt x = pt.x;
     BigInt y = pt.y;
     BigInt z = pt.z;
@@ -42,7 +42,7 @@ Jacobian jacobian_dbl_2009_l(Jacobian pt) {
     return result;
 }
 
-Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
+inline Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
     if (is_jacobian_zero(a)) return b;
     if (is_jacobian_zero(b)) return a;
     if (a == b) return jacobian_dbl_2009_l(a);
@@ -96,7 +96,7 @@ Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
 
 // Notice that this algo only takes standard form instead of Montgomery form
 // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-madd-2007-bl
-Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
+inline Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
     BigInt x1 = a.x;
     BigInt y1 = a.y;
     BigInt z1 = a.z;
@@ -159,7 +159,7 @@ Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
     return result;
 }
 
-Jacobian jacobian_scalar_mul(
+inline Jacobian jacobian_scalar_mul(
     Jacobian pt,
     uint scalar
 ) {
@@ -186,7 +186,7 @@ Jacobian jacobian_scalar_mul(
     return result;
 }
 
-Jacobian jacobian_neg(Jacobian pt) {
+inline Jacobian jacobian_neg(Jacobian pt) {
     if (is_jacobian_zero(pt)) { return pt; }
 
     // Negate Y (mod p): newY = p - Y

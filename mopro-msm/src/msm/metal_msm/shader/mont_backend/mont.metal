@@ -92,7 +92,7 @@ BigInt mont_mul_modified(BigInt x, BigInt y) {
 /// The CIOS method for Montgomery multiplication from Tolga Acar's thesis:
 /// High-Speed Algorithms & Architectures For Number-Theoretic Cryptosystems
 /// https://www.proquest.com/openview/1018972f191afe55443658b28041c118/1
-BigInt mont_mul_cios(BigInt x, BigInt y) {
+inline BigInt mont_mul_cios(BigInt x, BigInt y) {
     BigInt p = MODULUS;
 
     BigInt result;
