@@ -87,7 +87,7 @@ fn test_sparse_matrix_transposition() {
     }
 }
 
-fn compute_expected_csc(csr_cols: &[u32], n: u32) -> (Vec<u32>, Vec<u32>) {
+pub fn compute_expected_csc(csr_cols: &[u32], n: u32) -> (Vec<u32>, Vec<u32>) {
     // Phase 1: Count column occurrences
     let mut col_counts = vec![0; n as usize + 1];
     for &col in csr_cols {

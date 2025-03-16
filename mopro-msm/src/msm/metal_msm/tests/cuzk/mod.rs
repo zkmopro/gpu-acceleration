@@ -2,6 +2,7 @@
 pub mod barrett_reduction;
 #[cfg(test)]
 pub mod convert_point_coords_and_decompose_scalars;
+mod e2e;
 #[cfg(test)]
 pub mod pbpr;
 #[cfg(test)]

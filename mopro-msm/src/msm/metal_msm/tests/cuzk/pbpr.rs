@@ -60,94 +60,94 @@ pub fn raw_reduction(a: BigInt<N>) -> BigInt<N> {
     BigInt::new(r)
 }
 
+/// Converts a bucket vector into three separated vectors for the x, y, and z coordinates
+fn buckets_to_separated_coords(
+    buckets: &Vec<G>,
+    num_limbs: usize,
+    log_limb_size: u32,
+) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
+    let constants = get_or_calc_constants(num_limbs, log_limb_size);
+    let p = &constants.p;
+    let r = &constants.r;
+
+    // Pre-allocate vectors for the limbs
+    let total_limbs = buckets.len() * num_limbs;
+    let mut buckets_x = Vec::with_capacity(total_limbs);
+    let mut buckets_y = Vec::with_capacity(total_limbs);
+    let mut buckets_z = Vec::with_capacity(total_limbs);
+
+    for point in buckets {
+        // Convert to Montgomery form
+        let px: BigUint = point.x.into();
+        let py: BigUint = point.y.into();
+        let pz: BigUint = point.z.into();
+
+        let pxr = (&px * r) % p;
+        let pyr = (&py * r) % p;
+        let pzr = (&pz * r) % p;
+
+        // Convert to limbs
+        let pxr_limbs = BigInt::<4>::try_from(pxr)
+            .unwrap()
+            .to_limbs(num_limbs, log_limb_size);
+        let pyr_limbs = BigInt::<4>::try_from(pyr)
+            .unwrap()
+            .to_limbs(num_limbs, log_limb_size);
+        let pzr_limbs = BigInt::<4>::try_from(pzr)
+            .unwrap()
+            .to_limbs(num_limbs, log_limb_size);
+
+        // Add limbs to the coordinate vectors
+        buckets_x.extend_from_slice(&pxr_limbs);
+        buckets_y.extend_from_slice(&pyr_limbs);
+        buckets_z.extend_from_slice(&pzr_limbs);
+    }
+
+    (buckets_x, buckets_y, buckets_z)
+}
+
+/// Convert separated coordinate buffers from GPU back to a vector of points
+pub fn points_from_separated_buffers(
+    x_buffer: &[u32],
+    y_buffer: &[u32],
+    z_buffer: &[u32],
+    num_limbs: usize,
+    log_limb_size: u32,
+) -> Vec<G> {
+    let coord_size = num_limbs;
+    let total_u32s = x_buffer.len() as usize;
+    let num_points = total_u32s / coord_size;
+
+    let mut points = Vec::with_capacity(num_points);
+
+    for i in 0..num_points {
+        let start_idx = i * coord_size;
+        let end_idx = start_idx + coord_size;
+
+        // Extract limbs for each coordinate
+        let x_limbs = &x_buffer[start_idx..end_idx];
+        let y_limbs = &y_buffer[start_idx..end_idx];
+        let z_limbs = &z_buffer[start_idx..end_idx];
+
+        // Convert limbs back to BigInt
+        let x_bigint = raw_reduction(BigInt::<4>::from_limbs(x_limbs, log_limb_size));
+        let y_bigint = raw_reduction(BigInt::<4>::from_limbs(y_limbs, log_limb_size));
+        let z_bigint = raw_reduction(BigInt::<4>::from_limbs(z_limbs, log_limb_size));
+
+        // Convert to field elements
+        let x = BaseField::from_bigint(x_bigint).unwrap();
+        let y = BaseField::from_bigint(y_bigint).unwrap();
+        let z = BaseField::from_bigint(z_bigint).unwrap();
+
+        // Create and add the point
+        points.push(G::new_unchecked(x, y, z));
+    }
+
+    points
+}
+
 /// Implement parallel bucket reduction in GPU using separated buffers internally
 fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
-    /// Converts a bucket vector into three separated vectors for the x, y, and z coordinates
-    fn buckets_to_separated_coords(
-        buckets: &Vec<G>,
-        num_limbs: usize,
-        log_limb_size: u32,
-    ) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
-        let constants = get_or_calc_constants(num_limbs, log_limb_size);
-        let p = &constants.p;
-        let r = &constants.r;
-
-        // Pre-allocate vectors for the limbs
-        let total_limbs = buckets.len() * num_limbs;
-        let mut buckets_x = Vec::with_capacity(total_limbs);
-        let mut buckets_y = Vec::with_capacity(total_limbs);
-        let mut buckets_z = Vec::with_capacity(total_limbs);
-
-        for point in buckets {
-            // Convert to Montgomery form
-            let px: BigUint = point.x.into();
-            let py: BigUint = point.y.into();
-            let pz: BigUint = point.z.into();
-
-            let pxr = (&px * r) % p;
-            let pyr = (&py * r) % p;
-            let pzr = (&pz * r) % p;
-
-            // Convert to limbs
-            let pxr_limbs = BigInt::<4>::try_from(pxr)
-                .unwrap()
-                .to_limbs(num_limbs, log_limb_size);
-            let pyr_limbs = BigInt::<4>::try_from(pyr)
-                .unwrap()
-                .to_limbs(num_limbs, log_limb_size);
-            let pzr_limbs = BigInt::<4>::try_from(pzr)
-                .unwrap()
-                .to_limbs(num_limbs, log_limb_size);
-
-            // Add limbs to the coordinate vectors
-            buckets_x.extend_from_slice(&pxr_limbs);
-            buckets_y.extend_from_slice(&pyr_limbs);
-            buckets_z.extend_from_slice(&pzr_limbs);
-        }
-
-        (buckets_x, buckets_y, buckets_z)
-    }
-
-    /// Convert separated coordinate buffers from GPU back to a vector of points
-    fn points_from_separated_buffers(
-        x_buffer: &[u32],
-        y_buffer: &[u32],
-        z_buffer: &[u32],
-        num_limbs: usize,
-        log_limb_size: u32,
-    ) -> Vec<G> {
-        let coord_size = num_limbs;
-        let total_u32s = x_buffer.len() as usize;
-        let num_points = total_u32s / coord_size;
-
-        let mut points = Vec::with_capacity(num_points);
-
-        for i in 0..num_points {
-            let start_idx = i * coord_size;
-            let end_idx = start_idx + coord_size;
-
-            // Extract limbs for each coordinate
-            let x_limbs = &x_buffer[start_idx..end_idx];
-            let y_limbs = &y_buffer[start_idx..end_idx];
-            let z_limbs = &z_buffer[start_idx..end_idx];
-
-            // Convert limbs back to BigInt
-            let x_bigint = raw_reduction(BigInt::<4>::from_limbs(x_limbs, log_limb_size));
-            let y_bigint = raw_reduction(BigInt::<4>::from_limbs(y_limbs, log_limb_size));
-            let z_bigint = raw_reduction(BigInt::<4>::from_limbs(z_limbs, log_limb_size));
-
-            // Convert to field elements
-            let x = BaseField::from_bigint(x_bigint).unwrap();
-            let y = BaseField::from_bigint(y_bigint).unwrap();
-            let z = BaseField::from_bigint(z_bigint).unwrap();
-
-            // Create and add the point
-            points.push(G::new_unchecked(x, y, z));
-        }
-
-        points
-    }
-
     // Configure Metal test parameters
     let log_limb_size = 16;
     let num_limbs = 16;
