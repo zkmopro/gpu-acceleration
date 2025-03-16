@@ -14,8 +14,6 @@
  * [2] https://github.com/scipr-lab/libff/blob/develop/libff/algebra/curves/alt_bn128/alt_bn128.sage
  */
 
-use ark_bn254::Fq as BaseField;
-use ark_ff::PrimeField;
 use num_bigint::{BigInt, BigUint, Sign};
 
 pub fn calc_nsafe(log_limb_size: u32) -> usize {
