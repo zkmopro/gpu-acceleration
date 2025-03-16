@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
 
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 #[test]
 #[serial_test::serial]
@@ -14,14 +14,14 @@ fn test_point_coords_conversion() {
     let log_limb_size = 16;
     let num_limbs = 16;
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
         kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let constants = get_or_calc_constants(num_limbs, log_limb_size);
     let p = &constants.p;
     let r = &constants.r;
@@ -114,14 +114,14 @@ fn test_scalar_decomposition() {
     let num_subtasks = (256f32 / chunk_size as f32).ceil() as usize;
     let num_columns = 1 << chunk_size; // 2^chunk_size
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
         kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     // For scalar test, we can provide dummy coords (X=0, Y=0)
     let coords = vec![0u32; 16]; // 16 zeros

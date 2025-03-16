@@ -1,5 +1,5 @@
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_ff::{BigInt, BigInteger, UniformRand};
 use ark_std::rand;
@@ -34,14 +34,14 @@ fn generate_test_values(require_overflow: bool) -> (BigInt<4>, BigInt<4>, BigInt
 }
 
 fn run_bigint_add_test(a: &BigInt<4>, b: &BigInt<4>, expected: &BigInt<4>) {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "bigint/bigint_add_wide.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
     let b_buf = helper.create_input_buffer(&b.to_limbs(config.num_limbs, config.log_limb_size));

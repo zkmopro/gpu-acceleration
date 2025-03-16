@@ -1,5 +1,5 @@
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
@@ -59,7 +59,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: shader_file.to_string(),
@@ -95,7 +95,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         .to_limbs(num_limbs, log_limb_size);
 
     // Setup Metal helper
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     // Create buffers
     let a_buf =

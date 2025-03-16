@@ -5,9 +5,9 @@ use ark_std::{rand::thread_rng, UniformRand, Zero};
 use num_bigint::BigUint;
 use rayon::prelude::*;
 
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::data_conversion::raw_reduction;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 fn closest_power_of_two(n: usize) -> usize {
     if n <= 1 {
@@ -121,14 +121,14 @@ fn gpu_parallel_bpr(buckets: &Vec<G>) -> G {
     let num_limbs = 16;
     let bucket_size = buckets.len();
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/pbpr.metal".to_string(),
         kernel_name: "parallel_bpr".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     // Convert buckets to separated coordinate arrays
     let (buckets_x, buckets_y, buckets_z) =

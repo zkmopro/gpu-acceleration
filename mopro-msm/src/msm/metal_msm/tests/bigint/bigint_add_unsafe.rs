@@ -1,19 +1,19 @@
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_ff::{BigInt, BigInteger, UniformRand};
 
 #[test]
 #[serial_test::serial]
 pub fn test_bigint_add_unsafe() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "bigint/bigint_add_unsafe.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     let mut rng = rand::thread_rng();
     let (a, b, expected) = loop {

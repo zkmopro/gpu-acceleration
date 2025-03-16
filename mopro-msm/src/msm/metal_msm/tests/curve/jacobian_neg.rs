@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::BigUint;
 
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 #[test]
 #[serial_test::serial]
@@ -14,14 +14,14 @@ pub fn test_jacobian_neg() {
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "curve/jacobian_neg.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let constants = get_or_calc_constants(num_limbs, log_limb_size);
     let p = &constants.p;
     let r = &constants.r;
