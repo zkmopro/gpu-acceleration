@@ -1,5 +1,5 @@
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
@@ -16,14 +16,14 @@ pub fn do_test(log_limb_size: u32) {
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "mont_backend/mont_mul_modified.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let constants = get_or_calc_constants(num_limbs, log_limb_size);
 
     // Generate random values

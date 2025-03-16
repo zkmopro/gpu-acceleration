@@ -22,7 +22,7 @@ static CONSTANTS_CACHE: Lazy<Mutex<HashMap<(usize, u32), MSMConstants>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Struct for Metal config
-pub struct MetalTestConfig {
+pub struct MetalConfig {
     pub log_limb_size: u32,
     pub num_limbs: usize,
     pub shader_file: String,
@@ -40,7 +40,7 @@ pub struct MSMConstants {
     pub mu: BigUint,
 }
 
-impl Default for MetalTestConfig {
+impl Default for MetalConfig {
     fn default() -> Self {
         Self {
             log_limb_size: 16,
@@ -52,14 +52,14 @@ impl Default for MetalTestConfig {
 }
 
 /// Helper to setup Metal device, buffers, and execute shader
-pub struct MetalTestHelper {
+pub struct MetalHelper {
     pub device: Device,
     pub command_queue: CommandQueue,
     pub buffers: Vec<Buffer>,
 }
 
-impl MetalTestHelper {
-    /// Create a new Metal test helper
+impl MetalHelper {
+    /// Create a new Metal helper
     pub fn new() -> Self {
         let device = get_default_device();
         let command_queue = device.new_command_queue();
@@ -97,7 +97,7 @@ impl MetalTestHelper {
     /// Execute a Metal compute shader
     pub fn execute_shader(
         &self,
-        config: &MetalTestConfig,
+        config: &MetalConfig,
         input_buffers: &[&Buffer],
         output_buffers: &[&Buffer],
         thread_group_count: &MTLSize,

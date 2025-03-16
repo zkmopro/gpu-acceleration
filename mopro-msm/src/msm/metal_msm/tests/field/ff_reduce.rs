@@ -1,5 +1,5 @@
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, BigInteger, PrimeField, UniformRand};
@@ -8,14 +8,14 @@ use ark_std::rand;
 #[test]
 #[serial_test::serial]
 pub fn test_ff_reduce_a_less_than_p() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "field/ff_reduce.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     let (a, expected) = generate_test_values(false);
 
@@ -47,14 +47,14 @@ pub fn test_ff_reduce_a_less_than_p() {
 #[test]
 #[serial_test::serial]
 pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "field/ff_reduce.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     let (a, expected) = generate_test_values(true);
 

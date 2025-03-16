@@ -1,17 +1,17 @@
-use crate::msm::metal_msm::tests::common::*;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 use rand::Rng;
 
 #[test]
 #[serial_test::serial]
 fn test_sparse_matrix_transposition() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "cuzk/transpose.metal".to_string(),
         kernel_name: "transpose".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let mut rng = rand::thread_rng();
     const NUM_TESTS: usize = 10;
     const MAX_SUBTASKS: usize = 4;

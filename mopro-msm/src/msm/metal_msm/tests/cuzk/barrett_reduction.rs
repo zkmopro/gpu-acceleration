@@ -3,8 +3,8 @@ use ark_ff::{BigInt, PrimeField};
 use num_bigint::RandBigInt;
 use rand::thread_rng;
 
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 #[test]
 #[serial_test::serial]
@@ -13,14 +13,14 @@ pub fn test_barrett_reduce_with_mont_params() {
     let num_limbs = 16;
     let num_limbs_extra_wide = num_limbs * 2; // maximum 512 bits
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/kernel_barrett_reduction.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let constants = get_or_calc_constants(num_limbs, log_limb_size);
     let p = &constants.p;
     let r = &constants.r;
@@ -67,14 +67,14 @@ pub fn test_field_mul_with_mont_params() {
     let num_limbs = 16;
     let num_limbs_wide = num_limbs + 1;
 
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/kernel_field_mul.metal".to_string(),
         kernel_name: "run".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let constants = get_or_calc_constants(num_limbs, log_limb_size);
     let p = &constants.p;
     let r = &constants.r;

@@ -1,5 +1,5 @@
-use crate::msm::metal_msm::tests::common::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
+use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::{Fq as BaseField, G1Projective as G};
 use ark_ec::Group;
@@ -14,14 +14,14 @@ const SHADER_FILE: &str = "misc/test_get_constant.metal";
 #[test]
 #[serial_test::serial]
 pub fn test_get_n0() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_n0".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let result_buf = helper.create_output_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -50,14 +50,14 @@ pub fn test_get_n0() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_p() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_p".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let result_buf = helper.create_output_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -85,14 +85,14 @@ pub fn test_get_p() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_r() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_r".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let result_buf = helper.create_output_buffer(NUM_LIMBS_WIDE);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -121,14 +121,14 @@ pub fn test_get_r() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_p_wide() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS_WIDE,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_p_wide".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let result_buf = helper.create_output_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -156,14 +156,14 @@ pub fn test_get_p_wide() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_bn254_zero() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_bn254_zero".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let x_buf = helper.create_output_buffer(config.num_limbs);
     let y_buf = helper.create_output_buffer(config.num_limbs);
     let z_buf = helper.create_output_buffer(config.num_limbs);
@@ -196,14 +196,14 @@ pub fn test_get_bn254_zero() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_bn254_one() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_bn254_one".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let x_buf = helper.create_output_buffer(config.num_limbs);
     let y_buf = helper.create_output_buffer(config.num_limbs);
     let z_buf = helper.create_output_buffer(config.num_limbs);
@@ -234,14 +234,14 @@ pub fn test_get_bn254_one() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_bn254_zero_mont() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_bn254_zero_mont".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let x_buf = helper.create_output_buffer(config.num_limbs);
     let y_buf = helper.create_output_buffer(config.num_limbs);
     let z_buf = helper.create_output_buffer(config.num_limbs);
@@ -284,14 +284,14 @@ pub fn test_get_bn254_zero_mont() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_bn254_one_mont() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_bn254_one_mont".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
     let x_buf = helper.create_output_buffer(config.num_limbs);
     let y_buf = helper.create_output_buffer(config.num_limbs);
     let z_buf = helper.create_output_buffer(config.num_limbs);
@@ -334,14 +334,14 @@ pub fn test_get_bn254_one_mont() {
 #[test]
 #[serial_test::serial]
 pub fn test_get_mu() {
-    let config = MetalTestConfig {
+    let config = MetalConfig {
         log_limb_size: LOG_LIMB_SIZE,
         num_limbs: NUM_LIMBS,
         shader_file: SHADER_FILE.to_string(),
         kernel_name: "test_get_mu".to_string(),
     };
 
-    let mut helper = MetalTestHelper::new();
+    let mut helper = MetalHelper::new();
 
     let result_buf = helper.create_output_buffer(config.num_limbs);
 

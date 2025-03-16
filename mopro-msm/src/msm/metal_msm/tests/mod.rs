@@ -1,7 +1,5 @@
 #[cfg(test)]
 pub mod bigint;
-/// Common test utilities
-pub mod common;
 #[cfg(test)]
 pub mod curve;
 #[cfg(test)]
