@@ -1,13 +1,18 @@
-use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
+use ark_bn254::{Fq as BaseField, FqConfig, Fr as ScalarField, G1Projective as G};
 use ark_ec::Group;
-use ark_ff::{BigInt, PrimeField};
+use ark_ff::{
+    biginteger::{arithmetic as fa, BigInt},
+    fields::models::MontConfig,
+    PrimeField,
+};
 use ark_std::{rand::thread_rng, UniformRand, Zero};
 use num_bigint::BigUint;
 use rayon::prelude::*;
 
-use crate::msm::metal_msm::utils::data_conversion::raw_reduction;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
+
+const N: usize = 4;
 
 fn closest_power_of_two(n: usize) -> usize {
     if n <= 1 {
@@ -26,6 +31,33 @@ fn closest_power_of_two(n: usize) -> usize {
     } else {
         upper
     }
+}
+
+pub fn raw_reduction(a: BigInt<N>) -> BigInt<N> {
+    let mut r = a.0; // parse into [u64; N]
+
+    // Montgomery Reduction
+    for i in 0..N {
+        let k = r[i].wrapping_mul(<FqConfig as MontConfig<N>>::INV);
+        let mut carry = 0;
+
+        fa::mac_with_carry(
+            r[i],
+            k,
+            <FqConfig as MontConfig<N>>::MODULUS.0[0],
+            &mut carry,
+        );
+        for j in 1..N {
+            r[(j + i) % N] = fa::mac_with_carry(
+                r[(j + i) % N],
+                k,
+                <FqConfig as MontConfig<N>>::MODULUS.0[j],
+                &mut carry,
+            );
+        }
+        r[i % N] = carry;
+    }
+    BigInt::new(r)
 }
 
 /// Implement parallel bucket reduction in GPU using separated buffers internally

@@ -152,27 +152,3 @@ pub struct MontgomeryParams {
     pub n0: u32,
     pub nsafe: usize,
 }
-
-impl Default for MontgomeryParams {
-    fn default() -> Self {
-        let log_limb_size: u32 = 16;
-        let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-        let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
-        let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
-
-        let r = calc_mont_radix(num_limbs, log_limb_size);
-        let (rinv, n0) = calc_rinv_and_n0(&p, &r, log_limb_size);
-        let nsafe = calc_nsafe(log_limb_size);
-
-        Self {
-            log_limb_size,
-            p,
-            modulus_bits,
-            num_limbs,
-            r,
-            rinv,
-            n0,
-            nsafe,
-        }
-    }
-}
