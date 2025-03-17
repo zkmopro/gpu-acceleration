@@ -1,17 +1,16 @@
 use std::error::Error;
 
-use ark_bn254::{Fq as BaseField, G1Projective as G};
-use ark_ec::{CurveGroup, Group}; // for generator(), etc.
+use ark_bn254::g1::Config;
+use ark_bn254::G1Projective as G;
+use ark_ec::short_weierstrass::Affine;
+use ark_ec::{CurveGroup, Group};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{UniformRand, Zero};
 use num_bigint::BigUint;
 use rand::thread_rng;
 
-use crate::msm::metal_msm::tests::cuzk::transpose::compute_expected_csc;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
-// We'll need montgomery parameters – we use some utility functions for that.
-use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
 
 /// Helper function to pack an array of 16-bit limbs (u32 values assumed to be 16-bit)
 /// into 32-bit words.
@@ -41,14 +40,14 @@ fn test_complete_msm_pipeline() {
     // We now use the output of stage 1 (gpu_scalar_chunks) as input CSR column indices.
     // In the transpose shader a number of subtasks may be scheduled.
     // For demonstration we assume a single subtask here.
-    let num_subtasks = 1;
     const MAX_COLS: u32 = 8;
     let total_threads = 8;
+    let point = G::generator().into_affine();
 
     // === Stage 1: Convert Point Coordinates & Decompose Scalars ===
     let mut helper = MetalHelper::new();
     let (_, _, gpu_scalar_chunks) =
-        points_convertion(log_limb_size, num_limbs, &mut helper).unwrap();
+        points_convertion(log_limb_size, num_limbs, &mut helper, point).unwrap();
     helper.drop_all_buffers();
 
     // === Stage 2: Sparse Matrix Transposition ===
@@ -115,6 +114,7 @@ fn points_convertion(
     log_limb_size: u32,
     num_limbs: usize,
     helper: &mut MetalHelper,
+    point: Affine<Config>,
 ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
     let conv_config = MetalConfig {
         log_limb_size,
@@ -122,9 +122,6 @@ fn points_convertion(
         shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
         kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
     };
-
-    // Generate an example point (using the group's generator)
-    let point = G::generator().into_affine();
     // Convert its x and y coordinates to BigUint
     let x: BigUint = point.x.into_bigint().try_into().unwrap();
     let y: BigUint = point.y.into_bigint().try_into().unwrap();
@@ -151,7 +148,7 @@ fn points_convertion(
     let y_limbs = y_in_ark.to_limbs(num_limbs, log_limb_size);
     let x_packed = pack_limbs(&x_limbs);
     let y_packed = pack_limbs(&y_limbs);
-    let coords: Vec<u32> = [x_packed, y_packed].concat();
+    let coords: Vec<u32> = [x_packed.clone(), y_packed.clone()].concat();
 
     // In this conversion stage we don’t use the scalar data, so supply zeros.
     let scalars = vec![0u32; num_limbs];
@@ -210,13 +207,6 @@ fn transpose(
     num_limbs: usize,
     max_cols: u32,
 ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-    // We now use the output of stage 1 (gpu_scalar_chunks) as input CSR column indices.
-    // In the transpose shader a number of subtasks may be scheduled.
-    // For demonstration we assume a single subtask here.
-    let num_subtasks = 1;
-    // const MAX_COLS: u32 = _MAX_COLS;
-    // Let MAX_COLS be a fixed constant for the transpose stage.
-
     // Create the input buffer from gpu_scalar_chunks.
     let csr_cols_buf = helper.create_input_buffer(&gpu_scalar_chunks);
 
