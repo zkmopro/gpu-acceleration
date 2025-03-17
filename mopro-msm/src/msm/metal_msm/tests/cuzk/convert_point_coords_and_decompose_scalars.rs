@@ -1,6 +1,6 @@
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
-use ark_ec::{CurveGroup, Group};
-use ark_ff::{BigInt, PrimeField};
+use ark_ec::CurveGroup;
+use ark_ff::{BigInt, PrimeField, UniformRand};
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
 
@@ -30,8 +30,9 @@ fn test_point_coords_conversion() {
     // So let's just supply zeros for the scalar array
     let scalars = vec![0u32; num_limbs];
 
-    // Generate a point on BN254 for testing
-    let point = G::generator().into_affine();
+    // Generate a random point on BN254 for testing
+    let mut rng = thread_rng();
+    let point = G::rand(&mut rng).into_affine();
     let x: BigUint = point.x.into_bigint().try_into().unwrap();
     let y: BigUint = point.y.into_bigint().try_into().unwrap();
 
