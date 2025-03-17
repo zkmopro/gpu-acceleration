@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use ark_bn254::{Fq as BaseField, G1Projective as G};
 use ark_ec::{CurveGroup, Group}; // for generator(), etc.
 use ark_ff::{BigInt, PrimeField};
@@ -5,24 +7,11 @@ use ark_std::{UniformRand, Zero};
 use num_bigint::BigUint;
 use rand::thread_rng;
 
+use crate::msm::metal_msm::tests::cuzk::transpose::compute_expected_csc;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
 // We'll need montgomery parameters – we use some utility functions for that.
 use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
-
-/// A simple structure for holding Montgomery constants.
-struct MontConstants {
-    p: BigUint,
-    r: BigUint,
-}
-
-/// Since the original `get_or_calc_constants` isn’t available,
-/// we define a local equivalent.
-fn get_or_calc_constants(num_limbs: usize, log_limb_size: u32) -> MontConstants {
-    let p: BigUint = <BaseField as PrimeField>::MODULUS.into();
-    let r = calc_mont_radix(num_limbs, log_limb_size);
-    MontConstants { p, r }
-}
 
 /// Helper function to pack an array of 16-bit limbs (u32 values assumed to be 16-bit)
 /// into 32-bit words.
@@ -51,140 +40,11 @@ fn test_complete_msm_pipeline() {
 
     let mut helper = MetalHelper::new();
 
-    // === STAGE 1: CONVERT POINT COORDINATES & DECOMPOSE SCALARS ===
-    let conv_config = MetalConfig {
-        log_limb_size,
-        num_limbs,
-        shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-        kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
-    };
+    let (_, _, gpu_scalar_chunks) =
+        points_convertion(log_limb_size, num_limbs, &mut helper).unwrap();
 
-    // Generate an example point (using the group's generator)
-    let point = G::generator().into_affine();
-    // Convert its x and y coordinates to BigUint
-    let x: BigUint = point.x.into_bigint().try_into().unwrap();
-    let y: BigUint = point.y.into_bigint().try_into().unwrap();
-
-    // Get Montgomery constants.
-    let constants = get_or_calc_constants(num_limbs, log_limb_size);
-    let p = &constants.p;
-    let r = &constants.r;
-
-    // Compute Montgomery representations.
-    let x_mont = (&x * r) % p;
-    let y_mont = (&y * r) % p;
-
-    // Compute expected Montgomery values as ark_ff BigInt limbs.
-    let x_mont_in_ark: BigInt<4> = x_mont.clone().try_into().unwrap();
-    let y_mont_in_ark: BigInt<4> = y_mont.clone().try_into().unwrap();
-    let expected_x_limbs = x_mont_in_ark.to_limbs(num_limbs, log_limb_size);
-    let expected_y_limbs = y_mont_in_ark.to_limbs(num_limbs, log_limb_size);
-
-    // Also compute the raw (non‐Montgomery) x and y as limbs (packed as in the tests).
-    let x_in_ark: BigInt<4> = x.clone().try_into().unwrap();
-    let y_in_ark: BigInt<4> = y.clone().try_into().unwrap();
-    let x_limbs = x_in_ark.to_limbs(num_limbs, log_limb_size);
-    let y_limbs = y_in_ark.to_limbs(num_limbs, log_limb_size);
-    let x_packed = pack_limbs(&x_limbs);
-    let y_packed = pack_limbs(&y_limbs);
-    let coords: Vec<u32> = [x_packed, y_packed].concat();
-
-    // In this conversion stage we don’t use the scalar data, so supply zeros.
-    let scalars = vec![0u32; num_limbs];
-
-    // Create input buffers.
-    let coords_buf = helper.create_input_buffer(&coords);
-    let scalars_buf = helper.create_input_buffer(&scalars);
-    let input_size_buf = helper.create_input_buffer(&vec![1u32]); // one point
-
-    // Create output buffers for the converted point (x and y) and scalar chunks.
-    let point_x_buf = helper.create_output_buffer(num_limbs);
-    let point_y_buf = helper.create_output_buffer(num_limbs);
-    let chunks_buf = helper.create_output_buffer(num_limbs);
-
-    // Set up thread group sizes (we use 1×1×1 workgroup for demonstration).
-    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
-    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
-
-    // Dispatch the conversion & decomposition shader.
-    helper.execute_shader(
-        &conv_config,
-        &[&coords_buf, &scalars_buf, &input_size_buf],
-        &[&point_x_buf, &point_y_buf, &chunks_buf],
-        &thread_group_count,
-        &thread_group_size,
-    );
-
-    // Read back converted point data.
-    let gpu_point_x = helper.read_results(&point_x_buf, num_limbs);
-    let gpu_point_y = helper.read_results(&point_y_buf, num_limbs);
-    let gpu_scalar_chunks = helper.read_results(&chunks_buf, num_limbs);
-    println!("Stage 1 – GPU Converted X limbs: {:?}", gpu_point_x);
-    println!("Stage 1 – GPU Converted Y limbs: {:?}", gpu_point_y);
-    println!("Stage 1 – GPU Scalar chunks: {:?}", gpu_scalar_chunks);
-    println!("Stage 1 – Expected X limbs: {:?}", expected_x_limbs);
-    println!("Stage 1 – Expected Y limbs: {:?}", expected_y_limbs);
-
-    // ** ASSERTIONS FOR STAGE 1 **
-    assert_eq!(
-        gpu_point_x, expected_x_limbs,
-        "Stage 1: GPU X conversion mismatch!"
-    );
-    assert_eq!(
-        gpu_point_y, expected_y_limbs,
-        "Stage 1: GPU Y conversion mismatch!"
-    );
-
-    // === STAGE 2: TRANSPOSE (Sparse Matrix Transposition) ===
-    let transpose_config = MetalConfig {
-        log_limb_size,
-        num_limbs,
-        shader_file: "cuzk/transpose.metal".to_string(),
-        kernel_name: "transpose".to_string(),
-    };
-
-    // Generate dummy CSR column indices.
-    const MAX_COLS: u32 = 8;
-    const INPUT_SIZE_TRANS: u32 = 10;
-    let mut csr_cols: Vec<u32> = Vec::with_capacity(INPUT_SIZE_TRANS as usize);
-    for _ in 0..INPUT_SIZE_TRANS {
-        csr_cols.push(rand::random::<u32>() % MAX_COLS);
-    }
-
-    // Create buffers for CSR input and CSC output.
-    let csr_cols_buf = helper.create_input_buffer(&csr_cols);
-    let csc_col_ptr_buf = helper.create_output_buffer((MAX_COLS as usize) + 1);
-    let csc_val_idxs_buf = helper.create_output_buffer(INPUT_SIZE_TRANS as usize);
-    let all_curr_buf = helper.create_output_buffer(MAX_COLS as usize);
-
-    let transpose_params_buf = helper.create_input_buffer(&vec![INPUT_SIZE_TRANS, MAX_COLS]);
-    let thread_group_count_trans = helper.create_thread_group_size(1, 1, 1);
-    let thread_group_size_trans = helper.create_thread_group_size(1, 1, 1);
-
-    // Dispatch the transpose shader.
-    helper.execute_shader(
-        &transpose_config,
-        &[&csr_cols_buf, &transpose_params_buf],
-        &[&csc_col_ptr_buf, &csc_val_idxs_buf, &all_curr_buf],
-        &thread_group_count_trans,
-        &thread_group_size_trans,
-    );
-
-    let gpu_csc_col_ptr = helper.read_results(&csc_col_ptr_buf, (MAX_COLS as usize) + 1);
-    let gpu_csc_val_idxs = helper.read_results(&csc_val_idxs_buf, INPUT_SIZE_TRANS as usize);
-    println!("Stage 2 – Transposed CSC col_ptr: {:?}", gpu_csc_col_ptr);
-    println!("Stage 2 – Transposed CSC val_idxs: {:?}", gpu_csc_val_idxs);
-
-    // ** ASSERTIONS FOR STAGE 2 **
-    assert_eq!(
-        gpu_csc_col_ptr.len(),
-        (MAX_COLS as usize) + 1,
-        "Stage 2: CSC column pointer array length mismatch!"
-    );
-    assert_eq!(
-        gpu_csc_col_ptr[0], 0,
-        "Stage 2: First CSC column pointer should be zero!"
-    );
+    let (gpu_csc_col_ptr, gpu_csc_val_idxs) =
+        transpose(&mut helper, gpu_scalar_chunks, log_limb_size, num_limbs).unwrap();
 
     // === STAGE 3: SPARSE MATRIX VECTOR PRODUCT (SMVP) ===
     let smvp_config = MetalConfig {
@@ -403,4 +263,190 @@ fn test_complete_msm_pipeline() {
 
     // Free resources.
     helper.drop_all_buffers();
+}
+
+fn transpose(
+    helper: &mut MetalHelper,
+    gpu_scalar_chunks: Vec<u32>,
+    log_limb_size: u32,
+    num_limbs: usize,
+) -> Result<(Vec<u32>, Vec<u32>), Box<dyn Error>> {
+    // ========= Stage 2: Sparse Matrix Transposition =========
+
+    // We now use the output of stage 1 (gpu_scalar_chunks) as input CSR column indices.
+    // In the transpose shader a number of subtasks may be scheduled.
+    // For demonstration we assume a single subtask here.
+    let num_subtasks = 1;
+    const MAX_COLS: u32 = 8;
+    // Let MAX_COLS be a fixed constant for the transpose stage.
+
+    // Create the input buffer from gpu_scalar_chunks.
+    let csr_cols_buf = helper.create_input_buffer(&gpu_scalar_chunks);
+
+    // Set the transpose parameters: here input_size_trans is the number of CSR entries.
+    let input_size_trans = gpu_scalar_chunks.len() as u32;
+    let transpose_params_buf = helper.create_input_buffer(&vec![input_size_trans, MAX_COLS]);
+
+    // Create output buffers for the transposed data:
+    //   - CSC column pointer array of length = MAX_COLS + 1.
+    //   - CSC value indices array of length = input_size_trans.
+    //   - Additional buffer for internal state (all_curr) of length = MAX_COLS.
+    let csc_col_ptr_buf = helper.create_output_buffer((MAX_COLS as usize) + 1);
+    let csc_val_idxs_buf = helper.create_output_buffer(gpu_scalar_chunks.len());
+    let all_curr_buf = helper.create_output_buffer(MAX_COLS as usize);
+
+    // Set up the transpose shader configuration.
+    let transpose_config = MetalConfig {
+        log_limb_size,
+        num_limbs,
+        shader_file: "cuzk/transpose.metal".to_string(),
+        kernel_name: "transpose".to_string(),
+    };
+
+    // For simplicity we use 1×1×1 workgroups.
+    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
+    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
+
+    // Dispatch the transpose shader.
+    helper.execute_shader(
+        &transpose_config,
+        &[&csr_cols_buf, &transpose_params_buf],
+        &[&csc_col_ptr_buf, &csc_val_idxs_buf, &all_curr_buf],
+        &thread_group_count,
+        &thread_group_size,
+    );
+
+    // Read back the GPU output from stage 2.
+    let gpu_csc_col_ptr = helper.read_results(&csc_col_ptr_buf, (MAX_COLS as usize) + 1);
+    let gpu_csc_val_idxs = helper.read_results(&csc_val_idxs_buf, gpu_scalar_chunks.len());
+    println!("Stage 2 – Transposed CSC col_ptr: {:?}", gpu_csc_col_ptr);
+    println!("Stage 2 – Transposed CSC val_idxs: {:?}", gpu_csc_val_idxs);
+
+    // ========= CPU Reference: Compute Expected Transposition =========
+
+    // Use the CSR column indices produced from stage 1 (gpu_scalar_chunks) as input to the CPU routine.
+    // Here compute_expected_csc is a helper that mimics the GPU’s transpose shader.
+    let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&gpu_scalar_chunks, MAX_COLS);
+
+    // For example, if the transpose was designed to run per subtask,
+    // you might loop over each subtask as shown below.
+    //
+    // (Here we assume one subtask; if multiple subtasks were used then the output buffers
+    //  would be laid out contiguously for each subtask—adjust indices accordingly.)
+    for subtask in 0..num_subtasks {
+        // For the CSC column pointer array, each subtask has (MAX_COLS + 1) entries.
+        let offset = subtask * ((MAX_COLS as usize) + 1);
+        let actual_col_ptr = &gpu_csc_col_ptr[offset..offset + (MAX_COLS as usize + 1)];
+
+        assert_eq!(
+            actual_col_ptr, &expected_col_ptr,
+            "Subtask {}: Column pointers mismatch\nExpected: {:?}\nActual: {:?}",
+            subtask, expected_col_ptr, actual_col_ptr
+        );
+
+        // For the CSC value indices, assume each subtask covers `input_size_trans` elements.
+        let val_offset = subtask * gpu_scalar_chunks.len();
+        let actual_vals = &gpu_csc_val_idxs[val_offset..val_offset + gpu_scalar_chunks.len()];
+
+        assert_eq!(
+            actual_vals, &expected_val_idxs,
+            "Subtask {}: Value indices mismatch\nExpected: {:?}\nActual: {:?}",
+            subtask, expected_val_idxs, actual_vals
+        );
+    }
+
+    Ok((gpu_csc_col_ptr, gpu_csc_val_idxs))
+}
+
+fn points_convertion(
+    log_limb_size: u32,
+    num_limbs: usize,
+    helper: &mut MetalHelper,
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
+    // === STAGE 1: CONVERT POINT COORDINATES & DECOMPOSE SCALARS ===
+    let conv_config = MetalConfig {
+        log_limb_size,
+        num_limbs,
+        shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
+        kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
+    };
+
+    // Generate an example point (using the group's generator)
+    let point = G::generator().into_affine();
+    // Convert its x and y coordinates to BigUint
+    let x: BigUint = point.x.into_bigint().try_into().unwrap();
+    let y: BigUint = point.y.into_bigint().try_into().unwrap();
+
+    // Get Montgomery constants.
+    let constants = get_or_calc_constants(num_limbs, log_limb_size);
+    let p = &constants.p;
+    let r = &constants.r;
+
+    // Compute Montgomery representations.
+    let x_mont = (&x * r) % p;
+    let y_mont = (&y * r) % p;
+
+    // Compute expected Montgomery values as ark_ff BigInt limbs.
+    let x_mont_in_ark: BigInt<4> = x_mont.clone().try_into().unwrap();
+    let y_mont_in_ark: BigInt<4> = y_mont.clone().try_into().unwrap();
+    let expected_x_limbs = x_mont_in_ark.to_limbs(num_limbs, log_limb_size);
+    let expected_y_limbs = y_mont_in_ark.to_limbs(num_limbs, log_limb_size);
+
+    // Also compute the raw (non‐Montgomery) x and y as limbs (packed as in the tests).
+    let x_in_ark: BigInt<4> = x.clone().try_into().unwrap();
+    let y_in_ark: BigInt<4> = y.clone().try_into().unwrap();
+    let x_limbs = x_in_ark.to_limbs(num_limbs, log_limb_size);
+    let y_limbs = y_in_ark.to_limbs(num_limbs, log_limb_size);
+    let x_packed = pack_limbs(&x_limbs);
+    let y_packed = pack_limbs(&y_limbs);
+    let coords: Vec<u32> = [x_packed, y_packed].concat();
+
+    // In this conversion stage we don’t use the scalar data, so supply zeros.
+    let scalars = vec![0u32; num_limbs];
+
+    // Create input buffers.
+    let coords_buf = helper.create_input_buffer(&coords);
+    let scalars_buf = helper.create_input_buffer(&scalars);
+    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
+    // one point
+
+    // Create output buffers for the converted point (x and y) and scalar chunks.
+    let point_x_buf = helper.create_output_buffer(num_limbs);
+    let point_y_buf = helper.create_output_buffer(num_limbs);
+    let chunks_buf = helper.create_output_buffer(num_limbs);
+
+    // Set up thread group sizes (we use 1×1×1 workgroup for demonstration).
+    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
+    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
+
+    // Dispatch the conversion & decomposition shader.
+    helper.execute_shader(
+        &conv_config,
+        &[&coords_buf, &scalars_buf, &input_size_buf],
+        &[&point_x_buf, &point_y_buf, &chunks_buf],
+        &thread_group_count,
+        &thread_group_size,
+    );
+
+    // Read back converted point data.
+    let gpu_point_x = helper.read_results(&point_x_buf, num_limbs);
+    let gpu_point_y = helper.read_results(&point_y_buf, num_limbs);
+    let gpu_scalar_chunks = helper.read_results(&chunks_buf, num_limbs);
+    println!("Stage 1 – GPU Converted X limbs: {:?}", gpu_point_x);
+    println!("Stage 1 – GPU Converted Y limbs: {:?}", gpu_point_y);
+    println!("Stage 1 – GPU Scalar chunks: {:?}", gpu_scalar_chunks);
+    println!("Stage 1 – Expected X limbs: {:?}", expected_x_limbs);
+    println!("Stage 1 – Expected Y limbs: {:?}", expected_y_limbs);
+
+    // ** ASSERTIONS FOR STAGE 1 **
+    assert_eq!(
+        gpu_point_x, expected_x_limbs,
+        "Stage 1: GPU X conversion mismatch!"
+    );
+    assert_eq!(
+        gpu_point_y, expected_y_limbs,
+        "Stage 1: GPU Y conversion mismatch!"
+    );
+
+    return Ok((gpu_point_x, gpu_point_y, gpu_scalar_chunks));
 }
