@@ -5,6 +5,17 @@ using namespace metal;
 #include "barrett_reduction.metal"
 #include "extract_word_from_bytes_le.metal"
 
+#if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
+    #include <metal_logging>
+    // Create our real logger.
+    constant os_log logger_kernel(/*subsystem=*/"pt_conversion", /*category=*/"metal");
+    // Define the log macro to forward to logger_kernel.log_debug.
+    #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
+#else
+    // For older Metal versions, define a dummy macro that does nothing.
+    #define LOG_DEBUG(...) ((void)0)
+#endif
+
 kernel void convert_point_coords_and_decompose_scalars(
     device const uint* coords           [[buffer(0)]],
     device const uint* scalars          [[buffer(1)]],
@@ -49,15 +60,18 @@ kernel void convert_point_coords_and_decompose_scalars(
     BigInt x_bigint = bigint_zero();
     BigInt y_bigint = bigint_zero();
 
-    for (uint i = 0; i < (NUM_LIMBS - 1u); i++) {
+    for (uint i = 0; i < NUM_LIMBS - 1u; i++) {
         x_bigint.limbs[i] = extract_word_from_bytes_le(x_bytes, i, LOG_LIMB_SIZE);
         y_bigint.limbs[i] = extract_word_from_bytes_le(y_bytes, i, LOG_LIMB_SIZE);
     }
 
-    uint shift = (((NUM_LIMBS * LOG_LIMB_SIZE) - 254u) + 16u) - LOG_LIMB_SIZE;
+    uint shift = (((NUM_LIMBS * LOG_LIMB_SIZE) - 256u) + 16u) - LOG_LIMB_SIZE;
 
     x_bigint.limbs[NUM_LIMBS - 1] = x_bytes[0] >> shift;
     y_bigint.limbs[NUM_LIMBS - 1] = y_bytes[0] >> shift;
+
+    LOG_DEBUG("x_bigint[NUM_LIMBS - 1]: %u", x_bigint.limbs[NUM_LIMBS - 1]);
+    LOG_DEBUG("y_bigint[NUM_LIMBS - 1]: %u", y_bigint.limbs[NUM_LIMBS - 1]);
 
     // Convert x,y to Montgomery form: X = x * R mod p, Y = y * R mod p.
     BigIntWide r = get_r();
