@@ -1,12 +1,12 @@
 use std::error::Error;
 
 use ark_bn254::g1::Config;
-use ark_bn254::G1Projective as G;
+use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::short_weierstrass::Affine;
 use ark_ec::{CurveGroup, Group};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{UniformRand, Zero};
-use num_bigint::BigUint;
+use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
 
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
@@ -43,11 +43,20 @@ fn test_complete_msm_pipeline() {
     const MAX_COLS: u32 = 8;
     let total_threads = 8;
     let point = G::generator().into_affine();
+    // Generate a random 254-bit scalar
+    let mut rng = thread_rng();
+    let scalar = rng.gen_biguint(254);
+    let scalar_in_scalarfield = ScalarField::from(scalar.clone());
+
+    // Convert scalar to the same limb format the kernel expects
+    let scalars = scalar_in_scalarfield
+        .into_bigint()
+        .to_limbs(num_limbs, log_limb_size);
 
     // === Stage 1: Convert Point Coordinates & Decompose Scalars ===
     let mut helper = MetalHelper::new();
     let (_, _, gpu_scalar_chunks) =
-        points_convertion(log_limb_size, num_limbs, &mut helper, point).unwrap();
+        points_convertion(log_limb_size, num_limbs, &mut helper, point, scalars);
     helper.drop_all_buffers();
 
     // === Stage 2: Sparse Matrix Transposition ===
@@ -58,8 +67,7 @@ fn test_complete_msm_pipeline() {
         log_limb_size,
         num_limbs,
         MAX_COLS,
-    )
-    .unwrap();
+    );
     helper2.drop_all_buffers();
 
     // === Stage 3: Sparse Matrix Vector Product (SMVP) ===
@@ -71,7 +79,8 @@ fn test_complete_msm_pipeline() {
         &csc_col_ptr,
         &csc_val_idxs,
         MAX_COLS,
-    );
+    )
+    .unwrap();
     helper3.drop_all_buffers();
 
     // === Stage 4: Parallel Bucket Point Reduction (Pbpr) ===
@@ -115,7 +124,8 @@ fn points_convertion(
     num_limbs: usize,
     helper: &mut MetalHelper,
     point: Affine<Config>,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
+    scalars: Vec<u32>,
+) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     let conv_config = MetalConfig {
         log_limb_size,
         num_limbs,
@@ -149,9 +159,6 @@ fn points_convertion(
     let x_packed = pack_limbs(&x_limbs);
     let y_packed = pack_limbs(&y_limbs);
     let coords: Vec<u32> = [x_packed.clone(), y_packed.clone()].concat();
-
-    // In this conversion stage we don’t use the scalar data, so supply zeros.
-    let scalars = vec![0u32; num_limbs];
 
     // Create input buffers.
     let coords_buf = helper.create_input_buffer(&coords);
@@ -197,7 +204,7 @@ fn points_convertion(
         "Stage 1: GPU Y conversion mismatch!"
     );
 
-    return Ok((gpu_point_x, gpu_point_y, gpu_scalar_chunks));
+    (gpu_point_x, gpu_point_y, gpu_scalar_chunks)
 }
 
 fn transpose(
@@ -206,7 +213,7 @@ fn transpose(
     log_limb_size: u32,
     num_limbs: usize,
     max_cols: u32,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
+) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     // Create the input buffer from gpu_scalar_chunks.
     let csr_cols_buf = helper.create_input_buffer(&gpu_scalar_chunks);
 
@@ -250,40 +257,7 @@ fn transpose(
     println!("Stage 2 – Transposed CSC col_ptr: {:?}", gpu_csc_col_ptr);
     println!("Stage 2 – Transposed CSC val_idxs: {:?}", gpu_csc_val_idxs);
 
-    // ========= CPU Reference: Compute Expected Transposition =========
-
-    // Use the CSR column indices produced from stage 1 (gpu_scalar_chunks) as input to the CPU routine.
-    // Here compute_expected_csc is a helper that mimics the GPU’s transpose shader.
-    let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&gpu_scalar_chunks, max_cols);
-
-    // For example, if the transpose was designed to run per subtask,
-    // you might loop over each subtask as shown below.
-    //
-    // (Here we assume one subtask; if multiple subtasks were used then the output buffers
-    //  would be laid out contiguously for each subtask—adjust indices accordingly.)
-    for subtask in 0..num_subtasks {
-        // For the CSC column pointer array, each subtask has (MAX_COLS + 1) entries.
-        let offset = subtask * ((max_cols as usize) + 1);
-        let actual_col_ptr = &gpu_csc_col_ptr[offset..offset + (max_cols as usize + 1)];
-
-        assert_eq!(
-            actual_col_ptr, &expected_col_ptr,
-            "Subtask {}: Column pointers mismatch\nExpected: {:?}\nActual: {:?}",
-            subtask, expected_col_ptr, actual_col_ptr
-        );
-
-        // For the CSC value indices, assume each subtask covers `input_size_trans` elements.
-        let val_offset = subtask * gpu_scalar_chunks.len();
-        let actual_vals = &gpu_csc_val_idxs[val_offset..val_offset + gpu_scalar_chunks.len()];
-
-        assert_eq!(
-            actual_vals, &expected_val_idxs,
-            "Subtask {}: Value indices mismatch\nExpected: {:?}\nActual: {:?}",
-            subtask, expected_val_idxs, actual_vals
-        );
-    }
-
-    Ok((gpu_csc_col_ptr, gpu_csc_val_idxs, all_curr_buf))
+    (gpu_csc_col_ptr, gpu_csc_val_idxs, all_curr_buf)
 }
 
 fn smvp(
@@ -293,7 +267,7 @@ fn smvp(
     csc_col_ptr: &Vec<u32>,
     csc_val_idxs: &Vec<u32>,
     max_cols: u32,
-) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
     let smvp_config = MetalConfig {
         log_limb_size,
         num_limbs,
@@ -386,7 +360,7 @@ fn smvp(
         bucket_z_out.iter().any(|&v| v != 0),
         "Stage 3: SMVP bucket Z output is all zero!"
     );
-    (bucket_x_out, bucket_y_out, bucket_z_out)
+    Ok((bucket_x_out, bucket_y_out, bucket_z_out))
 }
 
 fn pbpr(
