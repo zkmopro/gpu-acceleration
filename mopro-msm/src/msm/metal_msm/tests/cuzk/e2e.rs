@@ -158,6 +158,7 @@ fn points_convertion(
     let y_limbs = y_in_ark.to_limbs(num_limbs, log_limb_size);
     let x_packed = pack_limbs(&x_limbs);
     let y_packed = pack_limbs(&y_limbs);
+
     let coords: Vec<u32> = [x_packed.clone(), y_packed.clone()].concat();
 
     // Create input buffers.
@@ -219,7 +220,7 @@ fn transpose(
 
     // Set the transpose parameters: here input_size_trans is the number of CSR entries.
     let input_size_trans = gpu_scalar_chunks.len() as u32;
-    let transpose_params_buf = helper.create_input_buffer(&vec![input_size_trans, max_cols]);
+    let transpose_params_buf = helper.create_input_buffer(&vec![max_cols, input_size_trans]);
 
     // Create output buffers for the transposed data:
     //   - CSC column pointer array of length = MAX_COLS + 1.
