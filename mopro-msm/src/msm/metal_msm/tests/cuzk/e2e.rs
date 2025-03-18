@@ -1,13 +1,12 @@
-use std::error::Error;
-
 use ark_bn254::g1::Config;
 use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::short_weierstrass::Affine;
 use ark_ec::{CurveGroup, Group};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{UniformRand, Zero};
-use num_bigint::{BigUint, RandBigInt};
-use rand::thread_rng;
+use num_bigint::BigUint;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use crate::msm::metal_msm::tests::cuzk::pbpr::closest_power_of_two;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
@@ -34,6 +33,9 @@ fn pack_limbs(limbs: &[u32]) -> Vec<u32> {
 /// The pipeline leverages our metal wrapper functions (via MetalHelper & MetalConfig).
 #[test]
 fn test_complete_msm_pipeline() {
+    let seed = [42u8; 32];
+    let rng = StdRng::from_seed(seed);
+
     // === COMMON PARAMETERS ===
     let log_limb_size = 16;
     let num_limbs = 16;
@@ -42,14 +44,12 @@ fn test_complete_msm_pipeline() {
     // In the transpose shader a number of subtasks may be scheduled.
     // For demonstration we assume a single subtask here.
     const MAX_COLS: u32 = 8;
-    let total_threads = 8;
     let point = G::generator().into_affine();
-    // Generate a random 254-bit scalar
-    let mut rng = thread_rng();
-    let scalar = rng.gen_biguint(254);
+    // Generate a random 254-bit scalar deterministically.
+    let scalar = BigUint::from(123456789u32);
     let scalar_in_scalarfield = ScalarField::from(scalar.clone());
 
-    // Convert scalar to the same limb format the kernel expects
+    // Convert scalar to the same limb format the kernel expects.
     let scalars = scalar_in_scalarfield
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
@@ -80,6 +80,7 @@ fn test_complete_msm_pipeline() {
         &csc_col_ptr,
         &csc_val_idxs,
         MAX_COLS,
+        rng,
     );
     helper3.drop_all_buffers();
 
@@ -267,6 +268,7 @@ fn smvp(
     csc_col_ptr: &Vec<u32>,
     csc_val_idxs: &Vec<u32>,
     max_cols: u32,
+    mut rng: StdRng,
 ) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     let smvp_config = MetalConfig {
         log_limb_size,
@@ -291,7 +293,6 @@ fn smvp(
     // Generate new points in Montgomery form for each column.
     let mut new_point_x_host = Vec::with_capacity(num_columns as usize);
     let mut new_point_y_host = Vec::with_capacity(num_columns as usize);
-    let mut rng = rand::thread_rng();
     for _ in 0..num_columns {
         let new_point = G::rand(&mut rng).into_affine();
         let x_mont = new_point.x.0;
