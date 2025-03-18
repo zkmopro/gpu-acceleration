@@ -14,7 +14,7 @@ use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 const N: usize = 4;
 
-fn closest_power_of_two(n: usize) -> usize {
+pub fn closest_power_of_two(n: usize) -> usize {
     if n <= 1 {
         return 1;
     }

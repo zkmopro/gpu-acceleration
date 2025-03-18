@@ -9,6 +9,7 @@ use ark_std::{UniformRand, Zero};
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
 
+use crate::msm::metal_msm::tests::cuzk::pbpr::closest_power_of_two;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
 
@@ -91,7 +92,6 @@ fn test_complete_msm_pipeline() {
         bucket_x_out,
         bucket_y_out,
         bucket_z_out,
-        total_threads,
     );
     helper4.drop_all_buffers();
 
@@ -383,7 +383,6 @@ fn pbpr(
     bucket_x_out: Vec<u32>,
     bucket_y_out: Vec<u32>,
     bucket_z_out: Vec<u32>,
-    total_threads: usize,
 ) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     let pbpr_config = MetalConfig {
         log_limb_size,
@@ -392,20 +391,28 @@ fn pbpr(
         kernel_name: "parallel_bpr".to_string(),
     };
 
-    // Use the SMVP output as inputs.
     let buckets_x_buf = helper.create_input_buffer(&bucket_x_out);
     let buckets_y_buf = helper.create_input_buffer(&bucket_y_out);
     let buckets_z_buf = helper.create_input_buffer(&bucket_z_out);
 
-    // 8 threads for demonstration.
-    let mut m_shared_x = vec![0u32; total_threads * num_limbs];
-    let mut m_shared_y = vec![0u32; total_threads * num_limbs];
-    let mut m_shared_z = vec![0u32; total_threads * num_limbs];
-    let mut s_shared_x = vec![0u32; total_threads * num_limbs];
-    let mut s_shared_y = vec![0u32; total_threads * num_limbs];
-    let mut s_shared_z = vec![0u32; total_threads * num_limbs];
+    // Determine bucket count from SMVP output.
+    // In SMVP you created buckets with length = bucket_count * num_limbs.
+    // For example, if max_cols was 8 then bucket_count was computed as 8/2 = 4.
+    let bucket_count = bucket_x_out.len() / num_limbs;
 
-    // Create the zero point’s limb representation.
+    // Compute total_threads as in the reference.
+    let total_threads = closest_power_of_two(bucket_count);
+
+    // Initialize shared buffers (m_shared and s_shared) with zeros.
+    let shared_size = total_threads * num_limbs;
+    let mut m_shared_x = vec![0u32; shared_size];
+    let mut m_shared_y = vec![0u32; shared_size];
+    let mut m_shared_z = vec![0u32; shared_size];
+    let mut s_shared_x = vec![0u32; shared_size];
+    let mut s_shared_y = vec![0u32; shared_size];
+    let mut s_shared_z = vec![0u32; shared_size];
+
+    // Create zero point limb representation.
     let zero_point = G::zero();
     let zero_x: Vec<u32> = {
         let ark: BigInt<4> = zero_point.x.into_bigint().try_into().unwrap();
@@ -420,7 +427,7 @@ fn pbpr(
         ark.to_limbs(num_limbs, log_limb_size)
     };
 
-    // Initialize each shared buffer with the zero point.
+    // Initialize shared buffers with the zero point.
     for i in 0..total_threads {
         for j in 0..num_limbs {
             m_shared_x[i * num_limbs + j] = zero_x[j];
@@ -432,6 +439,7 @@ fn pbpr(
         }
     }
 
+    // Create input buffers for the shared arrays.
     let m_shared_x_buf = helper.create_input_buffer(&m_shared_x);
     let m_shared_y_buf = helper.create_input_buffer(&m_shared_y);
     let m_shared_z_buf = helper.create_input_buffer(&m_shared_z);
@@ -439,19 +447,29 @@ fn pbpr(
     let s_shared_y_buf = helper.create_input_buffer(&s_shared_y);
     let s_shared_z_buf = helper.create_input_buffer(&s_shared_z);
 
-    // Additional PBPR parameters.
+    // Parameter buffers:
+    // grid_width is computed from the total_threads.
     let grid_width = (total_threads as f64).sqrt().ceil() as u64;
     let grid_width_buf = helper.create_input_buffer(&vec![grid_width as u32]);
     let total_threads_buf = helper.create_input_buffer(&vec![total_threads as u32]);
-    // Treat the number of buckets as 8.
-    let num_subtask = (8 + total_threads - 1) / total_threads;
+    // Instead of hardcoding 8 buckets, use the actual bucket_count.
+    let num_subtask = (bucket_count + total_threads - 1) / total_threads;
     let num_subtask_buf = helper.create_input_buffer(&vec![num_subtask as u32]);
 
+    // Setup thread group sizes. Using a default threadgroup width of 32.
     let thread_group_size_pbpr = helper.create_thread_group_size(32, 1, 1);
     let grid_height = (total_threads as u64 + grid_width - 1) / grid_width;
     let threads_total = helper.create_thread_group_size(grid_width, grid_height, 1);
 
-    // Dispatch the PBPR shader.
+    // Debug prints for inspection.
+    println!("Stage 4 - bucket_count: {}", bucket_count);
+    println!(
+        "Stage 4 - total_threads (closest power of two): {}",
+        total_threads
+    );
+    println!("Stage 4 - num_subtask: {}", num_subtask);
+
+    // Dispatch the shader.
     helper.execute_shader(
         &pbpr_config,
         &[
@@ -468,16 +486,22 @@ fn pbpr(
             &total_threads_buf,
             &num_subtask_buf,
         ],
-        &[], // results are written into the shared buffers
+        &[], // No separate output buffers; results come out in shared buffers.
         &threads_total,
         &thread_group_size_pbpr,
     );
 
-    let s_shared_x_result = helper.read_results(&s_shared_x_buf, total_threads * num_limbs);
-    let s_shared_y_result = helper.read_results(&s_shared_y_buf, total_threads * num_limbs);
-    let s_shared_z_result = helper.read_results(&s_shared_z_buf, total_threads * num_limbs);
-    println!("Stage 4 – PBPR s_shared_x: {:?}", s_shared_x_result);
-    println!("Stage 4 – PBPR s_shared_y: {:?}", s_shared_y_result);
-    println!("Stage 4 – PBPR s_shared_z: {:?}", s_shared_z_result);
+    // Read back the results.
+    let s_shared_x_result = helper.read_results(&s_shared_x_buf, shared_size);
+    let s_shared_y_result = helper.read_results(&s_shared_y_buf, shared_size);
+    let s_shared_z_result = helper.read_results(&s_shared_z_buf, shared_size);
+
+    println!("Stage 4 - s_shared_x: {:?}", s_shared_x_result);
+    println!("Stage 4 - s_shared_y: {:?}", s_shared_y_result);
+    println!("Stage 4 - s_shared_z: {:?}", s_shared_z_result);
+
+    helper.drop_all_buffers();
+
+    // Read the shared memory buffers as points and sum them.
     (s_shared_x_result, s_shared_y_result, s_shared_z_result)
 }
