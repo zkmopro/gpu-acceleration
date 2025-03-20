@@ -98,9 +98,9 @@ kernel void convert_point_coords_and_decompose_scalars(
         chunks_arr[i] = extract_word_from_bytes_le(scalar_bytes, i, CHUNK_SIZE);
     }
 
-    // The last chunk is special if (NUM_SUBTASKS * CHUNK_SIZE > 254)
+    // The last chunk is special if (NUM_SUBTASKS * CHUNK_SIZE > 256)
     chunks_arr[NUM_SUBTASKS - 1] =
-        scalar_bytes[0] >> ( ((NUM_SUBTASKS * CHUNK_SIZE - 254u) + 16u) - CHUNK_SIZE);
+        scalar_bytes[0] >> (((NUM_SUBTASKS * CHUNK_SIZE - 256u) + 16u) - CHUNK_SIZE);
 
     // 3) Signed wNAF in the range [−(l−1), (l−1)]
     uint l = NUM_COLUMNS;

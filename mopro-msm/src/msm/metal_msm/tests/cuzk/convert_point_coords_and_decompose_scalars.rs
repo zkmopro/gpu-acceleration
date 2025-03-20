@@ -52,14 +52,6 @@ fn test_point_coords_conversion() {
     let x_limb = x_in_ark.to_limbs(num_limbs, log_limb_size);
     let y_limb = y_in_ark.to_limbs(num_limbs, log_limb_size);
 
-    // Helper to pack every pair of 16-bit limbs into one 32-bit word
-    let pack_limbs = |limbs: &[u32]| -> Vec<u32> {
-        limbs
-            .chunks(2)
-            .map(|chunk| (chunk[1] << 16) | chunk[0])
-            .collect()
-    };
-
     let x_packed = pack_limbs(&x_limb);
     let y_packed = pack_limbs(&y_limb);
 
@@ -136,10 +128,11 @@ fn test_scalar_decomposition() {
     let scalars = scalar_in_scalarfield
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
+    let packed_scalars = pack_limbs(&scalars);
 
     // Setup Metal buffers
     let coords_buf = helper.create_input_buffer(&coords);
-    let scalars_buf = helper.create_input_buffer(&scalars);
+    let scalars_buf = helper.create_input_buffer(&packed_scalars);
     let input_size_buf = helper.create_input_buffer(&vec![1u32]);
 
     // We'll ignore X,Y outputs, but we must pass them
@@ -169,7 +162,7 @@ fn test_scalar_decomposition() {
     // (3) fix up the last chunk for BN254 (254 bits)
     // (4) do sign logic => range [-s..s-1], then store +s
     let mut scalar_bytes = vec![0u32; 16];
-    for (i, &val) in scalars.iter().enumerate().take(8) {
+    for (i, &val) in packed_scalars.iter().enumerate().take(8) {
         let lo = val & 0xFFFF;
         let hi = val >> 16;
         // mirrored indexing like the kernel
@@ -203,9 +196,8 @@ fn test_scalar_decomposition() {
         cpu_chunks[i] = extract_word_from_bytes_le_mock(&scalar_bytes, i as u32, chunk_size as u32);
     }
 
-    // Last chunk for 254 bits: top 2 bits are unused
-    let shift_254 = ((num_subtasks as u32 * chunk_size as u32 - 254) + 16) - chunk_size as u32;
-    cpu_chunks[num_subtasks - 1] = scalar_bytes[0] >> shift_254;
+    let shift_256 = ((num_subtasks as u32 * chunk_size as u32 - 256) + 16) - chunk_size as u32;
+    cpu_chunks[num_subtasks - 1] = scalar_bytes[0] >> shift_256;
 
     // Sign logic
     let l = num_columns;
@@ -236,4 +228,12 @@ fn test_scalar_decomposition() {
         gpu_chunks, cpu_chunks,
         "Scalar decomposition mismatch between GPU and CPU!"
     );
+}
+
+/// Helper function to pack every pair of 16-bit limbs into one 32-bit word
+fn pack_limbs(limbs: &[u32]) -> Vec<u32> {
+    limbs
+        .chunks(2)
+        .map(|chunk| (chunk[1] << 16) | chunk[0])
+        .collect()
 }
