@@ -22,6 +22,7 @@ static CONSTANTS_CACHE: Lazy<Mutex<HashMap<(usize, u32), MSMConstants>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Struct for Metal config
+#[derive(Clone)]
 pub struct MetalConfig {
     pub log_limb_size: u32,
     pub num_limbs: usize,
