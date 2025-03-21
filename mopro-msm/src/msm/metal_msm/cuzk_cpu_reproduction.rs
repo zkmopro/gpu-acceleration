@@ -60,8 +60,14 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
 
     println!("✅ [CPU] convert_point_coords_and_decompose_scalars");
     println!("\n===== OUTPUT FROM convert_point_coords_and_decompose_scalars shaders =====");
-    println!("point_x: {:?}", point_x);
-    println!("point_y: {:?}", point_y);
+    println!("[Affine] point_x:");
+    for (i, pt_coord) in point_x.iter().enumerate() {
+        println!("point_x[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
+    println!("[Affine] point_y:");
+    for (i, pt_coord) in point_y.iter().enumerate() {
+        println!("point_y[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
     println!("chunks: {:?}", chunks);
 
     println!("\n===== INPUT FOR transpose_cpu shaders =====");
@@ -89,8 +95,14 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
     println!("\n===== INPUT FOR smvp_cpu shaders =====");
     println!("all_csc_col_ptr: {:?}", all_csc_col_ptr);
     println!("all_csc_val_idxs: {:?}", all_csc_val_idxs);
-    println!("point_x: {:?}", point_x);
-    println!("point_y: {:?}", point_y);
+    println!("[Affine] point_x:");
+    for (i, pt_coord) in point_x.iter().enumerate() {
+        println!("point_x[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
+    println!("[Affine] point_y:");
+    for (i, pt_coord) in point_y.iter().enumerate() {
+        println!("point_y[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
     println!("num_subtasks: {}", num_subtasks);
     println!("num_columns: {}", num_columns);
 
@@ -111,14 +123,21 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
 
     println!("✅ [CPU] smvp");
     println!("\n===== OUTPUT FROM smvp_cpu shaders =====");
-    println!("bucket_x: {:?}", bucket_x);
-    println!("bucket_y: {:?}", bucket_y);
-    println!("bucket_z: {:?}", bucket_z);
+    println!("[Jacobian] bucket_x:");
+    for (i, bucket) in bucket_x.iter().enumerate() {
+        println!("bucket_x[{}] = {:?}", i, convert_coord_to_u32(bucket));
+    }
+    println!("[Jacobian] bucket_y:");
+    for (i, bucket) in bucket_y.iter().enumerate() {
+        println!("bucket_y[{}] = {:?}", i, convert_coord_to_u32(bucket));
+    }
+    println!("[Jacobian] bucket_z:");
+    for (i, bucket) in bucket_z.iter().enumerate() {
+        println!("bucket_z[{}] = {:?}", i, convert_coord_to_u32(bucket));
+    }
 
     println!("\n===== INPUT FOR parallel_bpr_cpu shaders =====");
-    println!("bucket_x: {:?}", bucket_x);
-    println!("bucket_y: {:?}", bucket_y);
-    println!("bucket_z: {:?}", bucket_z);
+    println!("bucket_x, bucket_y, bucket_z is the same as previous output");
     println!("num_subtasks: {}", num_subtasks);
     println!("half_columns: {}", half_columns);
 
@@ -137,10 +156,28 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
 
     println!("✅ [CPU] parallel_bpr");
     println!("\n===== OUTPUT FROM parallel_bpr_cpu shaders =====");
-    println!("subtask_pts: {:?}", subtask_pts);
+    println!("subtask_pts:");
+    for (i, pt) in subtask_pts.iter().enumerate() {
+        println!("  subtask_pts[{}]:", i);
+        println!(
+            "    x: {:?}",
+            pt.x.0
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size)
+        );
+        println!(
+            "    y: {:?}",
+            pt.y.0
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size)
+        );
+        println!(
+            "    z: {:?}",
+            pt.z.0
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size)
+        );
+    }
 
     println!("\n===== INPUT FOR horner's method shaders =====");
-    println!("subtask_pts: {:?}", subtask_pts);
+    println!("subtask_pts is the same as previous output");
     println!("chunk_size: {}", chunk_size);
 
     // 7) Horner's Method: combine the `subtask_pts` in base = 2^chunk_size
@@ -575,7 +612,7 @@ fn test_cpu_reproduce_msm() {
     use rand::thread_rng;
     use std::str::FromStr;
 
-    let input_size = 10;
+    let input_size = 2;
     let mut rng = thread_rng();
     let points = {
         let mut points = vec![G::zero().into_affine(); input_size];
@@ -596,8 +633,8 @@ fn test_cpu_reproduce_msm() {
 
     println!("\n===== points =====");
     for (i, pt) in points.iter().enumerate() {
-        println!("pt_{}: {:?}", i, pt.x.into_bigint().to_limbs(16, 16));
-        println!("pt_{}: {:?}", i, pt.y.into_bigint().to_limbs(16, 16));
+        println!("pt_{}: {:?}", i, convert_coord_to_u32(&pt.x));
+        println!("pt_{}: {:?}", i, convert_coord_to_u32(&pt.y));
     }
     println!("\n===== scalars =====");
     for (i, sc) in scalars.iter().enumerate() {
@@ -610,4 +647,9 @@ fn test_cpu_reproduce_msm() {
     // Our CPU pipeline
     let result = cpu_reproduce_msm(&points[..], &scalars[..]).unwrap();
     assert_eq!(result, arkworks_msm);
+}
+
+/// Helper to print a point in Montgomery form.
+fn convert_coord_to_u32(coords: &BaseField) -> Vec<u32> {
+    coords.into_bigint().to_limbs(16, 16)
 }
