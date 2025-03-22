@@ -89,16 +89,16 @@ fn test_complete_msm_pipeline() {
     helper.drop_all_buffers();
 
     // === CPU ===
-    let mut cpu_point_x = vec![BaseField::zero(); input_size];
-    let mut cpu_point_y = vec![BaseField::zero(); input_size];
+    let mut mg_cpu_point_x = vec![BaseField::zero(); input_size];
+    let mut mg_cpu_point_y = vec![BaseField::zero(); input_size];
     let mut cpu_scalar_chunks = vec![0u32; input_size * num_subtasks];
 
     convert_point_coords_and_decompose_scalars(
         &packed_coords,
         &packed_scalars,
         input_size,
-        &mut cpu_point_x,
-        &mut cpu_point_y,
+        &mut mg_cpu_point_x,
+        &mut mg_cpu_point_y,
         &mut cpu_scalar_chunks,
         &points_msm_config,
         chunk_size as u32,
@@ -106,11 +106,11 @@ fn test_complete_msm_pipeline() {
     )
     .unwrap();
 
-    let cpu_point_x = cpu_point_x
+    let cpu_point_x = mg_cpu_point_x
         .iter()
         .flat_map(|f| convert_coord_to_u32(f))
         .collect::<Vec<u32>>();
-    let cpu_point_y = cpu_point_y
+    let cpu_point_y = mg_cpu_point_y
         .iter()
         .flat_map(|f| convert_coord_to_u32(f))
         .collect::<Vec<u32>>();
@@ -133,6 +133,7 @@ fn test_complete_msm_pipeline() {
     );
     helper2.drop_all_buffers();
 
+    // === CPU ===
     let (cpu_csc_col_ptr, cpu_csc_val_idxs) = transpose_cpu(
         &gpu_scalar_chunks,
         num_subtasks as u32,
@@ -149,24 +150,73 @@ fn test_complete_msm_pipeline() {
         .flatten()
         .copied()
         .collect::<Vec<u32>>();
+    // === CPU END ===
 
     assert_eq!(gpu_csc_col_ptr, cpu_csc_col_ptr);
     assert_eq!(gpu_csc_val_idxs, cpu_csc_val_idxs);
 
     // // === Stage 3: Sparse Matrix Vector Product (SMVP) ===
-    // let seed = [42u8; 32];
-    // let rng = StdRng::from_seed(seed);
-    // let mut helper3 = MetalHelper::new();
-    // let (bucket_x_out, bucket_y_out, bucket_z_out) = smvp(
-    //     &mut helper3,
-    //     points_msm_config.log_limb_size,
-    //     points_msm_config.num_limbs,
-    //     &csc_col_ptr,
-    //     &csc_val_idxs,
-    //     num_columns,
-    //     rng,
-    // );
-    // helper3.drop_all_buffers();
+    let seed = [42u8; 32];
+    let rng = StdRng::from_seed(seed);
+    let mut helper3 = MetalHelper::new();
+    let (gpu_bucket_x_out, gpu_bucket_y_out, gpu_bucket_z_out) = smvp(
+        &mut helper3,
+        points_msm_config.log_limb_size,
+        points_msm_config.num_limbs,
+        &gpu_csc_col_ptr,
+        &gpu_csc_val_idxs,
+        num_subtasks,
+        num_columns,
+        rng,
+    );
+    helper3.drop_all_buffers();
+
+    // === CPU ===
+    println!(
+        "gpu_csc_col_ptr.len(): {}, num_columns: {}",
+        gpu_csc_col_ptr.len(),
+        num_columns
+    );
+    println!(
+        "gpu_csc_val_idxs.len(): {}, input_size: {}",
+        gpu_csc_val_idxs.len(),
+        input_size
+    );
+    let split_gpu_csc_col_ptr: Vec<Vec<u32>> = gpu_csc_col_ptr
+        .chunks((num_columns as usize) + 1)
+        .map(|chunk| chunk.to_vec())
+        .collect();
+    let split_gpu_csc_val_idxs: Vec<Vec<u32>> = gpu_csc_val_idxs
+        .chunks(input_size)
+        .map(|chunk| chunk.to_vec())
+        .collect();
+    let (cpu_bucket_x_out, cpu_bucket_y_out, cpu_bucket_z_out) = smvp_cpu(
+        &split_gpu_csc_col_ptr,
+        &split_gpu_csc_val_idxs,
+        &mg_cpu_point_x,
+        &mg_cpu_point_y,
+        num_subtasks,
+        num_columns,
+    );
+    let cpu_bucket_x = cpu_bucket_x_out
+        .iter()
+        .flat_map(|f| convert_coord_to_u32(f))
+        .collect::<Vec<u32>>();
+
+    let cpu_bucket_y = cpu_bucket_y_out
+        .iter()
+        .flat_map(|f| convert_coord_to_u32(f))
+        .collect::<Vec<u32>>();
+
+    let cpu_bucket_z = cpu_bucket_z_out
+        .iter()
+        .flat_map(|f| convert_coord_to_u32(f))
+        .collect::<Vec<u32>>();
+    // === CPU END ===
+
+    assert_eq!(gpu_bucket_x_out, cpu_bucket_x);
+    assert_eq!(gpu_bucket_y_out, cpu_bucket_y);
+    assert_eq!(gpu_bucket_z_out, cpu_bucket_z);
 
     // // === Stage 4: Parallel Bucket Point Reduction (Pbpr) ===
     // let mut helper4 = MetalHelper::new();
@@ -307,7 +357,8 @@ fn smvp(
     num_limbs: usize,
     csc_col_ptr: &Vec<u32>,
     csc_val_idxs: &Vec<u32>,
-    max_cols: u32,
+    num_subtasks: usize,
+    num_columns: u32,
     mut rng: StdRng,
 ) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     let smvp_config = MetalConfig {
@@ -320,15 +371,14 @@ fn smvp(
     // Here, num_columns should match the intended number of new points.
     // In your e2e pipeline, you set max_cols to 8 in the transpose stage.
     // Therefore we use that as the number of columns for SMVP.
-    let num_columns: u32 = max_cols;
     // The transpose stage creates a row_ptr buffer of length max_cols + 1.
     println!("Stage 3 - Received row_ptr buffer: {:?}", csc_col_ptr);
-    assert_eq!(
-        csc_col_ptr.len(),
-        (num_columns + 1) as usize,
-        "Expected row_ptr buffer length to be {}",
-        num_columns + 1
-    );
+    // assert_eq!(
+    //     csc_col_ptr.len(),
+    //     (num_columns + 1) as usize,
+    //     "Expected row_ptr buffer length to be {}",
+    //     num_columns + 1
+    // );
 
     // Generate new points in Montgomery form for each column.
     let mut new_point_x_host = Vec::with_capacity(num_columns as usize);
@@ -370,18 +420,21 @@ fn smvp(
     // Create output buffers – final buckets.
     // Test_smvp uses 8 final buckets (half of 16), each bucket being a Jacobian coordinate with
     // each coordinate represented by num_limbs limbs.
-    let bucket_count = num_columns / 2; // 16/2 = 8
-    let bucket_x_buf = helper.create_output_buffer((bucket_count as usize * num_limbs) as usize);
-    let bucket_y_buf = helper.create_output_buffer((bucket_count as usize * num_limbs) as usize);
-    let bucket_z_buf = helper.create_output_buffer((bucket_count as usize * num_limbs) as usize);
+    let half_columns = num_columns / 2; // 16/2 = 8
+    let total_buckets = half_columns * num_subtasks as u32;
+    println!("gpu_total_buckets: {}", total_buckets);
+    let bucket_x_buf = helper.create_output_buffer(total_buckets as usize);
+    let bucket_y_buf = helper.create_output_buffer(total_buckets as usize);
+    let bucket_z_buf = helper.create_output_buffer(total_buckets as usize);
 
     // SMVP parameters as in test_smvp: input_size (here length of val_idx), num_y_workgroups, num_z_workgroups, subtask_offset.
     let input_size = csc_val_idxs.len() as u32; // e.g., 7 if you know that’s the case.
-    let smvp_params = vec![input_size, 1u32, 1u32, 0u32];
+    let smvp_params = vec![input_size, 1, 1, 0];
     let smvp_params_buf = helper.create_input_buffer(&smvp_params);
 
     // Set thread group dimensions – one thread per final bucket.
-    let thread_group_count_smvp = helper.create_thread_group_size(bucket_count as u64, 1, 1);
+    let thread_group_count_smvp =
+        helper.create_thread_group_size(num_subtasks as u64, input_size as u64, 1);
     let thread_group_size_smvp = helper.create_thread_group_size(1, 1, 1);
 
     // Dispatch the SMVP shader.
@@ -392,20 +445,20 @@ fn smvp(
             &val_idx_buf,
             &new_point_x_buf,
             &new_point_y_buf,
+            &bucket_x_buf,
+            &bucket_y_buf,
+            &bucket_z_buf,
             &smvp_params_buf,
         ],
-        &[&bucket_x_buf, &bucket_y_buf, &bucket_z_buf],
+        &[],
         &thread_group_count_smvp,
         &thread_group_size_smvp,
     );
 
     // Read back results.
-    let bucket_y_out =
-        helper.read_results(&bucket_y_buf, (bucket_count as usize * num_limbs) as usize);
-    let bucket_z_out =
-        helper.read_results(&bucket_z_buf, (bucket_count as usize * num_limbs) as usize);
-    let bucket_x_out =
-        helper.read_results(&bucket_x_buf, (bucket_count as usize * num_limbs) as usize);
+    let bucket_y_out = helper.read_results(&bucket_y_buf, (total_buckets * num_columns) as usize);
+    let bucket_z_out = helper.read_results(&bucket_z_buf, (total_buckets * num_columns) as usize);
+    let bucket_x_out = helper.read_results(&bucket_x_buf, (total_buckets * num_columns) as usize);
 
     println!("Stage 3 - Bucket X output: {:?}", bucket_x_out);
     // TODO: From time to time this buffer is all zeroes!?
