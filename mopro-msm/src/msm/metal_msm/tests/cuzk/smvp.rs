@@ -245,15 +245,13 @@ fn test_smvp() {
                 sum += new_points[col_idx];
             }
             // check sign
-            let mut bucket_idx = 0;
-            if half_columns as u32 > row_idx {
-                // negative => flip sign
-                bucket_idx = half_columns as u32 - row_idx;
+            let bucket_idx = if row_idx < half_columns as u32 {
                 sum = neg(sum);
+                half_columns as u32 - row_idx
             } else {
-                bucket_idx = row_idx - half_columns as u32;
-            }
-            // store
+                row_idx - half_columns as u32
+            };
+
             if bucket_idx > 0 {
                 if j == 1 {
                     sum += cpu_buckets[id as usize];
