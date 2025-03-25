@@ -423,9 +423,37 @@ fn smvp(
     let half_columns = num_columns / 2; // 16/2 = 8
     let total_buckets = half_columns * num_subtasks as u32;
     println!("gpu_total_buckets: {}", total_buckets);
-    let bucket_x_buf = helper.create_output_buffer(total_buckets as usize);
-    let bucket_y_buf = helper.create_output_buffer(total_buckets as usize);
-    let bucket_z_buf = helper.create_output_buffer(total_buckets as usize);
+
+    let (zero_mont_encoded_x, zero_mont_encoded_y, zero_mont_encoded_z) = {
+        let zero_mont_encoded = G::zero();
+        let zero_x = zero_mont_encoded.x.0.to_limbs(num_limbs, log_limb_size);
+        let zero_y = zero_mont_encoded.y.0.to_limbs(num_limbs, log_limb_size);
+        let zero_z = zero_mont_encoded.z.0.to_limbs(num_limbs, log_limb_size);
+        let total_elements = (total_buckets * num_columns) as usize;
+        let repeat_count = total_elements / zero_x.len();
+        let repeated_x = zero_x
+            .iter()
+            .cloned()
+            .cycle()
+            .take(zero_x.len() * repeat_count)
+            .collect();
+        let repeated_y = zero_y
+            .iter()
+            .cloned()
+            .cycle()
+            .take(zero_y.len() * repeat_count)
+            .collect();
+        let repeated_z = zero_z
+            .iter()
+            .cloned()
+            .cycle()
+            .take(zero_z.len() * repeat_count)
+            .collect();
+        (repeated_x, repeated_y, repeated_z)
+    };
+    let bucket_x_buf = helper.create_input_buffer(&zero_mont_encoded_x);
+    let bucket_y_buf = helper.create_input_buffer(&zero_mont_encoded_y);
+    let bucket_z_buf = helper.create_input_buffer(&zero_mont_encoded_z);
 
     // SMVP parameters as in test_smvp: input_size (here length of val_idx), num_y_workgroups, num_z_workgroups, subtask_offset.
     let input_size = csc_val_idxs.len() as u32; // e.g., 7 if you know that’s the case.
