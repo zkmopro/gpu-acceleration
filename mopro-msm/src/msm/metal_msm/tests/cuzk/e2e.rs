@@ -55,6 +55,7 @@ fn test_complete_msm_pipeline() {
     let chunk_size = if points.len() >= 65536 { 16 } else { 4 };
     let num_subtasks = 256 / chunk_size;
     let num_columns = 1 << chunk_size;
+    let half_columns = num_columns / 2;
 
     let points_msm_config = MetalConfig {
         log_limb_size,
@@ -62,6 +63,9 @@ fn test_complete_msm_pipeline() {
         shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
         kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
     };
+
+    let msm_constants =
+        get_or_calc_constants(points_msm_config.num_limbs, points_msm_config.log_limb_size);
 
     // 1) Convert Ark `Affine` and `ScalarField` arrays into the "packed" format that
     //    your GPU code expects: each point => 16 u32 for coords, each scalar => 8 u32.
@@ -98,6 +102,7 @@ fn test_complete_msm_pipeline() {
         &mut mg_cpu_point_x,
         &mut mg_cpu_point_y,
         &mut cpu_scalar_chunks,
+        &msm_constants,
         &points_msm_config,
         chunk_size as u32,
         num_subtasks,
@@ -188,6 +193,7 @@ fn test_complete_msm_pipeline() {
         .chunks(input_size)
         .map(|chunk| chunk.to_vec())
         .collect();
+
     let (cpu_bucket_x_out, cpu_bucket_y_out, cpu_bucket_z_out) = smvp_cpu(
         &split_gpu_csc_col_ptr,
         &split_gpu_csc_val_idxs,
@@ -195,18 +201,22 @@ fn test_complete_msm_pipeline() {
         &mg_cpu_point_y,
         num_subtasks,
         num_columns,
+        input_size,
+        &msm_constants,
+        &points_msm_config,
     );
-    let cpu_bucket_x = cpu_bucket_x_out
+
+    let _cpu_bucket_x = cpu_bucket_x_out
         .iter()
         .flat_map(|f| convert_coord_to_u32(f))
         .collect::<Vec<u32>>();
 
-    let cpu_bucket_y = cpu_bucket_y_out
+    let _cpu_bucket_y = cpu_bucket_y_out
         .iter()
         .flat_map(|f| convert_coord_to_u32(f))
         .collect::<Vec<u32>>();
 
-    let cpu_bucket_z = cpu_bucket_z_out
+    let _cpu_bucket_z = cpu_bucket_z_out
         .iter()
         .flat_map(|f| convert_coord_to_u32(f))
         .collect::<Vec<u32>>();
@@ -250,7 +260,9 @@ fn test_complete_msm_pipeline() {
         &cpu_bucket_y_out,
         &cpu_bucket_z_out,
         num_subtasks,
-        (num_columns / 2) as usize,
+        half_columns as usize,
+        &msm_constants,
+        &points_msm_config,
     );
     let base = ScalarField::from(1u64 << chunk_size);
     let mut acc = subtask_pts[subtask_pts.len() - 1];
@@ -268,10 +280,10 @@ fn test_complete_msm_pipeline() {
     }
     println!("Final reduced bucket point: {:?}", final_result);
 
-    // assert_eq!(
-    //     acc, arkworks_msm,
-    //     "Custom CPU pipeline differs from reference one"
-    // );
+    assert_eq!(
+        acc, arkworks_msm,
+        "Custom CPU pipeline differs from reference one"
+    );
     assert_eq!(gpu_acc, acc, "CPU pipeline differs from Custom CPU one");
     assert_eq!(
         gpu_acc, arkworks_msm,

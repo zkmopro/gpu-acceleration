@@ -1,6 +1,5 @@
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
-use crate::msm::utils::{benchmark::BenchmarkResult, preprocess};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ff::{BigInt, One, PrimeField, Zero};
@@ -243,10 +242,10 @@ pub fn convert_point_coords_and_decompose_scalars(
     point_x: &mut [BaseField],
     point_y: &mut [BaseField],
     chunks: &mut [u32],
-    msm_constants: &MSMConstants,
+    _msm_constants: &MSMConstants,
     _msm_config: &MetalConfig,
     chunk_size: u32,
-    num_subtasks: usize,
+    _num_subtasks: usize,
 ) -> Result<(), Box<dyn Error>> {
     for i in 0..input_size {
         // -------------------------------------------------------
@@ -453,7 +452,7 @@ pub fn smvp_cpu(
     point_y: &[BaseField], // y-coords for all points
     num_subtasks: usize,
     num_columns: u32,
-    input_size: usize,
+    _input_size: usize,
     _msm_constants: &MSMConstants,
     _msm_config: &MetalConfig,
 ) -> (Vec<BaseField>, Vec<BaseField>, Vec<BaseField>) {
@@ -562,7 +561,7 @@ pub fn parallel_bpr_cpu(
         // We'll do the same reversing logic as pbpr.metal: from the last bucket
         // to the first, partial sums in `m` & `s`.
         let subtask_start = s as u32 * r;
-        let subtask_end = subtask_start + r; // exclusive
+        let _subtask_end = subtask_start + r; // exclusive
 
         // Running accumulators
         let mut m_pt = G::zero();
@@ -658,7 +657,7 @@ fn test_cpu_reproduce_msm() {
 }
 
 /// Helper to print a point in Montgomery form.
-fn convert_coord_to_u32(coords: &BaseField) -> Vec<u32> {
+pub fn convert_coord_to_u32(coords: &BaseField) -> Vec<u32> {
     coords.0.to_limbs(16, 16)
 }
 
@@ -671,6 +670,7 @@ fn ln_without_floats(a: usize) -> usize {
 
 use ark_ff::BigInteger;
 
+#[allow(dead_code)]
 fn msm_bigint<V: VariableBaseMSM>(
     bases: &[V::MulBase],
     bigints: &[<V::ScalarField as PrimeField>::BigInt],

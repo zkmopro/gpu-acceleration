@@ -486,9 +486,8 @@ pub fn run_benchmark(
 mod tests {
     use super::*;
 
-    use ark_ec::{CurveGroup, Group, VariableBaseMSM};
+    use ark_ec::VariableBaseMSM;
     use ark_serialize::Write;
-    use ark_std::UniformRand;
     use std::fs::File;
 
     const INSTANCE_SIZE: u32 = 16;

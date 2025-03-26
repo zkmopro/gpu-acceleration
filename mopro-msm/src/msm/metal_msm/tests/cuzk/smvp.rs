@@ -197,16 +197,16 @@ fn test_smvp() {
                 sum += new_points[col_idx];
             }
             // check sign
-            let mut bucket_idx = 0;
+            let mut _bucket_idx = 0;
             if half_columns > row_idx {
                 // negative => flip sign
-                bucket_idx = half_columns - row_idx;
+                _bucket_idx = half_columns - row_idx;
                 sum = neg(sum);
             } else {
-                bucket_idx = row_idx - half_columns;
+                _bucket_idx = row_idx - half_columns;
             }
             // store
-            if bucket_idx > 0 {
+            if _bucket_idx > 0 {
                 if j == 1 {
                     sum += cpu_buckets[id as usize];
                 }
