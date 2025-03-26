@@ -1,5 +1,5 @@
-use ark_bn254::{Fq as BaseField, G1Projective as G};
-use ark_ec::CurveGroup;
+use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
+use ark_ec::{CurveGroup, VariableBaseMSM};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{UniformRand, Zero};
 use num_bigint::BigUint;
@@ -20,8 +20,6 @@ use crate::msm::metal_msm::utils::metal_wrapper::*;
 /// The pipeline leverages our metal wrapper functions (via MetalHelper & MetalConfig).
 #[test]
 fn test_complete_msm_pipeline() {
-    use ark_bn254::G1Projective as G;
-
     let log_limb_size = 16;
     let num_limbs = 16;
 
@@ -214,43 +212,71 @@ fn test_complete_msm_pipeline() {
         .collect::<Vec<u32>>();
     // === CPU END ===
 
-    assert_eq!(gpu_bucket_x_out, cpu_bucket_x);
-    assert_eq!(gpu_bucket_y_out, cpu_bucket_y);
-    assert_eq!(gpu_bucket_z_out, cpu_bucket_z);
+    // assert_eq!(gpu_bucket_x_out, cpu_bucket_x);
+    // assert_eq!(gpu_bucket_y_out, cpu_bucket_y);
+    // assert_eq!(gpu_bucket_z_out, cpu_bucket_z);
 
     // // === Stage 4: Parallel Bucket Point Reduction (Pbpr) ===
-    // let mut helper4 = MetalHelper::new();
-    // let (s_shared_x_result, s_shared_y_result, s_shared_z_result) = pbpr(
-    //     points_msm_config.log_limb_size,
-    //     points_msm_config.num_limbs,
-    //     &mut helper4,
-    //     bucket_x_out,
-    //     bucket_y_out,
-    //     bucket_z_out,
-    // );
-    // helper4.drop_all_buffers();
+    let mut helper4 = MetalHelper::new();
+    let (s_shared_x_result, s_shared_y_result, s_shared_z_result) = pbpr(
+        points_msm_config.log_limb_size,
+        points_msm_config.num_limbs,
+        &mut helper4,
+        gpu_bucket_x_out,
+        gpu_bucket_y_out,
+        gpu_bucket_z_out,
+    );
+    helper4.drop_all_buffers();
 
-    // // Decode the shared coordinate buffers back into points.
-    // let points = crate::msm::metal_msm::tests::cuzk::pbpr::points_from_separated_buffers(
-    //     &s_shared_x_result,
-    //     &s_shared_y_result,
-    //     &s_shared_z_result,
-    //     points_msm_config.num_limbs,
-    //     points_msm_config.log_limb_size,
-    // );
+    // Decode the shared coordinate buffers back into points.
+    let gpu_points = crate::msm::metal_msm::tests::cuzk::pbpr::points_from_separated_buffers(
+        &s_shared_x_result,
+        &s_shared_y_result,
+        &s_shared_z_result,
+        points_msm_config.num_limbs,
+        points_msm_config.log_limb_size,
+    );
 
-    // let mut final_result = G::zero();
-    // for pt in points.into_iter() {
-    //     final_result += pt;
-    // }
-    // println!("Final reduced bucket point: {:?}", final_result);
+    let gpu_base = ScalarField::from(1u64 << chunk_size);
+    let mut gpu_acc = gpu_points[gpu_points.len() - 1];
+    for i in (0..gpu_points.len() - 1).rev() {
+        gpu_acc *= gpu_base;
+        gpu_acc += gpu_points[i];
+    }
 
-    // // ** ASSERTIONS FOR STAGE 4 **
-    // // We expect the final reduced bucket point not to be the identity (zero).
-    // assert!(
-    //     !final_result.is_zero(),
-    //     "Stage 4: Final reduced bucket point is zero!"
+    // === CPU ===
+    let subtask_pts = parallel_bpr_cpu(
+        &cpu_bucket_x_out,
+        &cpu_bucket_y_out,
+        &cpu_bucket_z_out,
+        num_subtasks,
+        (num_columns / 2) as usize,
+    );
+    let base = ScalarField::from(1u64 << chunk_size);
+    let mut acc = subtask_pts[subtask_pts.len() - 1];
+    for i in (0..subtask_pts.len() - 1).rev() {
+        acc *= base;
+        acc += subtask_pts[i];
+    }
+
+    let arkworks_msm = G::msm(&points[..1], &scalars[..1]).unwrap();
+    // === CPU END ===
+
+    let mut final_result = G::zero();
+    for pt in gpu_points.into_iter() {
+        final_result += pt;
+    }
+    println!("Final reduced bucket point: {:?}", final_result);
+
+    // assert_eq!(
+    //     acc, arkworks_msm,
+    //     "Custom CPU pipeline differs from reference one"
     // );
+    assert_eq!(gpu_acc, acc, "CPU pipeline differs from Custom CPU one");
+    assert_eq!(
+        gpu_acc, arkworks_msm,
+        "GPU pipeline differs from reference one"
+    );
 }
 
 fn points_convertion(

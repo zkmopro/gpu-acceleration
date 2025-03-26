@@ -120,9 +120,9 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
         &point_y,
         num_subtasks,
         num_columns as u32,
-        input_size,
-        &msm_constants,
-        &msm_config,
+        // input_size,
+        // &msm_constants,
+        // &msm_config,
     );
 
     // println!("✅ [CPU] smvp");
@@ -147,8 +147,6 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
         &bucket_z,
         num_subtasks,
         half_columns as usize,
-        &msm_constants,
-        &msm_config,
     );
 
     // println!("✅ [CPU] parallel_bpr");
@@ -440,9 +438,6 @@ pub fn smvp_cpu(
     point_y: &[BaseField], // y-coords for all points
     num_subtasks: usize,
     num_columns: u32,
-    _input_size: usize,
-    _msm_constants: &MSMConstants,
-    _msm_config: &MetalConfig,
 ) -> (Vec<BaseField>, Vec<BaseField>, Vec<BaseField>) {
     // Each column in [0..num_columns) => one bucket (plus sign logic).
     // We create an array of buckets = (x,y,z) in BaseField form, for all subtasks.
@@ -487,28 +482,36 @@ pub fn smvp_cpu(
             // Then compute the “bucket index” for that sum. If bucket_idx>0 => store it.
             let bucket_idx;
             if col < half_columns {
-                // negative
-                sum_pt = -sum_pt;
                 bucket_idx = (half_columns - col) as i32;
+                sum_pt = -sum_pt;
             } else {
-                // positive
                 bucket_idx = (col - half_columns) as i32;
+            }
+
+            print!("bucket_idx: {:?}, ", bucket_idx);
+            if bucket_idx == 0 {
+                println!("❌ ignore all points in this col");
             }
 
             // If bucket_idx>0 => store in (bucket_x,bucket_y,bucket_z).
             // In the Metal code, we do “bucket_idx-1” for 0-based indexing.
             if bucket_idx > 0 {
                 let final_idx = (bucket_idx - 1) as u32 + (s as u32 * half_columns);
+                println!("final_idx: {:?}", final_idx);
 
-                // Now sum_pt is the final group element for that bucket.
-                // We store in Projective form => (x,y,z) in BaseField
-                // sum_pt.x, sum_pt.y, sum_pt.z
-                let x_f = sum_pt.x;
-                let y_f = sum_pt.y;
-                let z_f = sum_pt.z;
-                bucket_x[final_idx as usize] = x_f;
-                bucket_y[final_idx as usize] = y_f;
-                bucket_z[final_idx as usize] = z_f;
+                let current_bucket = G::new(
+                    bucket_x[final_idx as usize],
+                    bucket_y[final_idx as usize],
+                    bucket_z[final_idx as usize],
+                );
+                println!("---- current_bucket: {:?}", current_bucket);
+                let new_bucket = current_bucket + sum_pt;
+                println!("---- new_bucket: {:?}", new_bucket);
+
+                // update the bucket
+                bucket_x[final_idx as usize] = new_bucket.x;
+                bucket_y[final_idx as usize] = new_bucket.y;
+                bucket_z[final_idx as usize] = new_bucket.z;
             }
         }
     }
@@ -525,8 +528,6 @@ pub fn parallel_bpr_cpu(
     bucket_z: &[BaseField],
     num_subtasks: usize,
     half_columns: usize,
-    _msm_constants: &MSMConstants,
-    _msm_config: &MetalConfig,
 ) -> Vec<G> {
     // We'll produce one final G1Projective per subtask.
     let mut results = vec![G::zero(); num_subtasks];
@@ -605,12 +606,6 @@ pub fn get_fixed_inputs_cpu_style() -> (Affine, ScalarField) {
 
 #[test]
 fn test_cpu_reproduce_msm() {
-    use ark_bn254::G1Projective as G;
-    // use ark_ec::CurveGroup;
-    // use ark_std::UniformRand;
-    // use rand::thread_rng;
-    // use std::str::FromStr;
-
     let input_size = 10;
     // let mut rng = thread_rng();
     let (fixed_point, fixed_scalar) = get_fixed_inputs_cpu_style();
