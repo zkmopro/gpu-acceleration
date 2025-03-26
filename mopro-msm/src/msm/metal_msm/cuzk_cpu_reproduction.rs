@@ -1,6 +1,6 @@
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
-
+use crate::msm::utils::{benchmark::BenchmarkResult, preprocess};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ff::{BigInt, One, PrimeField, Zero};
@@ -52,6 +52,7 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
         &mut point_x,
         &mut point_y,
         &mut chunks,
+        &msm_constants,
         &msm_config,
         chunk_size as u32,
         num_subtasks,
@@ -59,25 +60,14 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
 
     println!("✅ [CPU] convert_point_coords_and_decompose_scalars");
     println!("\n===== OUTPUT FROM convert_point_coords_and_decompose_scalars shaders =====");
-    // println!("[Affine] point_x:");
-    println!(
-        "point_x: {:?}",
-        point_x
-            .iter()
-            .flat_map(|f| convert_coord_to_u32(f))
-            .collect::<Vec<u32>>()
-    );
-    // for (i, pt_coord) in point_x.iter().enumerate() {
-    //     println!("point_x[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
-    // }
-    println!(
-        "point_y: {:?}",
-        point_y.first().map(|f| convert_coord_to_u32(f)).unwrap()
-    );
-    // println!("[Affine] point_y:");
-    // for (i, pt_coord) in point_y.iter().enumerate() {
-    //     println!("point_y[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
-    // }
+    println!("[Affine] point_x:");
+    for (i, pt_coord) in point_x.iter().enumerate() {
+        println!("point_x[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
+    println!("[Affine] point_y:");
+    for (i, pt_coord) in point_y.iter().enumerate() {
+        println!("point_y[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
     println!("chunks: {:?}", chunks);
 
     println!("\n===== INPUT FOR transpose_cpu shaders =====");
@@ -102,13 +92,19 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
     println!("all_csc_col_ptr: {:?}", all_csc_col_ptr);
     println!("all_csc_val_idxs: {:?}", all_csc_val_idxs);
 
-    // println!("\n===== INPUT FOR smvp_cpu shaders =====");
-    // println!("all_csc_col_ptr: {:?}", all_csc_col_ptr);
-    // println!("all_csc_val_idxs: {:?}", all_csc_val_idxs);
-    // println!("point_x: {:?}", point_x);
-    // println!("point_y: {:?}", point_y);
-    // println!("num_subtasks: {}", num_subtasks);
-    // println!("num_columns: {}", num_columns);
+    println!("\n===== INPUT FOR smvp_cpu shaders =====");
+    println!("all_csc_col_ptr: {:?}", all_csc_col_ptr);
+    println!("all_csc_val_idxs: {:?}", all_csc_val_idxs);
+    println!("[Affine] point_x:");
+    for (i, pt_coord) in point_x.iter().enumerate() {
+        println!("point_x[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
+    println!("[Affine] point_y:");
+    for (i, pt_coord) in point_y.iter().enumerate() {
+        println!("point_y[{}] = {:?}", i, convert_coord_to_u32(pt_coord));
+    }
+    println!("num_subtasks: {}", num_subtasks);
+    println!("num_columns: {}", num_columns);
 
     // 5) SMVP: we'll build final "bucket arrays."
     //    On GPU, you have separate subtask offsets, 2D thread distribution, etc.
@@ -120,23 +116,30 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
         &point_y,
         num_subtasks,
         num_columns as u32,
-        // input_size,
-        // &msm_constants,
-        // &msm_config,
+        input_size,
+        &msm_constants,
+        &msm_config,
     );
 
-    // println!("✅ [CPU] smvp");
-    // println!("\n===== OUTPUT FROM smvp_cpu shaders =====");
-    // println!("bucket_x: {:?}", bucket_x);
-    // println!("bucket_y: {:?}", bucket_y);
-    // println!("bucket_z: {:?}", bucket_z);
+    println!("✅ [CPU] smvp");
+    println!("\n===== OUTPUT FROM smvp_cpu shaders =====");
+    println!("[Jacobian] bucket_x:");
+    for (i, bucket) in bucket_x.iter().enumerate() {
+        println!("bucket_x[{}] = {:?}", i, convert_coord_to_u32(bucket));
+    }
+    println!("[Jacobian] bucket_y:");
+    for (i, bucket) in bucket_y.iter().enumerate() {
+        println!("bucket_y[{}] = {:?}", i, convert_coord_to_u32(bucket));
+    }
+    println!("[Jacobian] bucket_z:");
+    for (i, bucket) in bucket_z.iter().enumerate() {
+        println!("bucket_z[{}] = {:?}", i, convert_coord_to_u32(bucket));
+    }
 
-    // println!("\n===== INPUT FOR parallel_bpr_cpu shaders =====");
-    // println!("bucket_x: {:?}", bucket_x);
-    // println!("bucket_y: {:?}", bucket_y);
-    // println!("bucket_z: {:?}", bucket_z);
-    // println!("num_subtasks: {}", num_subtasks);
-    // println!("half_columns: {}", half_columns);
+    println!("\n===== INPUT FOR parallel_bpr_cpu shaders =====");
+    println!("bucket_x, bucket_y, bucket_z is the same as previous output");
+    println!("num_subtasks: {}", num_subtasks);
+    println!("half_columns: {}", half_columns);
 
     // 6) Parallel Bucket Reduction: combine all buckets
     //    In the GPU code, you do 2-stage partial sums + scalar mul, per subtask.
@@ -147,15 +150,35 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
         &bucket_z,
         num_subtasks,
         half_columns as usize,
+        &msm_constants,
+        &msm_config,
     );
 
-    // println!("✅ [CPU] parallel_bpr");
-    // println!("\n===== OUTPUT FROM parallel_bpr_cpu shaders =====");
-    // println!("subtask_pts: {:?}", subtask_pts);
+    println!("✅ [CPU] parallel_bpr");
+    println!("\n===== OUTPUT FROM parallel_bpr_cpu shaders =====");
+    println!("subtask_pts:");
+    for (i, pt) in subtask_pts.iter().enumerate() {
+        println!("  subtask_pts[{}]:", i);
+        println!(
+            "    x: {:?}",
+            pt.x.0
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size)
+        );
+        println!(
+            "    y: {:?}",
+            pt.y.0
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size)
+        );
+        println!(
+            "    z: {:?}",
+            pt.z.0
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size)
+        );
+    }
 
-    // println!("\n===== INPUT FOR horner's method shaders =====");
-    // println!("subtask_pts: {:?}", subtask_pts);
-    // println!("chunk_size: {}", chunk_size);
+    println!("\n===== INPUT FOR horner's method shaders =====");
+    println!("subtask_pts is the same as previous output");
+    println!("chunk_size: {}", chunk_size);
 
     // 7) Horner's Method: combine the `subtask_pts` in base = 2^chunk_size
     //    (like your final Typescript lines).
@@ -166,9 +189,9 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
         acc += subtask_pts[i];
     }
 
-    // println!("✅ [CPU] horner's method");
-    // println!("\n===== OUTPUT FROM horner's method shaders =====");
-    // println!("MSM result: {:?}", acc);
+    println!("✅ [CPU] horner's method");
+    println!("\n===== OUTPUT FROM horner's method shaders =====");
+    println!("MSM result: {:?}", acc);
 
     // 8) Return final projective
     Ok(acc)
@@ -216,16 +239,14 @@ pub fn pack_affine_and_scalars(
 pub fn convert_point_coords_and_decompose_scalars(
     packed_coords: &[u32],
     scalars: &[u32],
-
     input_size: usize,
-
     point_x: &mut [BaseField],
     point_y: &mut [BaseField],
     chunks: &mut [u32],
-
+    msm_constants: &MSMConstants,
     _msm_config: &MetalConfig,
     chunk_size: u32,
-    _num_subtasks: usize,
+    num_subtasks: usize,
 ) -> Result<(), Box<dyn Error>> {
     for i in 0..input_size {
         // -------------------------------------------------------
@@ -290,7 +311,7 @@ pub fn convert_point_coords_and_decompose_scalars(
 // Helper: build BigUint from 16 u16 in little-endian order
 // ------------------------------------------------------------------------
 pub fn biguint_from_u16_le(halfs: &[u16; 16]) -> BigUint {
-    // println!("halfs: {:?}", halfs);
+    println!("halfs: {:?}", halfs);
     let mut acc = BigUint::zero();
     let mut shift = 0u32;
     for &h in halfs.iter().rev() {
@@ -337,13 +358,7 @@ pub fn extract_signed_chunks(halfs: &[u16; 16], chunk_size: u32) -> Vec<u32> {
         }
     }
 
-    // <-- after the loop, see if carry is still 1
-    if carry == 1 {
-        // If you need a fully correct wNAF, push an extra slice with ±1, etc.
-        // Or, if you want to match the GPU’s “no extra chunk,”
-        // you must ensure your scalar never leads here in the first place.
-        panic!("Leftover carry=1 in final chunk: handle or forbid!");
-    }
+    println!("signed_slices: {:?}", signed_slices);
 
     // Convert back to unsigned representation with offset
     for i in 0..num_subtasks {
@@ -438,6 +453,9 @@ pub fn smvp_cpu(
     point_y: &[BaseField], // y-coords for all points
     num_subtasks: usize,
     num_columns: u32,
+    input_size: usize,
+    _msm_constants: &MSMConstants,
+    _msm_config: &MetalConfig,
 ) -> (Vec<BaseField>, Vec<BaseField>, Vec<BaseField>) {
     // Each column in [0..num_columns) => one bucket (plus sign logic).
     // We create an array of buckets = (x,y,z) in BaseField form, for all subtasks.
@@ -454,11 +472,13 @@ pub fn smvp_cpu(
 
     // For each subtask s:
     for s in 0..num_subtasks {
+        println!("=== subtask: {:?} ===", s);
         let ccp = &all_csc_col_ptr[s]; // csc_col_ptr for subtask s
         let cci = &all_csc_val_idxs[s]; // csc_val_idxs for subtask s
 
         // For each column col in [0..num_columns):
         for col in 0..num_columns {
+            println!("  --> col: {:?}", col);
             // Gather all the points in that column => sum them
             let row_begin = ccp[col as usize];
             let row_end = ccp[col as usize + 1];
@@ -468,6 +488,7 @@ pub fn smvp_cpu(
             for idx in row_begin..row_end {
                 // the original point index in [0..input_size)
                 let point_idx = cci[idx as usize] as usize;
+                println!("👍 point_idx: {:?}", point_idx);
                 // Create an affine point with Z=1
                 // Because X=point_x[i], Y=point_y[i], we interpret as an affine point on BN254:
                 //   G::new(point_x[i], point_y[i], 1).
@@ -528,6 +549,8 @@ pub fn parallel_bpr_cpu(
     bucket_z: &[BaseField],
     num_subtasks: usize,
     half_columns: usize,
+    _msm_constants: &MSMConstants,
+    _msm_config: &MetalConfig,
 ) -> Vec<G> {
     // We'll produce one final G1Projective per subtask.
     let mut results = vec![G::zero(); num_subtasks];
@@ -539,7 +562,7 @@ pub fn parallel_bpr_cpu(
         // We'll do the same reversing logic as pbpr.metal: from the last bucket
         // to the first, partial sums in `m` & `s`.
         let subtask_start = s as u32 * r;
-        let _subtask_end = subtask_start + r; // exclusive
+        let subtask_end = subtask_start + r; // exclusive
 
         // Running accumulators
         let mut m_pt = G::zero();
@@ -625,13 +648,117 @@ fn test_cpu_reproduce_msm() {
     }
 
     // Arkworks reference
-    let arkworks_msm = G::msm(&points[..1], &scalars[..1]).unwrap();
+    let arkworks_msm = G::msm(&points[..], &scalars[..]).unwrap();
+    // let bigints = scalars.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    // let arkworks_msm = msm_bigint::<G>(&points[..], &bigints[..]);
 
     // Our CPU pipeline
     let result = cpu_reproduce_msm(&points[..], &scalars[..]).unwrap();
     assert_eq!(result, arkworks_msm);
 }
 
-pub fn convert_coord_to_u32(coords: &BaseField) -> Vec<u32> {
+/// Helper to print a point in Montgomery form.
+fn convert_coord_to_u32(coords: &BaseField) -> Vec<u32> {
     coords.0.to_limbs(16, 16)
+}
+
+// Mock Arkworks' MSM
+
+fn ln_without_floats(a: usize) -> usize {
+    // log2(a) * ln(2)
+    (ark_std::log2(a) * 69 / 100) as usize
+}
+
+use ark_ff::BigInteger;
+
+fn msm_bigint<V: VariableBaseMSM>(
+    bases: &[V::MulBase],
+    bigints: &[<V::ScalarField as PrimeField>::BigInt],
+) -> V {
+    let size = ark_std::cmp::min(bases.len(), bigints.len());
+    let scalars = &bigints[..size];
+    let bases = &bases[..size];
+    let scalars_and_bases_iter = scalars.iter().zip(bases).filter(|(s, _)| !s.is_zero());
+
+    let c = if size < 32 {
+        3
+    } else {
+        ln_without_floats(size) + 2
+    };
+
+    let num_bits = V::ScalarField::MODULUS_BIT_SIZE as usize;
+    let one = V::ScalarField::one().into_bigint();
+
+    let zero = V::zero();
+    let window_starts: Vec<_> = (0..num_bits).step_by(c).collect();
+
+    let (buckets_vec, res_vec): (Vec<Vec<V>>, Vec<V>) = window_starts
+        .iter()
+        .map(|w_start| {
+            let mut res = zero;
+            // We don't need the "zero" bucket, so we only have 2^c - 1 buckets.
+            let mut buckets = vec![zero; (1 << c) - 1];
+
+            // Process each scalar and base pair
+            scalars_and_bases_iter.clone().for_each(|(&scalar, base)| {
+                if scalar == one {
+                    // We only process unit scalars once in the first window.
+                    if *w_start == 0 {
+                        res += base;
+                    }
+                } else {
+                    let mut scalar = scalar;
+
+                    // We right-shift by w_start, thus getting rid of the
+                    // lower bits.
+                    scalar.divn(*w_start as u32);
+
+                    // We mod the remaining bits by 2^{window size}, thus taking `c` bits.
+                    let scalar = scalar.as_ref()[0] % (1 << c);
+
+                    // If the scalar is non-zero, we update the corresponding
+                    // bucket.
+                    // (Recall that `buckets` doesn't have a zero bucket.)
+                    if scalar != 0 {
+                        buckets[(scalar - 1) as usize] += base;
+                    }
+                }
+            });
+
+            (buckets, res)
+        })
+        .unzip();
+
+    // Now you can use buckets_vec and res_vec independently
+    // For example, to compute window_sums from the returned values:
+    let window_sums: Vec<_> = buckets_vec
+        .into_iter()
+        .zip(res_vec.into_iter())
+        .map(|(buckets, mut res)| {
+            // `running_sum` = sum_{j in i..num_buckets} bucket[j],
+            // where we iterate backward from i = num_buckets to 0.
+            let mut running_sum = V::zero();
+            buckets.into_iter().rev().for_each(|b| {
+                running_sum += &b;
+                res += &running_sum;
+            });
+            res
+        })
+        .collect();
+
+    // We store the sum for the lowest window.
+    let lowest = *window_sums.first().unwrap();
+
+    // We're traversing windows from high to low.
+    lowest
+        + &window_sums[1..]
+            .iter()
+            .rev()
+            .fold(zero, |mut total, sum_i| {
+                total += sum_i;
+                for _ in 0..c {
+                    total.double_in_place();
+                }
+                total
+            })
 }
