@@ -138,25 +138,25 @@ fn test_complete_msm_pipeline() {
 
     // === CPU ===
     let (cpu_csc_col_ptr, cpu_csc_val_idxs) = transpose_cpu(
-        &gpu_scalar_chunks,
+        &cpu_scalar_chunks,
         num_subtasks as u32,
         input_size as u32,
         num_columns as u32,
     );
-    let cpu_csc_col_ptr = cpu_csc_col_ptr
+    let cpu_csc_col_ptr_flat = cpu_csc_col_ptr
         .iter()
         .flatten()
         .copied()
         .collect::<Vec<u32>>();
-    let cpu_csc_val_idxs = cpu_csc_val_idxs
+    let cpu_csc_val_idxs_flat = cpu_csc_val_idxs
         .iter()
         .flatten()
         .copied()
         .collect::<Vec<u32>>();
     // === CPU END ===
 
-    assert_eq!(gpu_csc_col_ptr, cpu_csc_col_ptr);
-    assert_eq!(gpu_csc_val_idxs, cpu_csc_val_idxs);
+    assert_eq!(gpu_csc_col_ptr, cpu_csc_col_ptr_flat);
+    assert_eq!(gpu_csc_val_idxs, cpu_csc_val_idxs_flat);
 
     // // === Stage 3: Sparse Matrix Vector Product (SMVP) ===
     let seed = [42u8; 32];
@@ -185,18 +185,18 @@ fn test_complete_msm_pipeline() {
         gpu_csc_val_idxs.len(),
         input_size
     );
-    let split_gpu_csc_col_ptr: Vec<Vec<u32>> = gpu_csc_col_ptr
+    let composed_gpu_csc_col_ptr: Vec<Vec<u32>> = cpu_csc_col_ptr_flat
         .chunks((num_columns as usize) + 1)
         .map(|chunk| chunk.to_vec())
         .collect();
-    let split_gpu_csc_val_idxs: Vec<Vec<u32>> = gpu_csc_val_idxs
+    let composed_gpu_csc_val_idxs: Vec<Vec<u32>> = cpu_csc_val_idxs_flat
         .chunks(input_size)
         .map(|chunk| chunk.to_vec())
         .collect();
 
     let (cpu_bucket_x_out, cpu_bucket_y_out, cpu_bucket_z_out) = smvp_cpu(
-        &split_gpu_csc_col_ptr,
-        &split_gpu_csc_val_idxs,
+        &composed_gpu_csc_col_ptr,
+        &composed_gpu_csc_val_idxs,
         &mg_cpu_point_x,
         &mg_cpu_point_y,
         num_subtasks,
@@ -222,9 +222,9 @@ fn test_complete_msm_pipeline() {
         .collect::<Vec<u32>>();
     // === CPU END ===
 
-    // assert_eq!(gpu_bucket_x_out, cpu_bucket_x);
-    // assert_eq!(gpu_bucket_y_out, cpu_bucket_y);
-    // assert_eq!(gpu_bucket_z_out, cpu_bucket_z);
+    // assert_eq!(gpu_bucket_x_out, _cpu_bucket_x);
+    // assert_eq!(gpu_bucket_y_out, _cpu_bucket_y);
+    // assert_eq!(gpu_bucket_z_out, _cpu_bucket_z);
 
     // // === Stage 4: Parallel Bucket Point Reduction (Pbpr) ===
     let mut helper4 = MetalHelper::new();
@@ -271,7 +271,7 @@ fn test_complete_msm_pipeline() {
         acc += subtask_pts[i];
     }
 
-    let arkworks_msm = G::msm(&points[..1], &scalars[..1]).unwrap();
+    let arkworks_msm = G::msm(&points[..], &scalars[..]).unwrap();
     // === CPU END ===
 
     let mut final_result = G::zero();
@@ -285,10 +285,6 @@ fn test_complete_msm_pipeline() {
         "Custom CPU pipeline differs from reference one"
     );
     assert_eq!(gpu_acc, acc, "CPU pipeline differs from Custom CPU one");
-    assert_eq!(
-        gpu_acc, arkworks_msm,
-        "GPU pipeline differs from reference one"
-    );
 }
 
 fn points_convertion(
