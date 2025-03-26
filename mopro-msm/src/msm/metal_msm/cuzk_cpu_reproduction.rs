@@ -358,13 +358,7 @@ fn extract_signed_chunks(halfs: &[u16; 16], chunk_size: u32) -> Vec<u32> {
         }
     }
 
-    // <-- after the loop, see if carry is still 1
-    if carry == 1 {
-        // If you need a fully correct wNAF, push an extra slice with ±1, etc.
-        // Or, if you want to match the GPU’s “no extra chunk,”
-        // you must ensure your scalar never leads here in the first place.
-        panic!("Leftover carry=1 in final chunk: handle or forbid!");
-    }
+    println!("signed_slices: {:?}", signed_slices);
 
     // Convert back to unsigned representation with offset
     for i in 0..num_subtasks {
@@ -478,11 +472,13 @@ pub fn smvp_cpu(
 
     // For each subtask s:
     for s in 0..num_subtasks {
+        println!("=== subtask: {:?} ===", s);
         let ccp = &all_csc_col_ptr[s]; // csc_col_ptr for subtask s
         let cci = &all_csc_val_idxs[s]; // csc_val_idxs for subtask s
 
         // For each column col in [0..num_columns):
         for col in 0..num_columns {
+            println!("  --> col: {:?}", col);
             // Gather all the points in that column => sum them
             let row_begin = ccp[col as usize];
             let row_end = ccp[col as usize + 1];
@@ -492,6 +488,7 @@ pub fn smvp_cpu(
             for idx in row_begin..row_end {
                 // the original point index in [0..input_size)
                 let point_idx = cci[idx as usize] as usize;
+                println!("👍 point_idx: {:?}", point_idx);
                 // Create an affine point with Z=1
                 // Because X=point_x[i], Y=point_y[i], we interpret as an affine point on BN254:
                 //   G::new(point_x[i], point_y[i], 1).
@@ -506,28 +503,36 @@ pub fn smvp_cpu(
             // Then compute the “bucket index” for that sum. If bucket_idx>0 => store it.
             let bucket_idx;
             if col < half_columns {
-                // negative
-                sum_pt = -sum_pt;
                 bucket_idx = (half_columns - col) as i32;
+                sum_pt = -sum_pt;
             } else {
-                // positive
                 bucket_idx = (col - half_columns) as i32;
+            }
+
+            print!("bucket_idx: {:?}, ", bucket_idx);
+            if bucket_idx == 0 {
+                println!("❌ ignore all points in this col");
             }
 
             // If bucket_idx>0 => store in (bucket_x,bucket_y,bucket_z).
             // In the Metal code, we do “bucket_idx-1” for 0-based indexing.
             if bucket_idx > 0 {
                 let final_idx = (bucket_idx - 1) as u32 + (s as u32 * half_columns);
+                println!("final_idx: {:?}", final_idx);
 
-                // Now sum_pt is the final group element for that bucket.
-                // We store in Projective form => (x,y,z) in BaseField
-                // sum_pt.x, sum_pt.y, sum_pt.z
-                let x_f = sum_pt.x;
-                let y_f = sum_pt.y;
-                let z_f = sum_pt.z;
-                bucket_x[final_idx as usize] = x_f;
-                bucket_y[final_idx as usize] = y_f;
-                bucket_z[final_idx as usize] = z_f;
+                let current_bucket = G::new(
+                    bucket_x[final_idx as usize],
+                    bucket_y[final_idx as usize],
+                    bucket_z[final_idx as usize],
+                );
+                println!("---- current_bucket: {:?}", current_bucket);
+                let new_bucket = current_bucket + sum_pt;
+                println!("---- new_bucket: {:?}", new_bucket);
+
+                // update the bucket
+                bucket_x[final_idx as usize] = new_bucket.x;
+                bucket_y[final_idx as usize] = new_bucket.y;
+                bucket_z[final_idx as usize] = new_bucket.z;
             }
         }
     }
@@ -609,15 +614,16 @@ fn test_cpu_reproduce_msm() {
     use ark_bn254::G1Projective as G;
     use ark_ec::CurveGroup;
     use ark_std::UniformRand;
-    use rand::thread_rng;
+    use rand::{thread_rng, Rng};
     use std::str::FromStr;
 
-    let input_size = 2;
+    let input_size = 4;
     let mut rng = thread_rng();
     let points = {
         let mut points = vec![G::zero().into_affine(); input_size];
         for i in 0..input_size {
             points[i] = G::rand(&mut rng).into_affine();
+            // points[i] = G::generator().into_affine();
         }
         points
     };
@@ -626,7 +632,9 @@ fn test_cpu_reproduce_msm() {
         for i in 0..input_size {
             // scalars[i] = ScalarField::rand(&mut rng);
             // for scalar <= 7, the MSM result is aligned with Arkworks' result
-            scalars[i] = ScalarField::from(BigUint::from_str("7").unwrap());
+            let random_number: u64 = rng.gen_range(0..=7);
+            scalars[i] = ScalarField::from(random_number);
+            // scalars[i] = ScalarField::from(BigUint::from_str("13").unwrap());
         }
         scalars
     };
@@ -643,6 +651,8 @@ fn test_cpu_reproduce_msm() {
 
     // Arkworks reference
     let arkworks_msm = G::msm(&points[..], &scalars[..]).unwrap();
+    // let bigints = scalars.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    // let arkworks_msm = msm_bigint::<G>(&points[..], &bigints[..]);
 
     // Our CPU pipeline
     let result = cpu_reproduce_msm(&points[..], &scalars[..]).unwrap();
@@ -651,5 +661,106 @@ fn test_cpu_reproduce_msm() {
 
 /// Helper to print a point in Montgomery form.
 fn convert_coord_to_u32(coords: &BaseField) -> Vec<u32> {
-    coords.into_bigint().to_limbs(16, 16)
+    coords.0.to_limbs(16, 16)
+}
+
+// Mock Arkworks' MSM
+
+fn ln_without_floats(a: usize) -> usize {
+    // log2(a) * ln(2)
+    (ark_std::log2(a) * 69 / 100) as usize
+}
+
+use ark_ff::BigInteger;
+
+fn msm_bigint<V: VariableBaseMSM>(
+    bases: &[V::MulBase],
+    bigints: &[<V::ScalarField as PrimeField>::BigInt],
+) -> V {
+    let size = ark_std::cmp::min(bases.len(), bigints.len());
+    let scalars = &bigints[..size];
+    let bases = &bases[..size];
+    let scalars_and_bases_iter = scalars.iter().zip(bases).filter(|(s, _)| !s.is_zero());
+
+    let c = if size < 32 {
+        3
+    } else {
+        ln_without_floats(size) + 2
+    };
+
+    let num_bits = V::ScalarField::MODULUS_BIT_SIZE as usize;
+    let one = V::ScalarField::one().into_bigint();
+
+    let zero = V::zero();
+    let window_starts: Vec<_> = (0..num_bits).step_by(c).collect();
+
+    let (buckets_vec, res_vec): (Vec<Vec<V>>, Vec<V>) = window_starts
+        .iter()
+        .map(|w_start| {
+            let mut res = zero;
+            // We don't need the "zero" bucket, so we only have 2^c - 1 buckets.
+            let mut buckets = vec![zero; (1 << c) - 1];
+
+            // Process each scalar and base pair
+            scalars_and_bases_iter.clone().for_each(|(&scalar, base)| {
+                if scalar == one {
+                    // We only process unit scalars once in the first window.
+                    if *w_start == 0 {
+                        res += base;
+                    }
+                } else {
+                    let mut scalar = scalar;
+
+                    // We right-shift by w_start, thus getting rid of the
+                    // lower bits.
+                    scalar.divn(*w_start as u32);
+
+                    // We mod the remaining bits by 2^{window size}, thus taking `c` bits.
+                    let scalar = scalar.as_ref()[0] % (1 << c);
+
+                    // If the scalar is non-zero, we update the corresponding
+                    // bucket.
+                    // (Recall that `buckets` doesn't have a zero bucket.)
+                    if scalar != 0 {
+                        buckets[(scalar - 1) as usize] += base;
+                    }
+                }
+            });
+
+            (buckets, res)
+        })
+        .unzip();
+
+    // Now you can use buckets_vec and res_vec independently
+    // For example, to compute window_sums from the returned values:
+    let window_sums: Vec<_> = buckets_vec
+        .into_iter()
+        .zip(res_vec.into_iter())
+        .map(|(buckets, mut res)| {
+            // `running_sum` = sum_{j in i..num_buckets} bucket[j],
+            // where we iterate backward from i = num_buckets to 0.
+            let mut running_sum = V::zero();
+            buckets.into_iter().rev().for_each(|b| {
+                running_sum += &b;
+                res += &running_sum;
+            });
+            res
+        })
+        .collect();
+
+    // We store the sum for the lowest window.
+    let lowest = *window_sums.first().unwrap();
+
+    // We're traversing windows from high to low.
+    lowest
+        + &window_sums[1..]
+            .iter()
+            .rev()
+            .fold(zero, |mut total, sum_i| {
+                total += sum_i;
+                for _ in 0..c {
+                    total.double_in_place();
+                }
+                total
+            })
 }
