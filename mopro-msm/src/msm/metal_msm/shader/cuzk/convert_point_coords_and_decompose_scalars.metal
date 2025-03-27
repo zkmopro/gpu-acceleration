@@ -94,7 +94,7 @@ kernel void convert_point_coords_and_decompose_scalars(
 
     // Extract wNAF representation. each chunk is CHUNK_SIZE bits from the scalar.
     uint chunks_arr[NUM_SUBTASKS];
-    for (uint i = 0; i < NUM_SUBTASKS; i++) {
+    for (uint i = 0; i < NUM_SUBTASKS - 1u; i++) {
         chunks_arr[i] = extract_word_from_bytes_le(scalar_bytes, i, CHUNK_SIZE);
     }
 
