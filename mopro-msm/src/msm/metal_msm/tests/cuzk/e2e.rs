@@ -1,10 +1,7 @@
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
-use ark_ec::{CurveGroup, VariableBaseMSM};
+use ark_ec::VariableBaseMSM;
 use ark_ff::{BigInt, PrimeField};
-use ark_std::{UniformRand, Zero};
-use num_bigint::BigUint;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+use ark_std::Zero;
 
 use crate::msm::metal_msm::cuzk_cpu_reproduction::*;
 use crate::msm::metal_msm::tests::cuzk::pbpr::closest_power_of_two;
@@ -159,8 +156,6 @@ fn test_complete_msm_pipeline() {
     assert_eq!(gpu_csc_val_idxs, cpu_csc_val_idxs_flat);
 
     // // === Stage 3: Sparse Matrix Vector Product (SMVP) ===
-    let seed = [42u8; 32];
-    let rng = StdRng::from_seed(seed);
     let mut helper3 = MetalHelper::new();
     let (gpu_bucket_x_out, gpu_bucket_y_out, gpu_bucket_z_out) = smvp(
         &mut helper3,
@@ -168,9 +163,10 @@ fn test_complete_msm_pipeline() {
         points_msm_config.num_limbs,
         &gpu_csc_col_ptr,
         &gpu_csc_val_idxs,
+        &mg_cpu_point_x,
+        &mg_cpu_point_y,
         num_subtasks,
         num_columns,
-        rng,
     );
     helper3.drop_all_buffers();
 
@@ -222,9 +218,9 @@ fn test_complete_msm_pipeline() {
         .collect::<Vec<u32>>();
     // === CPU END ===
 
-    // assert_eq!(gpu_bucket_x_out, _cpu_bucket_x);
+    assert_eq!(gpu_bucket_x_out, _cpu_bucket_x);
     // assert_eq!(gpu_bucket_y_out, _cpu_bucket_y);
-    // assert_eq!(gpu_bucket_z_out, _cpu_bucket_z);
+    assert_eq!(gpu_bucket_z_out, _cpu_bucket_z);
 
     // // === Stage 4: Parallel Bucket Point Reduction (Pbpr) ===
     let mut helper4 = MetalHelper::new();
@@ -391,9 +387,10 @@ fn smvp(
     num_limbs: usize,
     csc_col_ptr: &Vec<u32>,
     csc_val_idxs: &Vec<u32>,
+    point_x: &Vec<BaseField>,
+    point_y: &Vec<BaseField>,
     num_subtasks: usize,
     num_columns: u32,
-    mut rng: StdRng,
 ) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     let smvp_config = MetalConfig {
         log_limb_size,
@@ -407,49 +404,22 @@ fn smvp(
     // Therefore we use that as the number of columns for SMVP.
     // The transpose stage creates a row_ptr buffer of length max_cols + 1.
     println!("Stage 3 - Received row_ptr buffer: {:?}", csc_col_ptr);
-    // assert_eq!(
-    //     csc_col_ptr.len(),
-    //     (num_columns + 1) as usize,
-    //     "Expected row_ptr buffer length to be {}",
-    //     num_columns + 1
-    // );
 
-    // Generate new points in Montgomery form for each column.
-    let mut new_point_x_host = Vec::with_capacity(num_columns as usize);
-    let mut new_point_y_host = Vec::with_capacity(num_columns as usize);
-    for _ in 0..num_columns {
-        let new_point = G::rand(&mut rng).into_affine();
-        let x_mont = new_point.x.0;
-        let y_mont = new_point.y.0;
-        let x_mont_biguint: BigUint = x_mont.try_into().unwrap();
-        let y_mont_biguint: BigUint = y_mont.try_into().unwrap();
-        new_point_x_host.push(x_mont_biguint);
-        new_point_y_host.push(y_mont_biguint);
-    }
-
-    // Convert each new point to a limbs representation.
-    let new_point_x_limbs: Vec<u32> = new_point_x_host
-        .into_iter()
-        .map(|bi| {
-            let ark_form: BigInt<4> = bi.try_into().unwrap();
-            ark_form.to_limbs(num_limbs, log_limb_size)
-        })
-        .flatten()
+    let mg_cpu_point_x_limbs: Vec<u32> = point_x
+        .iter()
+        .flat_map(|coord| convert_coord_to_u32(coord))
         .collect();
-    let new_point_y_limbs: Vec<u32> = new_point_y_host
-        .into_iter()
-        .map(|bi| {
-            let ark_form: BigInt<4> = bi.try_into().unwrap();
-            ark_form.to_limbs(num_limbs, log_limb_size)
-        })
-        .flatten()
+
+    let mg_cpu_point_y_limbs: Vec<u32> = point_y
+        .iter()
+        .flat_map(|coord| convert_coord_to_u32(coord))
         .collect();
 
     // Use the CSR buffers coming from the transpose stage for SMVP.
     let row_ptr_buf = helper.create_input_buffer(csc_col_ptr);
     let val_idx_buf = helper.create_input_buffer(csc_val_idxs);
-    let new_point_x_buf = helper.create_input_buffer(&new_point_x_limbs);
-    let new_point_y_buf = helper.create_input_buffer(&new_point_y_limbs);
+    let new_point_x_buf = helper.create_input_buffer(&mg_cpu_point_x_limbs);
+    let new_point_y_buf = helper.create_input_buffer(&mg_cpu_point_y_limbs);
 
     // Create output buffers – final buckets.
     // Test_smvp uses 8 final buckets (half of 16), each bucket being a Jacobian coordinate with
