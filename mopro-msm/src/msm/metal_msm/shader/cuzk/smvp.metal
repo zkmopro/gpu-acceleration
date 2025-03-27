@@ -36,7 +36,7 @@ kernel void smvp(
     const uint gidz = gid.z;
 
     const uint id = (gidx * num_y_workgroups + gidy) * num_z_workgroups + gidz;
-
+    
     const uint num_columns   = NUM_COLUMNS;
     const uint half_columns  = num_columns / 2;
 
@@ -92,19 +92,24 @@ kernel void smvp(
             bucket_idx = row_idx - half_columns;
         }
 
-        // Compute the proper bucket index: in the CPU code, the index used is (bucket_idx - 1) + s * half_columns.
-        // Here, we use subtask_idx (which equals s) and subtask_offset just as before.
+        // Store the result in bucket arrays only if bucket_idx > 0
+        // The final 1D index for the bucket is id + subtask_offset * half_columns
+        const uint bi = id + subtask_offset * half_columns;
         if (bucket_idx > 0) {
-            const uint bi = (bucket_idx - 1) + (subtask_idx + subtask_offset) * half_columns;
-            // In the second pass (j == 1) we add to the previously stored bucket.
+            // If j == 1, add to the existing bucket at index `bi`.
             if (j == 1) {
+                // Load the previous partial sum from bucket_{x,y,z}, interpret as Jacobian
                 Jacobian bucket_val = {
                     .x = bucket_x[bi],
                     .y = bucket_y[bi],
                     .z = bucket_z[bi]
                 };
+
+                // sum = oldBucket + sum
                 sum = bucket_val + sum;
             }
+
+            // Store the result in bucket arrays
             bucket_x[bi] = sum.x;
             bucket_y[bi] = sum.y;
             bucket_z[bi] = sum.z;
