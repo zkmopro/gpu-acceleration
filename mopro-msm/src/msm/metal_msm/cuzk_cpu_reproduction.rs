@@ -1,21 +1,14 @@
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
-use ark_ec::{CurveGroup, VariableBaseMSM};
+use ark_ec::CurveGroup;
 use ark_ff::{BigInt, One, PrimeField, Zero};
 use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::BigUint;
 use std::error::Error;
-use std::str::FromStr;
 
-// -----------------------------------------------------
-// The main CPU pipeline
-// -----------------------------------------------------
+/// The CPU pipeline for reproducing the MSM result from the GPU code.
 pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G, Box<dyn Error>> {
-    // 0) Prepare some local parameters
-    //    Assume chunk_size chosen similarly to your GPU logic (4 or 16).
-    //    For demonstration, let's choose chunk_size=4 => 2^4=16 buckets per subtask
-    //    or chunk_size=16 => 65536 buckets. You can set it based on size of input.
     let chunk_size = if bases.len() >= 65536 { 16 } else { 4 };
     let num_subtasks = 256 / chunk_size;
     let num_columns = 1 << chunk_size; // 2^chunk_size
@@ -30,7 +23,7 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
     let msm_constants = get_or_calc_constants(msm_config.num_limbs, msm_config.log_limb_size);
 
     // 1) Convert Ark `Affine` and `ScalarField` arrays into the "packed" format that
-    //    your GPU code expects: each point => 16 u32 for coords, each scalar => 8 u32.
+    //    GPU code expects: each point => 16 u32 for coords, each scalar => 8 u32.
     let input_size = bases.len();
     let (packed_coords, packed_scalars) = pack_affine_and_scalars(bases, scalars, &msm_config);
 
@@ -42,7 +35,6 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
     // 2) Allocate arrays for the results of convert+decompose.
     let mut point_x = vec![BaseField::zero(); input_size];
     let mut point_y = vec![BaseField::zero(); input_size];
-    // 256 bits / chunk_size windows => each point has `num_subtasks` chunk buckets
     let mut chunks = vec![0u32; input_size * num_subtasks];
 
     // 3) Call CPU version of `convert_point_coords_and_decompose_scalars`
@@ -78,9 +70,6 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
     println!("num_columns: {}", num_columns);
 
     // 4) Transpose (CSR->CSC). We'll produce all_csc_col_ptr + all_csc_val_idxs.
-    //    all_csr_col_idx is basically `chunks[]`.
-    //    We'll reuse a small portion of your logic.
-    //    For each subtask, we have input_size chunk entries => flatten or do in sub-blocks.
     let (all_csc_col_ptr, all_csc_val_idxs) = transpose_cpu(
         &chunks, // interpret as all_csr_col_idx
         num_subtasks as u32,
@@ -185,7 +174,7 @@ pub fn cpu_reproduce_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G,
     //    (like your final Typescript lines).
     let base = ScalarField::from(1u64 << chunk_size);
     let mut acc = subtask_pts[subtask_pts.len() - 1];
-    for i in (0..subtask_pts.len() - 2).rev() {
+    for i in (0..subtask_pts.len() - 1).rev() {
         acc *= base;
         acc += subtask_pts[i];
     }
@@ -294,8 +283,6 @@ pub fn convert_point_coords_and_decompose_scalars(
         for (j, &val) in s_32.iter().enumerate() {
             s_halfs[15 - (j * 2)] = (val & 0xFFFF) as u16;
             s_halfs[15 - (j * 2) - 1] = (val >> 16) as u16;
-            // s_halfs[2*j]   = (val & 0xFFFF) as u16;
-            // s_halfs[2*j+1] = (val >> 16) as u16;
         }
 
         // Extract windows of size = chunk_size
@@ -310,24 +297,7 @@ pub fn convert_point_coords_and_decompose_scalars(
     Ok(())
 }
 
-// ------------------------------------------------------------------------
-// Helper: build BigUint from 16 u16 in little-endian order
-// ------------------------------------------------------------------------
-pub fn biguint_from_u16_le(halfs: &[u16; 16]) -> BigUint {
-    println!("halfs: {:?}", halfs);
-    let mut acc = BigUint::zero();
-    let mut shift = 0u32;
-    for &h in halfs.iter().rev() {
-        let val = BigUint::from(h);
-        acc |= val << shift;
-        shift += 16;
-    }
-    acc
-}
-
-// ------------------------------------------------------------------------
-// Helper: do exactly the GPU chunk extraction with the sign fix
-// ------------------------------------------------------------------------
+/// Helper: do exactly the GPU chunk extraction with the sign fix
 pub fn extract_signed_chunks(halfs: &[u16; 16], chunk_size: u32) -> Vec<u32> {
     let scalar_bytes = halfs;
     let num_subtasks = (256 / chunk_size) as usize;
@@ -338,9 +308,9 @@ pub fn extract_signed_chunks(halfs: &[u16; 16], chunk_size: u32) -> Vec<u32> {
         slices[i] = extract_word_from_bytes_le(scalar_bytes, i as u32, chunk_size);
     }
 
-    // Special handling for the last chunk (BN254 has around 2^254 , so we use 255 bit)
-    let shift_255 = ((num_subtasks as u32 * chunk_size - 255) + 16) - chunk_size;
-    slices[num_subtasks - 1] = scalar_bytes[0] as u32 >> shift_255;
+    // Special handling for the last chunk (after testing, 256 is the correct value instead of 254)
+    let shift_256 = ((num_subtasks as u32 * chunk_size - 256) + 16) - chunk_size;
+    slices[num_subtasks - 1] = scalar_bytes[0] as u32 >> shift_256;
 
     println!("slices       : {:?}", slices);
 
@@ -375,7 +345,7 @@ pub fn extract_signed_chunks(halfs: &[u16; 16], chunk_size: u32) -> Vec<u32> {
     slices
 }
 
-// Helper to extract a chunk of bits from the byte array
+/// Helper to extract a chunk of bits from the byte array
 pub fn extract_word_from_bytes_le(bytes: &[u16; 16], word_idx: u32, chunk_size: u32) -> u32 {
     let start_byte_idx = 15 - ((word_idx * chunk_size + chunk_size) / 16);
     let end_byte_idx = 15 - ((word_idx * chunk_size) / 16);
@@ -394,6 +364,19 @@ pub fn extract_word_from_bytes_le(bytes: &[u16; 16], word_idx: u32, chunk_size: 
         let part2 = (bytes[end_byte_idx as usize] as u32) >> end_byte_offset;
         part1 | part2
     }
+}
+
+/// Helper: build BigUint from 16 u16 in little-endian order
+pub fn biguint_from_u16_le(halfs: &[u16; 16]) -> BigUint {
+    println!("halfs: {:?}", halfs);
+    let mut acc = BigUint::zero();
+    let mut shift = 0u32;
+    for &h in halfs.iter().rev() {
+        let val = BigUint::from(h);
+        acc |= val << shift;
+        shift += 16;
+    }
+    acc
 }
 
 pub fn transpose_cpu(
@@ -593,25 +576,13 @@ pub fn get_fixed_inputs_cpu_style(input_size: usize) -> (Vec<Affine>, Vec<Scalar
         let mut points = vec![G::zero().into_affine(); input_size];
         for i in 0..input_size {
             points[i] = G::rand(&mut rng).into_affine();
-            // points[i] = G::generator().into_affine();
         }
         points
     };
     let scalars = {
         let mut scalars = vec![ScalarField::zero(); input_size];
         for i in 0..input_size {
-            // scalars[i] = ScalarField::rand(&mut rng);
-            scalars[i] = ScalarField::from(
-                BigUint::from_str(
-                    "113078212145816597093331040047546785012958969400039613319782796882727665664",
-                )
-                .unwrap(),
-            ); // This works
-               // scalars[i] = ScalarField::from(BigUint::from_str("123456789012345678901234567890123456789012345678901234567890123456789012345").unwrap());  // This works
-               // scalars[i] = ScalarField::from(BigUint::from_str("19888242871839275222246405745257275088548364400416034343698204186575808495616").unwrap());  // This fails
-               // scalars[i] = ScalarField::from(BigUint::from_str("21888242871839275222246405745257275088548364400416034343698204186575808495616").unwrap());  // This fails
-               // 2^246 -> 247 bits ok: 113078212145816597093331040047546785012958969400039613319782796882727665664
-               // 2^247-1 -> 248 bits failed: 226156424291633194186662080095093570025917938800079226639565593765455331328
+            scalars[i] = ScalarField::rand(&mut rng);
         }
         scalars
     };
@@ -622,9 +593,10 @@ pub fn get_fixed_inputs_cpu_style(input_size: usize) -> (Vec<Affine>, Vec<Scalar
 #[test]
 fn test_cpu_reproduce_msm() {
     use ark_bn254::G1Projective as G;
+    use ark_ec::VariableBaseMSM;
     use ark_ff::BigInteger;
 
-    let input_size = 1;
+    let input_size = 10;
     let (points, scalars) = get_fixed_inputs_cpu_style(input_size);
 
     println!("\n===== points =====");
