@@ -1,7 +1,7 @@
 use std::{env, path::Path, process::Command};
 
 fn main() {
-    compile_shaders();
+    // compile_shaders();
 }
 
 fn compile_shaders() {

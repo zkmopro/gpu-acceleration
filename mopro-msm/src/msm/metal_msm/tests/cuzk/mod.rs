@@ -8,3 +8,5 @@ pub mod pbpr;
 pub mod smvp;
 #[cfg(test)]
 pub mod transpose;
+#[cfg(test)]
+pub mod e2e;

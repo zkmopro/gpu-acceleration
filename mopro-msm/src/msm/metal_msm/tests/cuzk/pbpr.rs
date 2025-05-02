@@ -14,7 +14,7 @@ use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 const N: usize = 4;
 
-fn closest_power_of_two(n: usize) -> usize {
+pub fn closest_power_of_two(n: usize) -> usize {
     if n <= 1 {
         return 1;
     }
@@ -58,6 +58,46 @@ pub fn raw_reduction(a: BigInt<N>) -> BigInt<N> {
         r[i % N] = carry;
     }
     BigInt::new(r)
+}
+
+/// Convert separated coordinate buffers from GPU back to a vector of points
+pub fn points_from_separated_buffers(
+    x_buffer: &[u32],
+    y_buffer: &[u32],
+    z_buffer: &[u32],
+    num_limbs: usize,
+    log_limb_size: u32,
+) -> Vec<G> {
+    let coord_size = num_limbs;
+    let total_u32s = x_buffer.len() as usize;
+    let num_points = total_u32s / coord_size;
+
+    let mut points = Vec::with_capacity(num_points);
+
+    for i in 0..num_points {
+        let start_idx = i * coord_size;
+        let end_idx = start_idx + coord_size;
+
+        // Extract limbs for each coordinate
+        let x_limbs = &x_buffer[start_idx..end_idx];
+        let y_limbs = &y_buffer[start_idx..end_idx];
+        let z_limbs = &z_buffer[start_idx..end_idx];
+
+        // Convert limbs back to BigInt
+        let x_bigint = raw_reduction(BigInt::<4>::from_limbs(x_limbs, log_limb_size));
+        let y_bigint = raw_reduction(BigInt::<4>::from_limbs(y_limbs, log_limb_size));
+        let z_bigint = raw_reduction(BigInt::<4>::from_limbs(z_limbs, log_limb_size));
+
+        // Convert to field elements
+        let x = BaseField::from_bigint(x_bigint).unwrap();
+        let y = BaseField::from_bigint(y_bigint).unwrap();
+        let z = BaseField::from_bigint(z_bigint).unwrap();
+
+        // Create and add the point
+        points.push(G::new_unchecked(x, y, z));
+    }
+
+    points
 }
 
 /// Implement parallel bucket reduction in GPU using separated buffers internally

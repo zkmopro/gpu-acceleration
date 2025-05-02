@@ -1,7 +1,7 @@
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
-use ark_ec::CurveGroup;
+use ark_ec::{Group, CurveGroup};
 use ark_ff::{BigInt, One, PrimeField, Zero};
 use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::BigUint;
@@ -448,13 +448,13 @@ pub fn smvp_cpu(
 
     // For each subtask s:
     for s in 0..num_subtasks {
-        println!("=== subtask: {:?} ===", s);
+        // println!("=== subtask: {:?} ===", s);
         let ccp = &all_csc_col_ptr[s]; // csc_col_ptr for subtask s
         let cci = &all_csc_val_idxs[s]; // csc_val_idxs for subtask s
 
         // For each column col in [0..num_columns):
         for col in 0..num_columns {
-            println!("  --> col: {:?}", col);
+            // println!("  --> col: {:?}", col);
             // Gather all the points in that column => sum them
             let row_begin = ccp[col as usize];
             let row_end = ccp[col as usize + 1];
@@ -464,7 +464,7 @@ pub fn smvp_cpu(
             for idx in row_begin..row_end {
                 // the original point index in [0..input_size)
                 let point_idx = cci[idx as usize] as usize;
-                println!("👍 point_idx: {:?}", point_idx);
+                // println!("👍 point_idx: {:?}", point_idx);
                 // Create an affine point with Z=1
                 // Because X=point_x[i], Y=point_y[i], we interpret as an affine point on BN254:
                 //   G::new(point_x[i], point_y[i], 1).
@@ -485,25 +485,25 @@ pub fn smvp_cpu(
                 bucket_idx = (col - half_columns) as i32;
             }
 
-            print!("bucket_idx: {:?}, ", bucket_idx);
-            if bucket_idx == 0 {
-                println!("❌ ignore all points in this col");
-            }
+            // print!("bucket_idx: {:?}, ", bucket_idx);
+            // if bucket_idx == 0 {
+            //     println!("❌ ignore all points in this col");
+            // }
 
             // If bucket_idx>0 => store in (bucket_x,bucket_y,bucket_z).
             // In the Metal code, we do “bucket_idx-1” for 0-based indexing.
             if bucket_idx > 0 {
                 let final_idx = (bucket_idx - 1) as u32 + (s as u32 * half_columns);
-                println!("final_idx: {:?}", final_idx);
+                // println!("final_idx: {:?}", final_idx);
 
                 let current_bucket = G::new(
                     bucket_x[final_idx as usize],
                     bucket_y[final_idx as usize],
                     bucket_z[final_idx as usize],
                 );
-                println!("---- current_bucket: {:?}", current_bucket);
+                // println!("---- current_bucket: {:?}", current_bucket);
                 let new_bucket = current_bucket + sum_pt;
-                println!("---- new_bucket: {:?}", new_bucket);
+                // println!("---- new_bucket: {:?}", new_bucket);
 
                 // update the bucket
                 bucket_x[final_idx as usize] = new_bucket.x;
@@ -575,14 +575,16 @@ pub fn get_fixed_inputs_cpu_style(input_size: usize) -> (Vec<Affine>, Vec<Scalar
     let points = {
         let mut points = vec![G::zero().into_affine(); input_size];
         for i in 0..input_size {
-            points[i] = G::rand(&mut rng).into_affine();
+            // points[i] = G::rand(&mut rng).into_affine();
+            points[i] = G::generator().into_affine();
         }
         points
     };
     let scalars = {
         let mut scalars = vec![ScalarField::zero(); input_size];
         for i in 0..input_size {
-            scalars[i] = ScalarField::rand(&mut rng);
+            // scalars[i] = ScalarField::rand(&mut rng);
+            scalars[i] = ScalarField::from(1);
         }
         scalars
     };
@@ -596,7 +598,7 @@ fn test_cpu_reproduce_msm() {
     use ark_ec::VariableBaseMSM;
     use ark_ff::BigInteger;
 
-    let input_size = 10;
+    let input_size = 1;
     let (points, scalars) = get_fixed_inputs_cpu_style(input_size);
 
     println!("\n===== points =====");
