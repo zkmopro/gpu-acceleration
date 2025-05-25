@@ -5,7 +5,7 @@ use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
-use stopwatch::Stopwatch;
+use std::time::Instant;
 
 #[test]
 #[serial_test::serial]
@@ -109,7 +109,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     // Time the execution
-    let sw = Stopwatch::start_new();
+    let start = Instant::now();
 
     helper.execute_shader(
         &config,
@@ -119,7 +119,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         &thread_group_size,
     );
 
-    let elapsed = sw.elapsed_ms();
+    let elapsed = start.elapsed().as_millis() as i64;
 
     // Read and verify results
     let result_limbs = helper.read_results(&result_buf, num_limbs);
