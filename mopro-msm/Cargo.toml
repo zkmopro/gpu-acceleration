@@ -20,26 +20,19 @@ instant = "0.1"
 
 # Error handling
 thiserror = "=1.0.39"
-color-eyre = "=0.6.2"
 criterion = "=0.3.6"
 
-## Circom dependencies
-ark-circom = { git = "https://github.com/vimwitch/circom-compat.git" }
-ark-serialize = { version = "=0.4.1", features = ["derive"] }
-num-bigint = { version = "=0.4.3", default-features = false, features = ["rand"] }
-wasmer = { git = "https://github.com/oskarth/wasmer.git", rev = "09c7070" }
-ruint = { version = "1.10.0", features = ["rand", "serde", "ark-ff-04"] }
-
 # ZKP generation
+ark-serialize = { version = "=0.4.1", features = ["derive"] }
 ark-ec = { version = "=0.4.1", default-features = false, features = ["parallel"] }
 ark-crypto-primitives = { version = "=0.4.0" }
 ark-std = { version = "=0.4.0", default-features = false, features = ["parallel"] }
 ark-bn254 = { version = "=0.4.0" }
 ark-groth16 = { version = "=0.4.0", default-features = false, features = ["parallel"] }
 ark-relations = { version = "0.4", default-features = false }
-witness = { git = "https://github.com/philsippl/circom-witness-rs.git" }
 
 # GPU explorations
+num-bigint = { version = "=0.4.6", default-features = false, features = ["rand"] }
 ark-ff = { version = "=0.4.1", default-features = false, features = ["parallel"] }
 metal = { version = "=0.29.0" }
 objc = { version = "=0.2.7" }
@@ -49,19 +42,13 @@ itertools = "0.13.0"
 rand = "0.8.5"
 
 [build-dependencies]
-color-eyre = "0.6"
 enumset = "1.0.8"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
 
-## Circom dependencies
-wasmer = { git = "https://github.com/oskarth/wasmer.git", rev = "09c7070" }
-witness = { git = "https://github.com/philsippl/circom-witness-rs.git" }
-
 [dev-dependencies]
 serial_test = "3.0.0"
-stopwatch = "0.0.7"
 
 # [dependencies.rayon]
 # version = "1"
