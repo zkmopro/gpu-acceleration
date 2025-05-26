@@ -3,85 +3,146 @@ using namespace metal;
 #include "../curve/jacobian.metal"
 #include "../misc/get_constant.metal"
 
-kernel void parallel_bpr(
-    constant BigInt* buckets_x         [[ buffer(0) ]],
-    constant BigInt* buckets_y         [[ buffer(1) ]],
-    constant BigInt* buckets_z         [[ buffer(2) ]],
-    device BigInt* m_x                 [[ buffer(3) ]],
-    device BigInt* m_y                 [[ buffer(4) ]],
-    device BigInt* m_z                 [[ buffer(5) ]],
-    device BigInt* s_x                 [[ buffer(6) ]],
-    device BigInt* s_y                 [[ buffer(7) ]],
-    device BigInt* s_z                 [[ buffer(8) ]],
-    constant uint32_t& grid_width      [[ buffer(9) ]],
-    constant uint32_t& total_threads   [[ buffer(10) ]],
-    constant uint32_t& r               [[ buffer(11) ]],
-    uint2 tid                          [[ thread_position_in_grid ]]
-) {
-    // Convert the 2D thread coordinate into a flat index.
-    uint gid = tid.y * grid_width + tid.x;
-    if (gid >= total_threads) {
-        return;
-    }
-   
-    // Accumulating buckets into s_shared and m_shared using 0-based indexing.
-    for (uint32_t l = 1; l <= r; l++) {
-        
-        Jacobian m_shared = {
-            m_x[gid],
-            m_y[gid],
-            m_z[gid]
-        };
+#if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
+    #include <metal_logging>
+    constant os_log logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
+    #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
+#else
+    #define LOG_DEBUG(...) ((void)0)
+#endif
 
-        Jacobian s_shared = {
-            s_x[gid],
-            s_y[gid],
-            s_z[gid]
-        };
 
-        Jacobian bucket_val;
+// This double-and-add code is adapted from the ZPrize test harness:
+// https://github.com/demox-labs/webgpu-msm/blob/main/src/reference/webgpu/wgsl/Curve.ts#L78.
+static Jacobian double_and_add(Jacobian point, uint scalar) {
+    Jacobian result = get_bn254_zero_mont(); // Point at infinity
 
-        if (l != 1) {
-            bucket_val.x = buckets_x[(gid + 1) * r - l];
-            bucket_val.y = buckets_y[(gid + 1) * r - l];
-            bucket_val.z = buckets_z[(gid + 1) * r - l];
-            
-            m_shared = m_shared + bucket_val;
-            s_shared = s_shared + m_shared;
-        } else {
-            bucket_val.x = buckets_x[(gid + 1) * r - 1];
-            bucket_val.y = buckets_y[(gid + 1) * r - 1];
-            bucket_val.z = buckets_z[(gid + 1) * r - 1];
-            
-            m_shared = bucket_val;
-            s_shared = m_shared;
+    uint s = scalar;
+    Jacobian temp = point;
+
+    while (s != 0u) {
+        if ((s & 1u) == 1u) {
+            result = result + temp;
         }
-        
-        m_x[gid] = m_shared.x;
-        m_y[gid] = m_shared.y;
-        m_z[gid] = m_shared.z;
-        
-        s_x[gid] = s_shared.x;
-        s_y[gid] = s_shared.y;
-        s_z[gid] = s_shared.z;
+        temp = jacobian_dbl_2009_l(temp);
+        s = s >> 1u;
     }
+    return result;
+}
 
-    Jacobian final_s = {
-        s_x[gid],
-        s_y[gid],
-        s_z[gid]
-    };
+
+kernel void bpr_stage_1(
+    device BigInt* bucket_sum_x         [[ buffer(0) ]],
+    device BigInt* bucket_sum_y         [[ buffer(1) ]],
+    device BigInt* bucket_sum_z         [[ buffer(2) ]],
+    device BigInt* g_points_x           [[ buffer(3) ]],
+    device BigInt* g_points_y           [[ buffer(4) ]],
+    device BigInt* g_points_z           [[ buffer(5) ]],
+    constant uint3& params              [[ buffer(6) ]],
+    constant uint& workgroup_size       [[ buffer(7) ]],
+    uint tid                            [[ thread_position_in_grid ]])
+{
+    const uint thread_id = tid;
+    const uint num_threads_per_subtask = workgroup_size;
+
+    const uint subtask_idx = params[0];
+    const uint num_columns = params[1];
+    const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation (must be power of 2).
+    LOG_DEBUG("[bpr_stage_1] subtask_idx: %u, num_columns: %u, num_subtasks_per_bpr: %u", subtask_idx, num_columns, num_subtasks_per_bpr);
+
+    const uint num_buckets_per_subtask = num_columns / 2u;
+
+    // Number of buckets to reduce per thread.
+    const uint buckets_per_thread = num_buckets_per_subtask / num_threads_per_subtask;
+    const uint multiplier = subtask_idx + (thread_id / num_threads_per_subtask);
+    const uint offset = num_buckets_per_subtask * multiplier;
+
+    uint idx = offset;
+
+    if (thread_id % num_threads_per_subtask != 0u) {
+        idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread + offset;
+    }
 
     Jacobian m = {
-        m_x[gid],
-        m_y[gid],
-        m_z[gid]
+        .x = bucket_sum_x[idx],
+        .y = bucket_sum_y[idx],
+        .z = bucket_sum_z[idx]
+    };
+    Jacobian g = m;
+
+    for (uint i = 0; i < buckets_per_thread; i++) {
+        uint idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread - 1u - i;
+        uint bi = offset + idx;
+        Jacobian b = {
+            .x = bucket_sum_x[bi],
+            .y = bucket_sum_y[bi],
+            .z = bucket_sum_z[bi]
+        };
+        m = m + b;
+        g = g + m;
+    }
+
+    bucket_sum_x[idx] = m.x;
+    bucket_sum_y[idx] = m.y;
+    bucket_sum_z[idx] = m.z;
+
+    uint g_rw_idx = (subtask_idx / num_subtasks_per_bpr) * (num_threads_per_subtask * num_subtasks_per_bpr) + thread_id;
+    g_points_x[g_rw_idx] = g.x;
+    g_points_y[g_rw_idx] = g.y;
+    g_points_z[g_rw_idx] = g.z;
+}
+
+
+kernel void bpr_stage_2(
+    device BigInt* bucket_sum_x         [[ buffer(0) ]],
+    device BigInt* bucket_sum_y         [[ buffer(1) ]],
+    device BigInt* bucket_sum_z         [[ buffer(2) ]],
+    device BigInt* g_points_x           [[ buffer(3) ]],
+    device BigInt* g_points_y           [[ buffer(4) ]],
+    device BigInt* g_points_z           [[ buffer(5) ]],
+    constant uint3& params              [[ buffer(6) ]],
+    constant uint& workgroup_size       [[ buffer(7) ]],
+    uint tid                            [[ thread_position_in_grid ]])
+{
+    const uint thread_id = tid;
+    const uint num_threads_per_subtask = workgroup_size;
+
+    const uint subtask_idx = params[0];
+    const uint num_columns = params[1];
+    const uint num_subtasks_per_bpr = params[2];
+    LOG_DEBUG("[bpr_stage_2] subtask_idx: %u, num_columns: %u, num_subtasks_per_bpr: %u", subtask_idx, num_columns, num_subtasks_per_bpr);
+
+    const uint num_buckets_per_subtask = num_columns / 2u;
+
+    // Number of buckets to reduce per thread.
+    const uint buckets_per_thread = num_buckets_per_subtask / num_threads_per_subtask;
+
+    const uint multiplier = subtask_idx + (thread_id / num_threads_per_subtask);
+    const uint offset = num_buckets_per_subtask * multiplier;
+
+    uint idx = offset;
+    if (thread_id % num_threads_per_subtask != 0u) {
+        idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread + offset;
+    }
+
+    Jacobian m = {
+        .x = bucket_sum_x[idx],
+        .y = bucket_sum_y[idx],
+        .z = bucket_sum_z[idx]
+    };
+    
+    const uint g_rw_idx = (subtask_idx / num_subtasks_per_bpr) * (num_threads_per_subtask * num_subtasks_per_bpr) + thread_id;
+    Jacobian g = {
+        .x = g_points_x[g_rw_idx],
+        .y = g_points_y[g_rw_idx],
+        .z = g_points_z[g_rw_idx]
     };
 
-    uint32_t scalar = gid * r;
-    final_s = final_s + jacobian_scalar_mul(m, scalar);
-    
-    s_x[gid] = final_s.x;
-    s_y[gid] = final_s.y;
-    s_z[gid] = final_s.z;
+    // Perform scalar mul on m and add the result to g
+    const uint s = buckets_per_thread * (num_threads_per_subtask - (thread_id % num_threads_per_subtask) - 1u);
+    g = g + double_and_add(m, s);
+
+    g_points_x[g_rw_idx] = g.x;
+    g_points_y[g_rw_idx] = g.y;
+    g_points_z[g_rw_idx] = g.z;
 }
