@@ -32,29 +32,27 @@ fn test_pbpr_stage1_and_stage2() {
 
     let num_columns: u32 = 8; // Must be even
     let num_buckets_per_subtask = (num_columns / 2) as usize; // 4
-    let workgroup_size: u32 = 2; // threads / subtask
+    let num_subtasks = 2; // For test, keep small
+    let num_subtasks_per_bpr = 2; // For test, keep small (normally 16)
+    let workgroup_size: u32 = 2; // threads / subtask (normally 256)
     let buckets_per_thread = num_buckets_per_subtask as u32 / workgroup_size; // 2
 
-    // Only a single subtask for the test.
-    let subtask_idx: u32 = 0;
-    let num_subtasks_per_bpr: u32 = 1;
-
-    //------------------------------------------------
     // Generate random bucket sums  (Jacobian points)
-    //------------------------------------------------
     let mut rng = rand::thread_rng();
-    let mut bucket_points = Vec::with_capacity(num_buckets_per_subtask);
-    for _ in 0..num_buckets_per_subtask {
-        // Generate random affine point then convert to projective (Z = 1)
+    let mut bucket_points = Vec::with_capacity(num_subtasks * num_buckets_per_subtask);
+    for _ in 0..(num_subtasks * num_buckets_per_subtask) {
         let rand_pt = G::rand(&mut rng).into_affine();
         let proj = G::new(rand_pt.x, rand_pt.y, BaseField::one());
         bucket_points.push(proj);
     }
 
     // Convert bucket points to limb representation (Montgomery form already)
-    let mut bucket_sum_x_limbs = Vec::with_capacity(num_buckets_per_subtask * num_limbs);
-    let mut bucket_sum_y_limbs = Vec::with_capacity(num_buckets_per_subtask * num_limbs);
-    let mut bucket_sum_z_limbs = Vec::with_capacity(num_buckets_per_subtask * num_limbs);
+    let mut bucket_sum_x_limbs =
+        Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
+    let mut bucket_sum_y_limbs =
+        Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
+    let mut bucket_sum_z_limbs =
+        Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
 
     for pt in &bucket_points {
         let x_limbs = pt.x.0.to_limbs(num_limbs, log_limb_size);
@@ -66,13 +64,13 @@ fn test_pbpr_stage1_and_stage2() {
     }
 
     // g_points buffers (filled with zeros, will be overwritten by GPU)
-    let g_points_size = workgroup_size as usize * num_limbs;
+    let g_points_size = num_subtasks * workgroup_size as usize * num_limbs;
     let g_points_x_limbs = vec![0u32; g_points_size];
     let g_points_y_limbs = vec![0u32; g_points_size];
     let g_points_z_limbs = vec![0u32; g_points_size];
 
     //----------------------------------------------
-    // Create Metal buffers & run stage 1 and 2
+    // Create Metal buffers & run stage 1 and 2 in subtask chunks
     //----------------------------------------------
     let mut helper = MetalHelper::new();
 
@@ -84,20 +82,14 @@ fn test_pbpr_stage1_and_stage2() {
     let g_points_y_buf = helper.create_input_buffer(&g_points_y_limbs);
     let g_points_z_buf = helper.create_input_buffer(&g_points_z_limbs);
 
-    // params = [subtask_idx, num_columns, num_subtasks_per_bpr]
-    let params = vec![subtask_idx, num_columns, num_subtasks_per_bpr];
-    let params_buf = helper.create_input_buffer(&params);
-
-    // workgroup_size as a single u32 uniform
     let wg_size_vec = vec![workgroup_size];
     let wg_size_buf = helper.create_input_buffer(&wg_size_vec);
 
-    // Thread configuration: 1-D grid with `workgroup_size` threads, each threadgroup has 1 thread.
-    let thread_group_count = helper.create_thread_group_size(workgroup_size as u64, 1, 1);
-    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
+    let thread_group_count = helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
+    let thread_group_size = helper.create_thread_group_size(workgroup_size as u64, 1, 1);
 
     // ----------------------------------------------
-    // Stage 1 kernel
+    // Stage 1 and Stage 2 kernel launches (loop over subtask chunks)
     // ----------------------------------------------
     let config_stage1 = MetalConfig {
         log_limb_size,
@@ -105,27 +97,6 @@ fn test_pbpr_stage1_and_stage2() {
         shader_file: "cuzk/pbpr.metal".to_string(),
         kernel_name: "bpr_stage_1".to_string(),
     };
-
-    helper.execute_shader(
-        &config_stage1,
-        &[
-            &bucket_sum_x_buf,
-            &bucket_sum_y_buf,
-            &bucket_sum_z_buf,
-            &g_points_x_buf,
-            &g_points_y_buf,
-            &g_points_z_buf,
-            &params_buf,
-            &wg_size_buf,
-        ],
-        &[],
-        &thread_group_count,
-        &thread_group_size,
-    );
-
-    // ----------------------------------------------
-    // Stage 2 kernel (reads results of stage 1)
-    // ----------------------------------------------
     let config_stage2 = MetalConfig {
         log_limb_size,
         num_limbs,
@@ -133,22 +104,54 @@ fn test_pbpr_stage1_and_stage2() {
         kernel_name: "bpr_stage_2".to_string(),
     };
 
-    helper.execute_shader(
-        &config_stage2,
-        &[
-            &bucket_sum_x_buf,
-            &bucket_sum_y_buf,
-            &bucket_sum_z_buf,
-            &g_points_x_buf,
-            &g_points_y_buf,
-            &g_points_z_buf,
-            &params_buf,
-            &wg_size_buf,
-        ],
-        &[],
-        &thread_group_count,
-        &thread_group_size,
-    );
+    for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+        let params = vec![
+            subtask_chunk_idx as u32,
+            num_columns,
+            num_subtasks_per_bpr as u32,
+        ];
+        let params_buf = helper.create_input_buffer(&params);
+        helper.execute_shader(
+            &config_stage1,
+            &[
+                &bucket_sum_x_buf,
+                &bucket_sum_y_buf,
+                &bucket_sum_z_buf,
+                &g_points_x_buf,
+                &g_points_y_buf,
+                &g_points_z_buf,
+                &params_buf,
+                &wg_size_buf,
+            ],
+            &[],
+            &thread_group_count,
+            &thread_group_size,
+        );
+    }
+    for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+        let params = vec![
+            subtask_chunk_idx as u32,
+            num_columns,
+            num_subtasks_per_bpr as u32,
+        ];
+        let params_buf = helper.create_input_buffer(&params);
+        helper.execute_shader(
+            &config_stage2,
+            &[
+                &bucket_sum_x_buf,
+                &bucket_sum_y_buf,
+                &bucket_sum_z_buf,
+                &g_points_x_buf,
+                &g_points_y_buf,
+                &g_points_z_buf,
+                &params_buf,
+                &wg_size_buf,
+            ],
+            &[],
+            &thread_group_count,
+            &thread_group_size,
+        );
+    }
 
     // ----------------------------------------------
     // Read GPU results
@@ -157,57 +160,66 @@ fn test_pbpr_stage1_and_stage2() {
     let gpu_gy_limbs = helper.read_results(&g_points_y_buf, g_points_size);
     let gpu_gz_limbs = helper.read_results(&g_points_z_buf, g_points_size);
 
-    // Drop buffers (no longer needed on GPU side)
     helper.drop_all_buffers();
 
     // --------------------------------------------------
-    // CPU reference implementation for stage1 + stage2
+    // CPU reference implementation for stage1 + stage2 (matches new index logic)
     // --------------------------------------------------
-    // We simulate parallel semantics by treating bucket reads as coming
-    // from the **original** bucket array, while writes are collected in
-    // a separate vector.
     let mut bucket_after_stage1 = bucket_points.clone();
-    let mut g_stage1 = vec![G::zero(); workgroup_size as usize];
+    let mut g_stage1 = vec![G::zero(); num_subtasks * workgroup_size as usize];
 
-    for thread_id in 0..workgroup_size {
-        // Compute starting bucket index (`idx`) identical to Metal code.
-        let idx_start = if thread_id % workgroup_size != 0 {
-            (workgroup_size - (thread_id % workgroup_size)) * buckets_per_thread
-        } else {
-            0
-        } as usize;
-
-        // Offset is zero in this single-subtask test.
-        let mut m = bucket_points[idx_start];
-        let mut g = m;
-
-        for i in 0..buckets_per_thread {
-            let idx_local =
-                (workgroup_size - (thread_id % workgroup_size)) * buckets_per_thread - 1 - i;
-            let bi = idx_local as usize; // offset == 0
-            let b = bucket_points[bi];
-            m += b;
-            g += m;
+    for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+        for thread_id in 0..(num_subtasks_per_bpr * workgroup_size as usize) {
+            let subtask_idx = subtask_chunk_idx + (thread_id / workgroup_size as usize);
+            if subtask_idx >= num_subtasks {
+                continue;
+            }
+            let thread_in_subtask = thread_id % workgroup_size as usize;
+            let offset = num_buckets_per_subtask * subtask_idx;
+            let idx_start = if thread_in_subtask != 0 {
+                (workgroup_size as usize - thread_in_subtask) * buckets_per_thread as usize + offset
+            } else {
+                offset
+            };
+            let mut m = bucket_points[idx_start];
+            let mut g = m;
+            for i in 0..(buckets_per_thread as usize - 1) {
+                let idx_local = (workgroup_size as usize - thread_in_subtask)
+                    * buckets_per_thread as usize
+                    - 1
+                    - i;
+                let bi = offset + idx_local;
+                let b = bucket_points[bi];
+                m += b;
+                g += m;
+            }
+            bucket_after_stage1[idx_start] = m;
+            let g_rw_idx = subtask_idx * workgroup_size as usize + thread_in_subtask;
+            g_stage1[g_rw_idx] = g;
         }
-
-        bucket_after_stage1[idx_start] = m;
-        g_stage1[thread_id as usize] = g;
     }
 
     // ---------- Stage 2 (CPU) ----------
-    let mut g_expected = Vec::with_capacity(workgroup_size as usize);
-    for thread_id in 0..workgroup_size {
-        let idx_start = if thread_id % workgroup_size != 0 {
-            (workgroup_size - (thread_id % workgroup_size)) * buckets_per_thread
-        } else {
-            0
-        } as usize;
-
-        let m = bucket_after_stage1[idx_start];
-        let mut g = g_stage1[thread_id as usize];
-        let s = buckets_per_thread * (workgroup_size - (thread_id % workgroup_size) - 1);
-        g += cpu_double_and_add(m, s);
-        g_expected.push(g);
+    let mut g_expected = vec![G::zero(); num_subtasks * workgroup_size as usize];
+    for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+        for thread_id in 0..(num_subtasks_per_bpr * workgroup_size as usize) {
+            let subtask_idx = subtask_chunk_idx + (thread_id / workgroup_size as usize);
+            if subtask_idx >= num_subtasks {
+                continue;
+            }
+            let thread_in_subtask = thread_id % workgroup_size as usize;
+            let offset = num_buckets_per_subtask * subtask_idx;
+            let idx_start = if thread_in_subtask != 0 {
+                (workgroup_size as usize - thread_in_subtask) * buckets_per_thread as usize + offset
+            } else {
+                offset
+            };
+            let m = bucket_after_stage1[idx_start];
+            let g = g_stage1[subtask_idx * workgroup_size as usize + thread_in_subtask];
+            let s = buckets_per_thread as usize * (workgroup_size as usize - thread_in_subtask - 1);
+            let g2 = g + cpu_double_and_add(m, s as u32);
+            g_expected[subtask_idx * workgroup_size as usize + thread_in_subtask] = g2;
+        }
     }
 
     // ----------------------------------------------
@@ -225,18 +237,18 @@ fn test_pbpr_stage1_and_stage2() {
         BaseField::from_bigint(val.try_into().unwrap()).unwrap()
     };
 
-    for thread_id in 0..workgroup_size as usize {
-        let start = thread_id * num_limbs;
-        let end = (thread_id + 1) * num_limbs;
-        let gx = decode_mont(&gpu_gx_limbs[start..end]);
-        let gy = decode_mont(&gpu_gy_limbs[start..end]);
-        let gz = decode_mont(&gpu_gz_limbs[start..end]);
-        let gpu_point = G::new(gx, gy, gz);
-
-        // Convert both GPU & CPU points to affine for comparison
-        let gpu_affine = gpu_point.into_affine();
-        let cpu_affine = g_expected[thread_id].into_affine();
-
-        assert_eq!(gpu_affine, cpu_affine, "Mismatch at thread {}", thread_id);
+    for subtask_idx in 0..num_subtasks {
+        for thread_in_subtask in 0..workgroup_size as usize {
+            let thread_id = subtask_idx * workgroup_size as usize + thread_in_subtask;
+            let start = thread_id * num_limbs;
+            let end = (thread_id + 1) * num_limbs;
+            let gx = decode_mont(&gpu_gx_limbs[start..end]);
+            let gy = decode_mont(&gpu_gy_limbs[start..end]);
+            let gz = decode_mont(&gpu_gz_limbs[start..end]);
+            let gpu_point = G::new(gx, gy, gz);
+            let gpu_affine = gpu_point.into_affine();
+            let cpu_affine = g_expected[thread_id].into_affine();
+            assert_eq!(gpu_affine, cpu_affine, "Mismatch at thread {}", thread_id);
+        }
     }
 }

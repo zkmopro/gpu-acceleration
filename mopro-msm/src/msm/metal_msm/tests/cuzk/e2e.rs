@@ -8,7 +8,6 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::Zero;
 use std::error::Error;
 
-
 pub fn metal_e2e_msm(bases: &[Affine], scalars: &[ScalarField]) -> Result<G, Box<dyn Error>> {
     let input_size = bases.len();
     let chunk_size = 16;
@@ -595,7 +594,6 @@ fn pbpr_gpu(
 
     (out_gx, out_gy, out_gz)
 }
-
 
 #[cfg(test)]
 mod tests {
