@@ -1,7 +1,7 @@
-using namespace metal;
 #include <metal_stdlib>
 #include "../curve/jacobian.metal"
 #include "../misc/get_constant.metal"
+using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
@@ -10,7 +10,6 @@ using namespace metal;
 #else
     #define LOG_DEBUG(...) ((void)0)
 #endif
-
 
 // This double-and-add code is adapted from the ZPrize test harness:
 // https://github.com/demox-labs/webgpu-msm/blob/main/src/reference/webgpu/wgsl/Curve.ts#L78.
@@ -30,7 +29,6 @@ static Jacobian double_and_add(Jacobian point, uint scalar) {
     return result;
 }
 
-
 kernel void bpr_stage_1(
     device BigInt* bucket_sum_x         [[ buffer(0) ]],
     device BigInt* bucket_sum_y         [[ buffer(1) ]],
@@ -48,7 +46,6 @@ kernel void bpr_stage_1(
     const uint subtask_idx = params[0];
     const uint num_columns = params[1];
     const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation (must be power of 2).
-    LOG_DEBUG("[bpr_stage_1] subtask_idx: %u, num_columns: %u, num_subtasks_per_bpr: %u", subtask_idx, num_columns, num_subtasks_per_bpr);
 
     const uint num_buckets_per_subtask = num_columns / 2u;
 
@@ -70,7 +67,9 @@ kernel void bpr_stage_1(
     };
     Jacobian g = m;
 
-    for (uint i = 0; i < buckets_per_thread; i++) {
+    for (uint i = 0; i < buckets_per_thread - 1u; i++) {
+        LOG_DEBUG("[bpr_stage_1] i: %u, thread_id: %u, num_threads_per_subtask: %u, buckets_per_thread: %u, offset: %u", i, thread_id, num_threads_per_subtask, buckets_per_thread, offset);
+
         uint idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread - 1u - i;
         uint bi = offset + idx;
         Jacobian b = {
@@ -110,11 +109,9 @@ kernel void bpr_stage_2(
     const uint subtask_idx = params[0];
     const uint num_columns = params[1];
     const uint num_subtasks_per_bpr = params[2];
-    LOG_DEBUG("[bpr_stage_2] subtask_idx: %u, num_columns: %u, num_subtasks_per_bpr: %u", subtask_idx, num_columns, num_subtasks_per_bpr);
 
     const uint num_buckets_per_subtask = num_columns / 2u;
 
-    // Number of buckets to reduce per thread.
     const uint buckets_per_thread = num_buckets_per_subtask / num_threads_per_subtask;
 
     const uint multiplier = subtask_idx + (thread_id / num_threads_per_subtask);

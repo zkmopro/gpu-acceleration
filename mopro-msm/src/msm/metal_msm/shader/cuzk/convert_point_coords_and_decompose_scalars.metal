@@ -1,18 +1,15 @@
-using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
-#include "../misc/get_constant.metal"
 #include "barrett_reduction.metal"
 #include "extract_word_from_bytes_le.metal"
+#include "../misc/get_constant.metal"
+using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
-    // Create our real logger.
     constant os_log logger_kernel(/*subsystem=*/"pt_conversion", /*category=*/"metal");
-    // Define the log macro to forward to logger_kernel.log_debug.
     #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
 #else
-    // For older Metal versions, define a dummy macro that does nothing.
     #define LOG_DEBUG(...) ((void)0)
 #endif
 
@@ -20,19 +17,14 @@ kernel void convert_point_coords_and_decompose_scalars(
     device const uint* coords           [[buffer(0)]],
     device const uint* scalars          [[buffer(1)]],
     constant uint& input_size           [[buffer(2)]],
-    device BigInt* point_x        [[buffer(3)]],
-    device BigInt* point_y        [[buffer(4)]],
+    device BigInt* point_x              [[buffer(3)]],
+    device BigInt* point_y              [[buffer(4)]],
     device uint* chunks                 [[buffer(5)]],
     uint3 gid                           [[thread_position_in_grid]]
 ) {
     uint gidx = gid.x;
     uint gidy = gid.y;
     uint id   = gidx * NUM_Y_WORKGROUPS + gidy;
-
-    // // Safety check or early return if id >= total number of points
-    // if (id >= total_points) {
-    //     return;
-    // }
 
     // 1) Convert coords to BigInt in Montgomery form
     // We read 16 halfwords for x and 16 halfwords for y. 
@@ -69,9 +61,6 @@ kernel void convert_point_coords_and_decompose_scalars(
 
     x_bigint.limbs[NUM_LIMBS - 1] = x_bytes[0] >> shift;
     y_bigint.limbs[NUM_LIMBS - 1] = y_bytes[0] >> shift;
-
-    LOG_DEBUG("x_bigint[NUM_LIMBS - 1]: %u", x_bigint.limbs[NUM_LIMBS - 1]);
-    LOG_DEBUG("y_bigint[NUM_LIMBS - 1]: %u", y_bigint.limbs[NUM_LIMBS - 1]);
 
     // Convert x,y to Montgomery form: X = x * R mod p, Y = y * R mod p.
     BigIntWide r = get_r();
@@ -120,7 +109,7 @@ kernel void convert_point_coords_and_decompose_scalars(
         signed_slices[i] = slice_val;
     }
 
-    // Store final (non-negative) values into chunks
+    // Store final values into chunks
     for (uint i = 0; i < NUM_SUBTASKS; i++) {
         uint offset = i * input_size;
         // shift negative slices by +s to keep them in [0, l) range
