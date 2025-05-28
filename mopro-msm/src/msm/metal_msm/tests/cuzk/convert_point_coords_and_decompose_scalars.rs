@@ -99,11 +99,7 @@ fn test_scalar_decomposition() {
     // Setup test config
     let log_limb_size = 16;
     let num_limbs = 16;
-    let chunk_size = if BaseField::MODULUS_BIT_SIZE / 32 >= 65536 {
-        16
-    } else {
-        4
-    };
+    let chunk_size = 16;
     let num_subtasks = (256f32 / chunk_size as f32).ceil() as usize;
     let num_columns = 1 << chunk_size; // 2^chunk_size
 

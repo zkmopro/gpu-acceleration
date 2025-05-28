@@ -1,16 +1,13 @@
 #include <metal_stdlib>
-#include "../curve/jacobian.metal"
 #include "barrett_reduction.metal"
+#include "../curve/jacobian.metal"
 using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
-    // Create our real logger.
     constant os_log logger_kernel(/*subsystem=*/"smvp", /*category=*/"metal");
-    // Define the log macro to forward to logger_kernel.log_debug.
     #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
 #else
-    // For older Metal versions, define a dummy macro that does nothing.
     #define LOG_DEBUG(...) ((void)0)
 #endif
 
@@ -37,8 +34,8 @@ kernel void smvp(
 
     const uint id = (gidx * num_y_workgroups + gidy) * num_z_workgroups + gidz;
     
-    const uint num_columns   = NUM_COLUMNS;
-    const uint half_columns  = num_columns / 2;
+    const uint num_columns = NUM_COLUMNS;
+    const uint half_columns = num_columns / 2;
 
     const uint subtask_idx = id / half_columns;
 
@@ -47,13 +44,8 @@ kernel void smvp(
     // an offset for each subtask's row_ptr
     const uint rp_offset = (subtask_idx + subtask_offset) * (num_columns + 1);
 
-    // Each thread handles two buckets (one positive, one negative).
-    // We'll accumulate the partial sums in `sum` (Jacobian).
-    // Then optionally negate them if the recovered bucket index is negative.
-    // Then we write them to the correct location in the bucket arrays.
+    // Each thread handles two buckets (one positive, one negative)
     for (uint j = 0; j < 2; j++) {
-        // row_idx logic:  row_idx = (id % half_columns) ± half_columns
-        // with special-case for j == 0 at the boundary.
         uint row_idx = (id % half_columns) + half_columns;
         if (j == 1) {
             row_idx = half_columns - (id % half_columns);
@@ -63,7 +55,7 @@ kernel void smvp(
         }
 
         const uint row_begin = row_ptr[rp_offset + row_idx];
-        const uint row_end   = row_ptr[rp_offset + row_idx + 1];
+        const uint row_end = row_ptr[rp_offset + row_idx + 1];
 
         // Accumulate all the points for that bucket
         Jacobian sum = inf;
@@ -74,21 +66,18 @@ kernel void smvp(
                 .y = new_point_y[idx],
                 .z = get_bn254_one_mont().z
             };
-
             sum = sum + b;
-
-            // Debug for correct input points
-            LOG_DEBUG("new_point_x[%u].limbs[0]: %u", idx, new_point_x[idx].limbs[0]);
         }
 
         // In short Weierstrass, negation = flip sign of Y mod p: jacobian_neg.
         uint bucket_idx = 0;
+        // Negative bucket
         if (half_columns > row_idx) {
-            // Negative bucket => flip sign of sum
             bucket_idx = half_columns - row_idx;
             sum = -sum;
-        } else {
-            // Positive bucket
+        }
+        // Positive bucket
+        else {
             bucket_idx = row_idx - half_columns;
         }
 
@@ -104,22 +93,11 @@ kernel void smvp(
                     .y = bucket_y[bi],
                     .z = bucket_z[bi]
                 };
-
-                // sum = oldBucket + sum
                 sum = bucket_val + sum;
             }
-
-            // Store the result in bucket arrays
             bucket_x[bi] = sum.x;
             bucket_y[bi] = sum.y;
             bucket_z[bi] = sum.z;
-        }
-
-        // Debug for correct sum
-        if (id == 0) {
-            for (uint i = 0; i < NUM_LIMBS; i++) {
-                LOG_DEBUG("sum[%u].x.limbs[%u]: %u", id, i, sum.x.limbs[i]);
-            }
         }
     }
 }

@@ -1,13 +1,17 @@
+// Serial transpose algo adapted from Wang et al, 2016, "Parallel
+// Transposition of Sparse Data Structures".
+// https://synergy.cs.vt.edu/pubs/papers/wang-transposition-ics16.pdf
+
 #include <metal_stdlib>
 using namespace metal;
 
 kernel void transpose(
-    device const uint* all_csr_col_idx       [[buffer(0)]],
-    device atomic_uint* all_csc_col_ptr      [[buffer(1)]],
-    device uint* all_csc_val_idxs            [[buffer(2)]],
-    device uint* all_curr                    [[buffer(3)]],
-    constant uint2& params                   [[buffer(4)]],
-    uint gid [[thread_position_in_grid]]
+    device const uint* all_csr_col_idx      [[buffer(0)]],
+    device atomic_uint* all_csc_col_ptr     [[buffer(1)]],
+    device uint* all_csc_val_idxs           [[buffer(2)]],
+    device uint* all_curr                   [[buffer(3)]],
+    constant uint2& params                  [[buffer(4)]],
+    uint gid                                [[thread_position_in_grid]]
 ) {
     const uint subtask_idx = gid;
 

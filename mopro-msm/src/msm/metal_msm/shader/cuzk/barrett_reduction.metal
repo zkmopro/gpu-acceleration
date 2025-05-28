@@ -1,21 +1,17 @@
 #pragma once
 
-using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
 #include "../field/ff.metal"
+using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
-    // Create our real logger.
     constant os_log logger(/*subsystem=*/"barret_reduction", /*category=*/"metal");
-    // Define the log macro to forward to logger_kernel.log_info.
     #define LOG_DEBUG_DUPL(...) logger.log_debug(__VA_ARGS__)
 #else
-    // For older Metal versions, define a dummy macro that does nothing.
     #define LOG_DEBUG_DUPL(...) ((void)0)
 #endif
-
 
 BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide res = bigint_zero_extra_wide();
@@ -46,7 +42,8 @@ BigIntResultExtraWide sub_512(BigIntExtraWide a, BigIntExtraWide b) {
         if (a.limbs[i] < (b.limbs[i] + res.carry)) {
             res.value.limbs[i] += (MASK + 1);
             res.carry = 1;
-        } else {
+        }
+        else {
             res.carry = 0;
         }
     }

@@ -1,8 +1,8 @@
 #pragma once
 
-using namespace metal;
 #include <metal_stdlib>
 #include <metal_math>
+using namespace metal;
 
 inline uint32_t extract_word_from_bytes_le(
     const thread uint32_t* input,
@@ -22,7 +22,8 @@ inline uint32_t extract_word_from_bytes_le(
     }
     if (start_byte_idx == end_byte_idx) {
         word = (input[start_byte_idx] & mask) >> end_byte_offset;
-    } else {
+    }
+    else {
         word = (input[start_byte_idx] & mask) << (16 - end_byte_offset);
         word += input[end_byte_idx] >> end_byte_offset;
     }

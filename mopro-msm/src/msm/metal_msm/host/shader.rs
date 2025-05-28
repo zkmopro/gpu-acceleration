@@ -120,7 +120,7 @@ pub fn write_constants(
 
     // MSM instance params
     let input_size = BaseField::MODULUS_BIT_SIZE / 32;
-    let chunk_size = if input_size >= 65536 { 16 } else { 4 };
+    let chunk_size = 16;
     let num_columns = 2u32.pow(chunk_size);
     let num_rows = (input_size as f32 / num_columns as f32).ceil() as u32;
     let num_subtasks = (256 as f32 / chunk_size as f32).ceil() as u32;
