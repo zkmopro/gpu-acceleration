@@ -20,11 +20,12 @@ kernel void convert_point_coords_and_decompose_scalars(
     device BigInt* point_x              [[buffer(3)]],
     device BigInt* point_y              [[buffer(4)]],
     device uint* chunks                 [[buffer(5)]],
+    device const uint* num_y_workgroups [[buffer(6)]],
     uint3 gid                           [[thread_position_in_grid]]
 ) {
     uint gidx = gid.x;
     uint gidy = gid.y;
-    uint id   = gidx * NUM_Y_WORKGROUPS + gidy;
+    uint id   = gidx * (*num_y_workgroups) + gidy;
 
     // 1) Convert coords to BigInt in Montgomery form
     // We read 16 halfwords for x and 16 halfwords for y. 

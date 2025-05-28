@@ -22,6 +22,3 @@ proptest-regressions
 # Metal shader intermediate files and libraries
 src/msm/metal_msm/shader/**/*.ir
 src/msm/metal_msm/shader/**/*.lib
-
-# Metal shader constants file
-src/msm/metal_msm/shader/constants.metal

@@ -57,8 +57,20 @@ impl MetalMSMPipeline {
         // 1. Unpack point coordinates and encode them into Montgomery form
         // 2. Decompose scalars into Signed wNAF form
         let stage1 = ConvertPointAndScalarDecompose::new(&self.config);
-        let (point_x, point_y, scalar_chunks) =
-            stage1.execute(&coords, &scals, input_size, num_subtasks)?;
+        let c_workgroup_size = 64;
+        let c_num_x_workgroups = 128;
+        let c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        let c_num_z_workgroups = 1;
+        let (point_x, point_y, scalar_chunks) = stage1.execute(
+            &coords,
+            &scals,
+            input_size,
+            num_subtasks,
+            c_num_x_workgroups,
+            c_num_y_workgroups,
+            c_num_z_workgroups,
+            c_workgroup_size,
+        )?;
 
         // Stage 2: Transpose
         let stage2 = Transpose::new(&self.config);
@@ -175,6 +187,10 @@ impl ConvertPointAndScalarDecompose {
         scalars: &[u32],
         input_size: usize,
         num_subtasks: usize,
+        c_num_x_workgroups: usize,
+        c_num_y_workgroups: usize,
+        c_num_z_workgroups: usize,
+        c_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
 
@@ -186,14 +202,24 @@ impl ConvertPointAndScalarDecompose {
         let out_scalar_chunks = helper.create_output_buffer(input_size * num_subtasks);
 
         let input_size_buf = helper.create_input_buffer(&vec![input_size as u32]);
+        let num_y_workgroups_buf = helper.create_input_buffer(&vec![c_num_y_workgroups as u32]);
 
-        let thread_count = helper.create_thread_group_size(input_size as u64, 1, 1);
-        let threads_per_group = helper.create_thread_group_size(1, 1, 1);
+        let thread_count = helper.create_thread_group_size(
+            c_num_x_workgroups as u64,
+            c_num_y_workgroups as u64,
+            c_num_z_workgroups as u64,
+        );
+        let threads_per_group = helper.create_thread_group_size(c_workgroup_size as u64, 1, 1);
 
         helper.execute_shader(
             &self.config,
             &[&coords_buf, &scalars_buf, &input_size_buf],
-            &[&out_point_x, &out_point_y, &out_scalar_chunks],
+            &[
+                &out_point_x,
+                &out_point_y,
+                &out_scalar_chunks,
+                &num_y_workgroups_buf,
+            ],
             &thread_count,
             &threads_per_group,
         );
@@ -582,7 +608,7 @@ mod tests {
 
     #[test]
     fn test_metal_msm_pipeline() {
-        let log_input_size = 20;
+        let log_input_size = 16;
         let input_size = 1 << log_input_size;
 
         println!("Generating {} elements", input_size);

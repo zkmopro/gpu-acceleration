@@ -1,4 +1,4 @@
-use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Projective as G};
+use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::CurveGroup;
 use ark_ff::{BigInt, PrimeField, UniformRand};
 use num_bigint::{BigUint, RandBigInt};
@@ -62,6 +62,7 @@ fn test_point_coords_conversion() {
     let coords_buf = helper.create_input_buffer(&coords);
     let scalars_buf = helper.create_input_buffer(&scalars);
     let input_size_buf = helper.create_input_buffer(&vec![1u32]);
+    let num_y_workgroups_buf = helper.create_input_buffer(&vec![1u32]);
 
     // Prepare output buffers for the kernel
     let point_x_buf = helper.create_output_buffer(num_limbs);
@@ -76,7 +77,12 @@ fn test_point_coords_conversion() {
     helper.execute_shader(
         &config,
         &[&coords_buf, &scalars_buf, &input_size_buf],
-        &[&point_x_buf, &point_y_buf, &chunks_buf],
+        &[
+            &point_x_buf,
+            &point_y_buf,
+            &chunks_buf,
+            &num_y_workgroups_buf,
+        ],
         &thread_group_count,
         &thread_group_size,
     );
@@ -130,6 +136,7 @@ fn test_scalar_decomposition() {
     let coords_buf = helper.create_input_buffer(&coords);
     let scalars_buf = helper.create_input_buffer(&packed_scalars);
     let input_size_buf = helper.create_input_buffer(&vec![1u32]);
+    let num_y_workgroups_buf = helper.create_input_buffer(&vec![1u32]);
 
     // We'll ignore X,Y outputs, but we must pass them
     let point_x_buf = helper.create_output_buffer(num_limbs);
@@ -144,7 +151,12 @@ fn test_scalar_decomposition() {
     helper.execute_shader(
         &config,
         &[&coords_buf, &scalars_buf, &input_size_buf],
-        &[&point_x_buf, &point_y_buf, &chunks_buf],
+        &[
+            &point_x_buf,
+            &point_y_buf,
+            &chunks_buf,
+            &num_y_workgroups_buf,
+        ],
         &thread_group_count,
         &thread_group_size,
     );
