@@ -574,3 +574,32 @@ pub mod test_utils {
         (bases, scalars)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_ec::VariableBaseMSM;
+
+    #[test]
+    fn test_metal_msm_pipeline() {
+        let log_input_size = 20;
+        let input_size = 1 << log_input_size;
+
+        println!("Generating {} elements", input_size);
+        let start = std::time::Instant::now();
+        let (bases, scalars) = test_utils::generate_random_bases_and_scalars(input_size);
+        println!("Generated {} elements in {:?}", input_size, start.elapsed());
+
+        println!("running metal_variable_base_msm");
+        let start = std::time::Instant::now();
+        let metal_msm_result = metal_variable_base_msm(&bases, &scalars).unwrap();
+        println!("metal_variable_base_msm took {:?}", start.elapsed());
+
+        println!("running arkworks_msm");
+        let start = std::time::Instant::now();
+        let arkworks_msm = G::msm(&bases, &scalars).unwrap();
+        println!("arkworks_msm took {:?}", start.elapsed());
+
+        assert_eq!(metal_msm_result, arkworks_msm);
+    }
+}
