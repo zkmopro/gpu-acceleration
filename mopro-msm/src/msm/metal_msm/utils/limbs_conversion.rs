@@ -3,6 +3,7 @@ use ark_ff::{
     biginteger::{BigInt, BigInteger},
     PrimeField,
 };
+use rayon::prelude::*;
 use std::convert::TryInto;
 
 use crate::msm::metal_msm::utils::metal_wrapper::MetalConfig;
@@ -305,41 +306,73 @@ impl GenericLimbConversion for BigInt<8> {
     }
 }
 
-/// Packs each affine BN254 point into 16 u32 "halfword layout" + each scalar into 8 u32
+/// Optimized version for very large datasets that minimizes memory allocations
+/// and uses chunked parallel processing for better cache locality
 pub fn pack_affine_and_scalars(
     bases: &[Affine],
     scalars: &[ScalarField],
     msm_config: &MetalConfig,
 ) -> (Vec<u32>, Vec<u32>) {
-    let mut coords = Vec::new();
-    let mut scalars_u32 = Vec::new();
+    let num_elements = bases.len();
+    let packed_limbs_per_coord = msm_config.num_limbs / 2;
+    let coords_per_point = packed_limbs_per_coord * 2; // x + y
 
-    let pack_limbs = |limbs: &[u32]| -> Vec<u32> {
-        limbs
-            .chunks(2)
-            .map(|chunk| (chunk[1] << 16) | chunk[0])
-            .collect()
+    // Pre-allocate output vectors with exact capacity
+    let mut coords = vec![0u32; num_elements * coords_per_point];
+    let mut scalars_u32 = vec![0u32; num_elements * packed_limbs_per_coord];
+
+    // Helper function to pack limbs into halfword layout
+    let pack_limbs_into = |limbs: &[u32], output: &mut [u32]| {
+        for (i, chunk) in limbs.chunks(2).enumerate() {
+            output[i] = (chunk[1] << 16) | chunk[0];
+        }
     };
 
-    for (pt, sc) in bases.iter().zip(scalars.iter()) {
-        let x_limbs =
-            pt.x.into_bigint()
-                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
-        let y_limbs =
-            pt.y.into_bigint()
-                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+    // Process in parallel chunks for better cache locality
+    const CHUNK_SIZE: usize = 1024; // Adjust based on cache size
 
-        let x_packed = pack_limbs(&x_limbs);
-        let y_packed = pack_limbs(&y_limbs);
-        coords.extend_from_slice(&x_packed);
-        coords.extend_from_slice(&y_packed);
+    bases
+        .par_chunks(CHUNK_SIZE)
+        .zip(scalars.par_chunks(CHUNK_SIZE))
+        .zip(coords.par_chunks_mut(CHUNK_SIZE * coords_per_point))
+        .zip(scalars_u32.par_chunks_mut(CHUNK_SIZE * packed_limbs_per_coord))
+        .for_each(
+            |(((base_chunk, scalar_chunk), coord_chunk), scalar_u32_chunk)| {
+                for (i, (pt, sc)) in base_chunk.iter().zip(scalar_chunk.iter()).enumerate() {
+                    // Process point coordinates
+                    let x_limbs =
+                        pt.x.into_bigint()
+                            .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+                    let y_limbs =
+                        pt.y.into_bigint()
+                            .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
 
-        let sc_limbs = sc
-            .into_bigint()
-            .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
-        let sc_packed = pack_limbs(&sc_limbs);
-        scalars_u32.extend_from_slice(&sc_packed);
-    }
+                    // Pack directly into output buffer
+                    let coord_start = i * coords_per_point;
+                    pack_limbs_into(
+                        &x_limbs,
+                        &mut coord_chunk[coord_start..coord_start + packed_limbs_per_coord],
+                    );
+                    pack_limbs_into(
+                        &y_limbs,
+                        &mut coord_chunk
+                            [coord_start + packed_limbs_per_coord..coord_start + coords_per_point],
+                    );
+
+                    // Process scalar
+                    let sc_limbs = sc
+                        .into_bigint()
+                        .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+
+                    // Pack directly into output buffer
+                    let scalar_start = i * packed_limbs_per_coord;
+                    pack_limbs_into(
+                        &sc_limbs,
+                        &mut scalar_u32_chunk[scalar_start..scalar_start + packed_limbs_per_coord],
+                    );
+                }
+            },
+        );
 
     (coords, scalars_u32)
 }
@@ -348,10 +381,116 @@ pub fn pack_affine_and_scalars(
 mod tests {
     use super::*;
 
+    use crate::msm::metal_msm::test_utils::generate_random_bases_and_scalars;
     use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
     use ark_bn254::Fq as BaseField;
     use ark_ff::{BigInt, PrimeField};
     use num_bigint::{BigUint, RandBigInt};
+    use std::time::Instant;
+
+    /// Sequential version for performance comparison
+    fn pack_affine_and_scalars_sequential(
+        bases: &[Affine],
+        scalars: &[ScalarField],
+        msm_config: &MetalConfig,
+    ) -> (Vec<u32>, Vec<u32>) {
+        let mut coords = Vec::new();
+        let mut scalars_u32 = Vec::new();
+
+        let pack_limbs = |limbs: &[u32]| -> Vec<u32> {
+            limbs
+                .chunks(2)
+                .map(|chunk| (chunk[1] << 16) | chunk[0])
+                .collect()
+        };
+
+        for (pt, sc) in bases.iter().zip(scalars.iter()) {
+            let x_limbs =
+                pt.x.into_bigint()
+                    .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+            let y_limbs =
+                pt.y.into_bigint()
+                    .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+
+            let x_packed = pack_limbs(&x_limbs);
+            let y_packed = pack_limbs(&y_limbs);
+            coords.extend_from_slice(&x_packed);
+            coords.extend_from_slice(&y_packed);
+
+            let sc_limbs = sc
+                .into_bigint()
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+            let sc_packed = pack_limbs(&sc_limbs);
+            scalars_u32.extend_from_slice(&sc_packed);
+        }
+
+        (coords, scalars_u32)
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_parallel_packing_correctness() {
+        let (bases, scalars) = generate_random_bases_and_scalars(1024);
+
+        let config = MetalConfig {
+            log_limb_size: 16,
+            num_limbs: 16,
+            shader_file: String::new(),
+            kernel_name: String::new(),
+        };
+
+        // Test all three implementations
+        let (coords_seq, scalars_seq) =
+            pack_affine_and_scalars_sequential(&bases, &scalars, &config);
+        let (coords_opt, scalars_opt) = pack_affine_and_scalars(&bases, &scalars, &config);
+
+        // Verify all implementations produce the same results
+        assert_eq!(
+            coords_seq, coords_opt,
+            "Optimized version should match sequential"
+        );
+        assert_eq!(
+            scalars_seq, scalars_opt,
+            "Optimized scalars should match sequential"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[ignore]
+    fn benchmark_packing_performance() {
+        let test_sizes = vec![1 << 10, 1 << 16, 1 << 20, 1 << 22];
+
+        for &size in &test_sizes {
+            println!("\n=== Benchmarking with {} elements ===", size);
+
+            let (bases, scalars) = generate_random_bases_and_scalars(size);
+
+            let config = MetalConfig {
+                log_limb_size: 16,
+                num_limbs: 16,
+                shader_file: String::new(),
+                kernel_name: String::new(),
+            };
+
+            // Benchmark sequential version
+            let start = Instant::now();
+            let _ = pack_affine_and_scalars_sequential(&bases, &scalars, &config);
+            let sequential_time = start.elapsed();
+            println!("Sequential: {:?}", sequential_time);
+
+            // Benchmark optimized version
+            let start = Instant::now();
+            let _ = pack_affine_and_scalars(&bases, &scalars, &config);
+            let optimized_time = start.elapsed();
+            println!("Optimized: {:?}", optimized_time);
+
+            let optimized_speedup =
+                sequential_time.as_nanos() as f64 / optimized_time.as_nanos() as f64;
+
+            println!("Optimized speedup: {:.2}x", optimized_speedup);
+        }
+    }
 
     #[test]
     #[serial_test::serial]
