@@ -1,5 +1,11 @@
-use ark_ff::biginteger::{BigInt, BigInteger};
+use ark_bn254::{Fr as ScalarField, G1Affine as Affine};
+use ark_ff::{
+    biginteger::{BigInt, BigInteger},
+    PrimeField,
+};
 use std::convert::TryInto;
+
+use crate::msm::metal_msm::utils::metal_wrapper::MetalConfig;
 
 /// A trait that abstracts "to/from limbs" for *any* BigInteger type
 pub trait GenericLimbConversion {
@@ -297,6 +303,45 @@ impl GenericLimbConversion for BigInt<8> {
         }
         BigInt::<8>::new(result)
     }
+}
+
+/// Packs each affine BN254 point into 16 u32 "halfword layout" + each scalar into 8 u32
+pub fn pack_affine_and_scalars(
+    bases: &[Affine],
+    scalars: &[ScalarField],
+    msm_config: &MetalConfig,
+) -> (Vec<u32>, Vec<u32>) {
+    let mut coords = Vec::new();
+    let mut scalars_u32 = Vec::new();
+
+    let pack_limbs = |limbs: &[u32]| -> Vec<u32> {
+        limbs
+            .chunks(2)
+            .map(|chunk| (chunk[1] << 16) | chunk[0])
+            .collect()
+    };
+
+    for (pt, sc) in bases.iter().zip(scalars.iter()) {
+        let x_limbs =
+            pt.x.into_bigint()
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+        let y_limbs =
+            pt.y.into_bigint()
+                .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+
+        let x_packed = pack_limbs(&x_limbs);
+        let y_packed = pack_limbs(&y_limbs);
+        coords.extend_from_slice(&x_packed);
+        coords.extend_from_slice(&y_packed);
+
+        let sc_limbs = sc
+            .into_bigint()
+            .to_limbs(msm_config.num_limbs, msm_config.log_limb_size);
+        let sc_packed = pack_limbs(&sc_limbs);
+        scalars_u32.extend_from_slice(&sc_packed);
+    }
+
+    (coords, scalars_u32)
 }
 
 #[cfg(test)]
