@@ -1,9 +1,0 @@
-/target
-*.udl
-.DS_Store
-
-MoproBindings.xcframework/
-build/
-jniLibs/
-MoproAndroidBindings/
-MoproiOSBindings/
