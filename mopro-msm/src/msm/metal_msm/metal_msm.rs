@@ -9,6 +9,9 @@ use ark_std::{vec::Vec, Zero};
 use rayon::prelude::*;
 use std::error::Error;
 
+// timing
+use std::time::Instant;
+
 /// Configuration for Metal MSM pipeline
 #[derive(Clone, Debug)]
 pub struct MetalMSMConfig {
@@ -52,11 +55,14 @@ impl MetalMSMPipeline {
             shader_file: String::new(),
             kernel_name: String::new(),
         };
+        let start = Instant::now();
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
+        println!("0️⃣ Pack points & scalars: {:?}", start.elapsed());
 
         // Stage 1: Convert Point & Scalar Decomposition
         // 1. Unpack point coordinates and encode them into Montgomery form
         // 2. Decompose scalars into Signed wNAF form
+        let start = Instant::now();
         let stage1 = ConvertPointAndScalarDecompose::new(&self.config);
         let mut c_workgroup_size = 256;
         let mut c_num_x_workgroups = 64;
@@ -81,6 +87,15 @@ impl MetalMSMPipeline {
             c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
         }
 
+        println!(
+            "\n=============================== \nc_num_x_workgroups: {}",
+            c_num_x_workgroups
+        );
+        println!("c_num_y_workgroups: {}", c_num_y_workgroups);
+        println!("c_num_z_workgroups: {}", c_num_z_workgroups);
+        println!("c_workgroup_size: {}", c_workgroup_size);
+        println!("===============================\n");
+
         let (point_x, point_y, scalar_chunks) = stage1.execute(
             &coords,
             &scals,
@@ -91,8 +106,10 @@ impl MetalMSMPipeline {
             c_num_z_workgroups,
             c_workgroup_size,
         )?;
+        println!("1️⃣ Convert & Decompose: {:?}", start.elapsed());
 
         // Stage 2: Transpose
+        let start = Instant::now();
         let t_num_x_workgroups = 1;
         let t_num_y_workgroups = 1;
         let t_num_z_workgroups = 1;
@@ -109,12 +126,34 @@ impl MetalMSMPipeline {
             t_num_z_workgroups,
             t_workgroup_size,
         )?;
+        println!("2️⃣ Transpose: {:?}", start.elapsed());
 
         // Stage 3: Sparse Matrix-Vector Multiplication
+        let start = Instant::now();
         let s_workgroup_size = 256;
         let s_num_x_workgroups = 64;
         let s_num_y_workgroups = 2;
         let s_num_z_workgroups = num_subtasks;
+
+        println!(
+            "\n=============================== \ns_workgroup_size: {}",
+            s_workgroup_size
+        );
+        println!("s_num_x_workgroups: {}", s_num_x_workgroups);
+        println!("s_num_y_workgroups: {}", s_num_y_workgroups);
+        println!("s_num_z_workgroups: {}", s_num_z_workgroups);
+        println!(
+            "best_fit/threads ratio: {}",
+            (input_size as f64 / 2f64 * num_subtasks as f64)
+                / (s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups * s_workgroup_size)
+                    as f64
+        );
+        println!(
+            "total threads: {}, input_size: {}, num_columns: {}\n==============================\n",
+            s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups * s_workgroup_size,
+            input_size,
+            num_columns
+        );
 
         let stage3 = SMVP::new(&self.config);
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
@@ -130,8 +169,10 @@ impl MetalMSMPipeline {
             s_num_z_workgroups,
             s_workgroup_size,
         )?;
+        println!("3️⃣ SMVP: {:?}", start.elapsed());
 
         // Stage 4: Parallel Bucket Reduction
+        let start = Instant::now();
         // dynamic variable that determines the number of CSR matrices processed per invocation of the BPR shader. A safe default is 1.
         let num_subtasks_per_bpr_1 = 16;
         let num_subtasks_per_bpr_2 = 16;
@@ -162,8 +203,10 @@ impl MetalMSMPipeline {
             b_2_num_z_workgroups,
             b_workgroup_size,
         )?;
+        println!("4️⃣ PBPR: {:?}", start.elapsed());
 
         // Stage 5: Final reduction and Horner's method
+        let start = Instant::now();
         let result = self.final_reduction(
             &g_points_x,
             &g_points_y,
@@ -172,7 +215,7 @@ impl MetalMSMPipeline {
             self.config.log_limb_size as usize,
             b_workgroup_size,
         )?;
-
+        println!("5️⃣ Final Reduction: {:?}", start.elapsed());
         Ok(result)
     }
 
@@ -447,6 +490,12 @@ impl SMVP {
             let threads_per_threadgroup =
                 helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
 
+            println!("--- offset: {} ---", offset);
+            println!("adjusted_x_workgroups: {}", adjusted_x_workgroups);
+            println!("s_num_y_workgroups: {}", s_num_y_workgroups);
+            println!("s_num_z_workgroups: {}", s_num_z_workgroups);
+            println!("s_workgroup_size: {}", s_workgroup_size);
+
             helper.execute_shader(
                 &self.config,
                 &[
@@ -635,6 +684,7 @@ pub mod test_utils {
     use ark_ec::CurveGroup;
     use ark_ff::UniformRand;
     use ark_std::test_rng;
+    use rayon::prelude::*;
 
     /// Utility function to generate random bases and scalars for testing
     /// This is made public so it can be used in integration tests
@@ -692,5 +742,72 @@ mod tests {
         println!("arkworks_msm took {:?}", start.elapsed());
 
         assert_eq!(metal_msm_result, arkworks_msm);
+    }
+
+    #[test]
+    fn benchmark_metal_vs_arkworks_msm() {
+        println!("\n=== MSM Benchmark: Metal vs Arkworks ===");
+        println!(
+            "{:<12} {:<15} {:<15} {:<15} {:<10}",
+            "Input Size", "Metal Time", "Arkworks Time", "Speedup", "Correct"
+        );
+        println!("{}", "-".repeat(75));
+
+        for log_input_size in 12..=24 {
+            let input_size = 1 << log_input_size;
+
+            // Generate test data
+            let generation_start = Instant::now();
+            let (bases, scalars) = test_utils::generate_random_bases_and_scalars(input_size);
+            let generation_time = generation_start.elapsed();
+
+            // Benchmark Metal MSM
+            let metal_start = Instant::now();
+            let metal_result = metal_variable_base_msm(&bases, &scalars).unwrap();
+            let metal_time = metal_start.elapsed();
+
+            // Benchmark Arkworks MSM
+            let arkworks_start = Instant::now();
+            let arkworks_result = G::msm(&bases, &scalars).unwrap();
+            let arkworks_time = arkworks_start.elapsed();
+
+            // Calculate speedup
+            let speedup = arkworks_time.as_secs_f64() / metal_time.as_secs_f64();
+
+            // Verify correctness
+            let is_correct = metal_result == arkworks_result;
+
+            // Format output
+            let input_size_str = format!("2^{} ({})", log_input_size, input_size);
+            let metal_time_str = format!("{:.3}s", metal_time.as_secs_f64());
+            let arkworks_time_str = format!("{:.3}s", arkworks_time.as_secs_f64());
+            let speedup_str = if speedup > 1.0 {
+                format!("{:.2}x faster", speedup)
+            } else {
+                format!("{:.2}x slower", 1.0 / speedup)
+            };
+            let correct_str = if is_correct { "✓" } else { "✗" };
+
+            println!(
+                "{:<12} {:<15} {:<15} {:<15} {:<10}",
+                input_size_str, metal_time_str, arkworks_time_str, speedup_str, correct_str
+            );
+
+            // Print generation time for larger sizes
+            println!(
+                "  └─ Data generation: {:.3}s",
+                generation_time.as_secs_f64()
+            );
+
+            // Assert correctness for all sizes
+            assert_eq!(
+                metal_result, arkworks_result,
+                "Results don't match for input size 2^{}",
+                log_input_size
+            );
+        }
+
+        println!("{}", "-".repeat(75));
+        println!("All benchmarks completed successfully!");
     }
 }
