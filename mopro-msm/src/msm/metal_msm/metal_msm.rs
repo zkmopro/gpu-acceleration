@@ -9,8 +9,6 @@ use ark_std::{vec::Vec, Zero};
 use rayon::prelude::*;
 use std::error::Error;
 
-use std::time::Instant;
-
 /// Configuration for Metal MSM pipeline
 #[derive(Clone, Debug)]
 pub struct MetalMSMConfig {
@@ -48,7 +46,6 @@ impl MetalMSMPipeline {
         let num_columns = 1 << self.config.log_limb_size;
 
         // Stage 0: Pack inputs
-        let start = Instant::now();
         let metal_config = MetalConfig {
             log_limb_size: self.config.log_limb_size,
             num_limbs: self.config.num_limbs,
@@ -56,17 +53,34 @@ impl MetalMSMPipeline {
             kernel_name: String::new(),
         };
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
-        println!("pack_affine_and_scalars took {:?}", start.elapsed());
 
         // Stage 1: Convert Point & Scalar Decomposition
         // 1. Unpack point coordinates and encode them into Montgomery form
         // 2. Decompose scalars into Signed wNAF form
-        let start = Instant::now();
         let stage1 = ConvertPointAndScalarDecompose::new(&self.config);
-        let c_workgroup_size = 64;
-        let c_num_x_workgroups = 128;
-        let c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        let mut c_workgroup_size = 256;
+        let mut c_num_x_workgroups = 64;
+        let mut c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
         let c_num_z_workgroups = 1;
+
+        if input_size <= 256 {
+            c_workgroup_size = input_size;
+            c_num_x_workgroups = 1;
+            c_num_y_workgroups = 1;
+        } else if input_size > 256 && input_size <= 32768 {
+            c_workgroup_size = 64;
+            c_num_x_workgroups = 4;
+            c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        } else if input_size > 32768 && input_size <= 131072 {
+            c_workgroup_size = 256;
+            c_num_x_workgroups = 8;
+            c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        } else if input_size > 131072 && input_size < 1048576 {
+            c_workgroup_size = 256;
+            c_num_x_workgroups = 32;
+            c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        }
+
         let (point_x, point_y, scalar_chunks) = stage1.execute(
             &coords,
             &scals,
@@ -77,17 +91,31 @@ impl MetalMSMPipeline {
             c_num_z_workgroups,
             c_workgroup_size,
         )?;
-        println!("ConvertPointAndScalarDecompose took {:?}", start.elapsed());
 
         // Stage 2: Transpose
-        let start = Instant::now();
+        let t_num_x_workgroups = 1;
+        let t_num_y_workgroups = 1;
+        let t_num_z_workgroups = 1;
+        let t_workgroup_size = num_subtasks;
+
         let stage2 = Transpose::new(&self.config);
-        let (csc_col_ptr, csc_val_idxs) =
-            stage2.execute(&scalar_chunks, num_subtasks, input_size, num_columns)?;
-        println!("Transpose took {:?}", start.elapsed());
+        let (csc_col_ptr, csc_val_idxs) = stage2.execute(
+            &scalar_chunks,
+            num_subtasks,
+            input_size,
+            num_columns,
+            t_num_x_workgroups,
+            t_num_y_workgroups,
+            t_num_z_workgroups,
+            t_workgroup_size,
+        )?;
 
         // Stage 3: Sparse Matrix-Vector Multiplication
-        let start = Instant::now();
+        let s_workgroup_size = 256;
+        let s_num_x_workgroups = 64;
+        let s_num_y_workgroups = 2;
+        let s_num_z_workgroups = num_subtasks;
+
         let stage3 = SMVP::new(&self.config);
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
             &csc_col_ptr,
@@ -97,27 +125,54 @@ impl MetalMSMPipeline {
             input_size,
             num_subtasks,
             num_columns,
+            s_num_x_workgroups,
+            s_num_y_workgroups,
+            s_num_z_workgroups,
+            s_workgroup_size,
         )?;
-        println!("SMVP took {:?}", start.elapsed());
 
         // Stage 4: Parallel Bucket Reduction
-        let start = Instant::now();
+        // dynamic variable that determines the number of CSR matrices processed per invocation of the BPR shader. A safe default is 1.
+        let num_subtasks_per_bpr_1 = 16;
+        let num_subtasks_per_bpr_2 = 16;
+
+        let b_num_x_workgroups = num_subtasks_per_bpr_1;
+        let b_num_y_workgroups = 1;
+        let b_num_z_workgroups = 1;
+        let b_workgroup_size = 256;
+
+        let b_2_num_x_workgroups = num_subtasks_per_bpr_2;
+        let b_2_num_y_workgroups = 1;
+        let b_2_num_z_workgroups = 1;
+
         let stage4 = PBPR::new(&self.config);
-        let (g_points_x, g_points_y, g_points_z) =
-            stage4.execute(&bucket_x, &bucket_y, &bucket_z, num_subtasks, num_columns)?;
-        println!("PBPR took {:?}", start.elapsed());
+        let (g_points_x, g_points_y, g_points_z) = stage4.execute(
+            &bucket_x,
+            &bucket_y,
+            &bucket_z,
+            num_subtasks,
+            num_columns,
+            num_subtasks_per_bpr_1,
+            num_subtasks_per_bpr_2,
+            b_num_x_workgroups,
+            b_num_y_workgroups,
+            b_num_z_workgroups,
+            b_2_num_x_workgroups,
+            b_2_num_y_workgroups,
+            b_2_num_z_workgroups,
+            b_workgroup_size,
+        )?;
 
         // Stage 5: Final reduction and Horner's method
-        let start = Instant::now();
         let result = self.final_reduction(
             &g_points_x,
             &g_points_y,
             &g_points_z,
             num_subtasks,
             self.config.log_limb_size as usize,
-            256,
+            b_workgroup_size,
         )?;
-        println!("Final reduction took {:?}", start.elapsed());
+
         Ok(result)
     }
 
@@ -221,12 +276,13 @@ impl ConvertPointAndScalarDecompose {
         let input_size_buf = helper.create_input_buffer(&vec![input_size as u32]);
         let num_y_workgroups_buf = helper.create_input_buffer(&vec![c_num_y_workgroups as u32]);
 
-        let thread_count = helper.create_thread_group_size(
+        let thread_group_count = helper.create_thread_group_size(
             c_num_x_workgroups as u64,
             c_num_y_workgroups as u64,
             c_num_z_workgroups as u64,
         );
-        let threads_per_group = helper.create_thread_group_size(c_workgroup_size as u64, 1, 1);
+        let threads_per_threadgroup =
+            helper.create_thread_group_size(c_workgroup_size as u64, 1, 1);
 
         helper.execute_shader(
             &self.config,
@@ -237,8 +293,8 @@ impl ConvertPointAndScalarDecompose {
                 &out_scalar_chunks,
                 &num_y_workgroups_buf,
             ],
-            &thread_count,
-            &threads_per_group,
+            &thread_group_count,
+            &threads_per_threadgroup,
         );
 
         let point_x = helper.read_results(&out_point_x, input_size * self.config.num_limbs);
@@ -274,6 +330,10 @@ impl Transpose {
         num_subtasks: usize,
         input_size: usize,
         num_columns: u32,
+        t_num_x_workgroups: usize,
+        t_num_y_workgroups: usize,
+        t_num_z_workgroups: usize,
+        t_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
 
@@ -286,8 +346,13 @@ impl Transpose {
         let params = vec![num_columns, input_size as u32];
         let params_buf = helper.create_input_buffer(&params);
 
-        let thread_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
-        let threads_per_group = helper.create_thread_group_size(1, 1, 1);
+        let thread_group_count = helper.create_thread_group_size(
+            t_num_x_workgroups as u64,
+            t_num_y_workgroups as u64,
+            t_num_z_workgroups as u64,
+        );
+        let threads_per_threadgroup =
+            helper.create_thread_group_size(t_workgroup_size as u64, 1, 1);
 
         helper.execute_shader(
             &self.config,
@@ -299,8 +364,8 @@ impl Transpose {
                 &params_buf,
             ],
             &[],
-            &thread_count,
-            &threads_per_group,
+            &thread_group_count,
+            &threads_per_threadgroup,
         );
 
         let csc_col_ptr = helper.read_results(
@@ -341,17 +406,12 @@ impl SMVP {
         input_size: usize,
         num_subtasks: usize,
         num_columns: u32,
+        s_num_x_workgroups: usize,
+        s_num_y_workgroups: usize,
+        s_num_z_workgroups: usize,
+        s_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
-        let half_columns = num_columns / 2;
-
-        // Calculate workgroup sizes
-        let (s_workgroup_size, s_num_x_workgroups, s_num_y_workgroups) =
-            self.calculate_workgroup_sizes(half_columns, num_subtasks);
-        println!("s_workgroup_size: {}", s_workgroup_size);
-        println!("s_num_x_workgroups: {}", s_num_x_workgroups);
-        println!("s_num_y_workgroups: {}", s_num_y_workgroups);
-        println!("s_num_subtasks, z: {}", num_subtasks);
 
         let bucket_size = (num_columns / 2) as usize * self.config.num_limbs * 4 * num_subtasks;
 
@@ -370,31 +430,22 @@ impl SMVP {
         for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
             let params = vec![
                 input_size as u32,
-                s_num_y_workgroups,
+                s_num_y_workgroups as u32,
                 num_subtasks as u32,
                 offset,
             ];
             let params_buf = helper.create_input_buffer(&params);
 
-            let adjusted_x_workgroups = self.adjust_x_workgroups(
-                s_num_x_workgroups,
-                num_columns,
-                num_subtasks as u32,
-                num_subtask_chunk_size,
-            );
+            let adjusted_x_workgroups =
+                s_num_x_workgroups / (num_subtasks / num_subtask_chunk_size as usize);
 
             let thread_group_count = helper.create_thread_group_size(
                 adjusted_x_workgroups as u64,
                 s_num_y_workgroups as u64,
-                num_subtasks as u64,
+                s_num_z_workgroups as u64,
             );
-            let threads_per_group = helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
-
-            println!("--- offset: {} ---", offset);
-            println!("adjusted_x_workgroups: {:?}", adjusted_x_workgroups);
-            println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
-            println!("s_num_z_workgroups: {:?}", num_subtasks);
-            println!("s_workgroup_size: {:?}", s_workgroup_size);
+            let threads_per_threadgroup =
+                helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
 
             helper.execute_shader(
                 &self.config,
@@ -410,7 +461,7 @@ impl SMVP {
                 ],
                 &[],
                 &thread_group_count,
-                &threads_per_group,
+                &threads_per_threadgroup,
             );
         }
 
@@ -421,33 +472,6 @@ impl SMVP {
         helper.drop_all_buffers();
 
         Ok((bucket_x, bucket_y, bucket_z))
-    }
-
-    fn calculate_workgroup_sizes(&self, half_columns: u32, num_subtasks: usize) -> (u32, u32, u32) {
-        let num_columns = half_columns * 2;
-        if half_columns < 32768 {
-            (32, 1, half_columns / 32)
-        } else if num_columns < 256 {
-            (1, half_columns, 1)
-        } else {
-            (256, 64, half_columns / 256 / 64)
-        }
-    }
-
-    fn adjust_x_workgroups(
-        &self,
-        base: u32,
-        num_columns: u32,
-        num_subtasks: u32,
-        chunk_size: u32,
-    ) -> u32 {
-        if num_columns < 256 {
-            base
-        } else if num_subtasks >= chunk_size {
-            std::cmp::max(1, base / (num_subtasks / chunk_size))
-        } else {
-            base
-        }
     }
 }
 
@@ -482,11 +506,17 @@ impl PBPR {
         bucket_z: &[u32],
         num_subtasks: usize,
         num_columns: u32,
+        num_subtasks_per_bpr_1: usize,
+        num_subtasks_per_bpr_2: usize,
+        b_num_x_workgroups: usize,
+        b_num_y_workgroups: usize,
+        b_num_z_workgroups: usize,
+        b_2_num_x_workgroups: usize,
+        b_2_num_y_workgroups: usize,
+        b_2_num_z_workgroups: usize,
+        b_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
-
-        let num_subtasks_per_bpr = 16;
-        let b_workgroup_size = 256;
 
         let bucket_sum_x_buf = helper.create_input_buffer(&bucket_x.to_vec());
         let bucket_sum_y_buf = helper.create_input_buffer(&bucket_y.to_vec());
@@ -498,18 +528,22 @@ impl PBPR {
         let g_points_z_buf = helper.create_output_buffer(g_points_size);
 
         // Stage 1
-        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_1) {
             let params = vec![
                 subtask_chunk_idx as u32,
                 num_columns,
-                num_subtasks_per_bpr as u32,
+                num_subtasks_per_bpr_1 as u32,
             ];
             let params_buf = helper.create_input_buffer(&params);
             let workgroup_size_buf = helper.create_input_buffer(&vec![b_workgroup_size as u32]);
 
-            let stage1_group_count =
-                helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
-            let stage1_group_size = helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
+            let stage1_thread_group_count = helper.create_thread_group_size(
+                b_num_x_workgroups as u64,
+                b_num_y_workgroups as u64,
+                b_num_z_workgroups as u64,
+            );
+            let stage1_threads_per_threadgroup =
+                helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
             helper.execute_shader(
                 &self.stage1_config,
@@ -524,24 +558,28 @@ impl PBPR {
                     &workgroup_size_buf,
                 ],
                 &[],
-                &stage1_group_count,
-                &stage1_group_size,
+                &stage1_thread_group_count,
+                &stage1_threads_per_threadgroup,
             );
         }
 
         // Stage 2
-        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_2) {
             let params = vec![
                 subtask_chunk_idx as u32,
                 num_columns,
-                num_subtasks_per_bpr as u32,
+                num_subtasks_per_bpr_2 as u32,
             ];
             let params_buf = helper.create_input_buffer(&params);
             let workgroup_size_buf = helper.create_input_buffer(&vec![b_workgroup_size as u32]);
 
-            let stage2_group_count =
-                helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
-            let stage2_group_size = helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
+            let stage2_thread_group_count = helper.create_thread_group_size(
+                b_2_num_x_workgroups as u64,
+                b_2_num_y_workgroups as u64,
+                b_2_num_z_workgroups as u64,
+            );
+            let stage2_threads_per_threadgroup =
+                helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
             helper.execute_shader(
                 &self.stage2_config,
@@ -556,8 +594,8 @@ impl PBPR {
                     &workgroup_size_buf,
                 ],
                 &[],
-                &stage2_group_count,
-                &stage2_group_size,
+                &stage2_thread_group_count,
+                &stage2_threads_per_threadgroup,
             );
         }
 
@@ -597,7 +635,6 @@ pub mod test_utils {
     use ark_ec::CurveGroup;
     use ark_ff::UniformRand;
     use ark_std::test_rng;
-    use rayon::prelude::*;
 
     /// Utility function to generate random bases and scalars for testing
     /// This is made public so it can be used in integration tests
@@ -632,6 +669,7 @@ pub mod test_utils {
 mod tests {
     use super::*;
     use ark_ec::VariableBaseMSM;
+    use std::time::Instant;
 
     #[test]
     fn test_metal_msm_pipeline() {
@@ -639,17 +677,17 @@ mod tests {
         let input_size = 1 << log_input_size;
 
         println!("Generating {} elements", input_size);
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let (bases, scalars) = test_utils::generate_random_bases_and_scalars(input_size);
         println!("Generated {} elements in {:?}", input_size, start.elapsed());
 
         println!("running metal_variable_base_msm");
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let metal_msm_result = metal_variable_base_msm(&bases, &scalars).unwrap();
         println!("metal_variable_base_msm took {:?}", start.elapsed());
 
         println!("running arkworks_msm");
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let arkworks_msm = G::msm(&bases, &scalars).unwrap();
         println!("arkworks_msm took {:?}", start.elapsed());
 

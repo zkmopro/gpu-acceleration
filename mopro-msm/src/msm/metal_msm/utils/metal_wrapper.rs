@@ -101,7 +101,7 @@ impl MetalHelper {
         input_buffers: &[&Buffer],
         output_buffers: &[&Buffer],
         thread_group_count: &MTLSize,
-        thread_group_size: &MTLSize,
+        threads_per_threadgroup: &MTLSize,
     ) {
         let command_buffer = self.command_queue.new_command_buffer();
         let compute_pass_descriptor = ComputePassDescriptor::new();
@@ -153,7 +153,7 @@ impl MetalHelper {
         for (i, buffer) in output_buffers.iter().enumerate() {
             encoder.set_buffer(input_buffers.len() as u64 + i as u64, Some(buffer), 0);
         }
-        encoder.dispatch_thread_groups(*thread_group_count, *thread_group_size);
+        encoder.dispatch_thread_groups(*thread_group_count, *threads_per_threadgroup);
         encoder.end_encoding();
 
         command_buffer.commit();
