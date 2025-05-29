@@ -6,7 +6,10 @@ use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{vec::Vec, Zero};
+use rayon::prelude::*;
 use std::error::Error;
+
+use std::time::Instant;
 
 /// Configuration for Metal MSM pipeline
 #[derive(Clone, Debug)]
@@ -45,6 +48,7 @@ impl MetalMSMPipeline {
         let num_columns = 1 << self.config.log_limb_size;
 
         // Stage 0: Pack inputs
+        let start = Instant::now();
         let metal_config = MetalConfig {
             log_limb_size: self.config.log_limb_size,
             num_limbs: self.config.num_limbs,
@@ -52,10 +56,12 @@ impl MetalMSMPipeline {
             kernel_name: String::new(),
         };
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
+        println!("pack_affine_and_scalars took {:?}", start.elapsed());
 
         // Stage 1: Convert Point & Scalar Decomposition
         // 1. Unpack point coordinates and encode them into Montgomery form
         // 2. Decompose scalars into Signed wNAF form
+        let start = Instant::now();
         let stage1 = ConvertPointAndScalarDecompose::new(&self.config);
         let c_workgroup_size = 64;
         let c_num_x_workgroups = 128;
@@ -71,13 +77,17 @@ impl MetalMSMPipeline {
             c_num_z_workgroups,
             c_workgroup_size,
         )?;
+        println!("ConvertPointAndScalarDecompose took {:?}", start.elapsed());
 
         // Stage 2: Transpose
+        let start = Instant::now();
         let stage2 = Transpose::new(&self.config);
         let (csc_col_ptr, csc_val_idxs) =
             stage2.execute(&scalar_chunks, num_subtasks, input_size, num_columns)?;
+        println!("Transpose took {:?}", start.elapsed());
 
         // Stage 3: Sparse Matrix-Vector Multiplication
+        let start = Instant::now();
         let stage3 = SMVP::new(&self.config);
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
             &csc_col_ptr,
@@ -88,21 +98,26 @@ impl MetalMSMPipeline {
             num_subtasks,
             num_columns,
         )?;
+        println!("SMVP took {:?}", start.elapsed());
 
         // Stage 4: Parallel Bucket Reduction
+        let start = Instant::now();
         let stage4 = PBPR::new(&self.config);
         let (g_points_x, g_points_y, g_points_z) =
             stage4.execute(&bucket_x, &bucket_y, &bucket_z, num_subtasks, num_columns)?;
+        println!("PBPR took {:?}", start.elapsed());
 
         // Stage 5: Final reduction and Horner's method
+        let start = Instant::now();
         let result = self.final_reduction(
             &g_points_x,
             &g_points_y,
             &g_points_z,
             num_subtasks,
             self.config.log_limb_size as usize,
+            256,
         )?;
-
+        println!("Final reduction took {:?}", start.elapsed());
         Ok(result)
     }
 
@@ -114,40 +129,42 @@ impl MetalMSMPipeline {
         g_points_z: &[u32],
         num_subtasks: usize,
         log_limb_size: usize,
+        pbpr_workgroup_size: usize,
     ) -> Result<G, Box<dyn Error>> {
-        let pbpr_workgroup_size: usize = 256;
-        let mut gpu_points = Vec::with_capacity(num_subtasks);
+        // Parallel processing of subtasks
+        let gpu_points: Vec<G> = (0..num_subtasks)
+            .into_par_iter()
+            .map(|i| {
+                let mut accumulated_point = G::zero();
 
-        for i in 0..num_subtasks {
-            let mut accumulated_point = G::zero();
+                for j in 0..pbpr_workgroup_size {
+                    let flat_idx = i * pbpr_workgroup_size + j;
+                    let limb_start_idx = flat_idx * self.config.num_limbs;
+                    let limb_end_idx = (flat_idx + 1) * self.config.num_limbs;
 
-            for j in 0..pbpr_workgroup_size {
-                let flat_idx = i * pbpr_workgroup_size + j;
-                let limb_start_idx = flat_idx * self.config.num_limbs;
-                let limb_end_idx = (flat_idx + 1) * self.config.num_limbs;
+                    let xr_limbs = &g_points_x[limb_start_idx..limb_end_idx];
+                    let yr_limbs = &g_points_y[limb_start_idx..limb_end_idx];
+                    let zr_limbs = &g_points_z[limb_start_idx..limb_end_idx];
 
-                let xr_limbs = &g_points_x[limb_start_idx..limb_end_idx];
-                let yr_limbs = &g_points_y[limb_start_idx..limb_end_idx];
-                let zr_limbs = &g_points_z[limb_start_idx..limb_end_idx];
+                    let xr_bigint = BigInt::<4>::from_limbs(xr_limbs, self.config.log_limb_size);
+                    let yr_bigint = BigInt::<4>::from_limbs(yr_limbs, self.config.log_limb_size);
+                    let zr_bigint = BigInt::<4>::from_limbs(zr_limbs, self.config.log_limb_size);
 
-                let xr_bigint = BigInt::<4>::from_limbs(xr_limbs, self.config.log_limb_size);
-                let yr_bigint = BigInt::<4>::from_limbs(yr_limbs, self.config.log_limb_size);
-                let zr_bigint = BigInt::<4>::from_limbs(zr_limbs, self.config.log_limb_size);
+                    let xr_reduced = raw_reduction(xr_bigint);
+                    let yr_reduced = raw_reduction(yr_bigint);
+                    let zr_reduced = raw_reduction(zr_bigint);
 
-                let xr_reduced = raw_reduction(xr_bigint);
-                let yr_reduced = raw_reduction(yr_bigint);
-                let zr_reduced = raw_reduction(zr_bigint);
+                    let x = BaseField::from_bigint(xr_reduced).unwrap_or_else(|| BaseField::zero());
+                    let y = BaseField::from_bigint(yr_reduced).unwrap_or_else(|| BaseField::zero());
+                    let z = BaseField::from_bigint(zr_reduced).unwrap_or_else(|| BaseField::zero());
 
-                let x = BaseField::from_bigint(xr_reduced).unwrap_or_else(|| BaseField::zero());
-                let y = BaseField::from_bigint(yr_reduced).unwrap_or_else(|| BaseField::zero());
-                let z = BaseField::from_bigint(zr_reduced).unwrap_or_else(|| BaseField::zero());
+                    let point = G::new(x, y, z);
+                    accumulated_point += point;
+                }
 
-                let point = G::new(x, y, z);
-                accumulated_point += point;
-            }
-
-            gpu_points.push(accumulated_point);
-        }
+                accumulated_point
+            })
+            .collect();
 
         // Horner's method
         let m = ScalarField::from(1u64 << log_limb_size);
@@ -331,6 +348,10 @@ impl SMVP {
         // Calculate workgroup sizes
         let (s_workgroup_size, s_num_x_workgroups, s_num_y_workgroups) =
             self.calculate_workgroup_sizes(half_columns, num_subtasks);
+        println!("s_workgroup_size: {}", s_workgroup_size);
+        println!("s_num_x_workgroups: {}", s_num_x_workgroups);
+        println!("s_num_y_workgroups: {}", s_num_y_workgroups);
+        println!("s_num_subtasks, z: {}", num_subtasks);
 
         let bucket_size = (num_columns / 2) as usize * self.config.num_limbs * 4 * num_subtasks;
 
@@ -368,6 +389,12 @@ impl SMVP {
                 num_subtasks as u64,
             );
             let threads_per_group = helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
+
+            println!("--- offset: {} ---", offset);
+            println!("adjusted_x_workgroups: {:?}", adjusted_x_workgroups);
+            println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
+            println!("s_num_z_workgroups: {:?}", num_subtasks);
+            println!("s_workgroup_size: {:?}", s_workgroup_size);
 
             helper.execute_shader(
                 &self.config,
@@ -608,7 +635,7 @@ mod tests {
 
     #[test]
     fn test_metal_msm_pipeline() {
-        let log_input_size = 16;
+        let log_input_size = 20;
         let input_size = 1 << log_input_size;
 
         println!("Generating {} elements", input_size);
