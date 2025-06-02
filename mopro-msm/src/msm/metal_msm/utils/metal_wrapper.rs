@@ -71,15 +71,15 @@ impl MetalHelper {
         }
     }
 
-    /// Create an input buffer in Vec<u32> and track it
-    pub fn create_input_buffer(&mut self, data: &Vec<u32>) -> Buffer {
+    /// Create a buffer in Vec<u32> and track it
+    pub fn create_buffer(&mut self, data: &Vec<u32>) -> Buffer {
         let buffer = create_buffer(&self.device, data);
         self.buffers.push(buffer.clone());
         buffer
     }
 
-    /// Create an output buffer and track it
-    pub fn create_output_buffer(&mut self, size: usize) -> Buffer {
+    /// Create an empty buffer and track it
+    pub fn create_empty_buffer(&mut self, size: usize) -> Buffer {
         let buffer = create_empty_buffer(&self.device, size);
         self.buffers.push(buffer.clone());
         buffer
@@ -98,8 +98,7 @@ impl MetalHelper {
     pub fn execute_shader(
         &self,
         config: &MetalConfig,
-        input_buffers: &[&Buffer],
-        output_buffers: &[&Buffer],
+        buffers: &[&Buffer],
         thread_group_count: &MTLSize,
         threads_per_threadgroup: &MTLSize,
     ) {
@@ -144,15 +143,11 @@ impl MetalHelper {
 
         encoder.set_compute_pipeline_state(&pipeline_state);
 
-        // Set input buffers
-        for (i, buffer) in input_buffers.iter().enumerate() {
+        // Set buffers
+        for (i, buffer) in buffers.iter().enumerate() {
             encoder.set_buffer(i as u64, Some(buffer), 0);
         }
 
-        // Set output buffer
-        for (i, buffer) in output_buffers.iter().enumerate() {
-            encoder.set_buffer(input_buffers.len() as u64 + i as u64, Some(buffer), 0);
-        }
         encoder.dispatch_thread_groups(*thread_group_count, *threads_per_threadgroup);
         encoder.end_encoding();
 

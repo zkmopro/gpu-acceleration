@@ -43,17 +43,16 @@ fn run_bigint_add_test(a: &BigInt<4>, b: &BigInt<4>, expected: &BigInt<4>) {
 
     let mut helper = MetalHelper::new();
 
-    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
-    let b_buf = helper.create_input_buffer(&b.to_limbs(config.num_limbs, config.log_limb_size));
-    let result_buf = helper.create_output_buffer(config.num_limbs + 1);
+    let a_buf = helper.create_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let b_buf = helper.create_buffer(&b.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_empty_buffer(config.num_limbs + 1);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[&a_buf, &b_buf],
-        &[&result_buf],
+        &[&a_buf, &b_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );

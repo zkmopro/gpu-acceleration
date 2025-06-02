@@ -37,8 +37,8 @@ pub fn test_barrett_reduce_with_mont_params() {
     let mont_a_limbs = mont_a_in_ark.to_limbs(num_limbs_extra_wide, log_limb_size);
 
     // Create buffers
-    let mont_a_buf = helper.create_input_buffer(&mont_a_limbs);
-    let result_buf = helper.create_output_buffer(num_limbs);
+    let mont_a_buf = helper.create_buffer(&mont_a_limbs);
+    let result_buf = helper.create_empty_buffer(num_limbs);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -46,8 +46,7 @@ pub fn test_barrett_reduce_with_mont_params() {
 
     helper.execute_shader(
         &config,
-        &[&mont_a_buf],
-        &[&result_buf],
+        &[&mont_a_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );
@@ -91,9 +90,9 @@ pub fn test_field_mul_with_mont_params() {
     let r_limbs = r_in_ark.to_limbs(num_limbs_wide, log_limb_size);
 
     // Create buffers
-    let a_buf = helper.create_input_buffer(&a_limbs);
-    let r_buf = helper.create_input_buffer(&r_limbs);
-    let res_buf = helper.create_output_buffer(num_limbs);
+    let a_buf = helper.create_buffer(&a_limbs);
+    let r_buf = helper.create_buffer(&r_limbs);
+    let res_buf = helper.create_empty_buffer(num_limbs);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -101,8 +100,7 @@ pub fn test_field_mul_with_mont_params() {
 
     helper.execute_shader(
         &config,
-        &[&a_buf, &r_buf],
-        &[&res_buf],
+        &[&a_buf, &r_buf, &res_buf],
         &thread_group_count,
         &thread_group_size,
     );

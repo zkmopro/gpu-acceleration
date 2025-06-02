@@ -266,15 +266,15 @@ impl ConvertPointAndScalarDecompose {
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
 
-        let coords_buf = helper.create_input_buffer(&coords.to_vec());
-        let scalars_buf = helper.create_input_buffer(&scalars.to_vec());
+        let coords_buf = helper.create_buffer(&coords.to_vec());
+        let scalars_buf = helper.create_buffer(&scalars.to_vec());
 
-        let out_point_x = helper.create_output_buffer(input_size * self.config.num_limbs);
-        let out_point_y = helper.create_output_buffer(input_size * self.config.num_limbs);
-        let out_scalar_chunks = helper.create_output_buffer(input_size * num_subtasks);
+        let out_point_x = helper.create_empty_buffer(input_size * self.config.num_limbs);
+        let out_point_y = helper.create_empty_buffer(input_size * self.config.num_limbs);
+        let out_scalar_chunks = helper.create_empty_buffer(input_size * num_subtasks);
 
-        let input_size_buf = helper.create_input_buffer(&vec![input_size as u32]);
-        let num_y_workgroups_buf = helper.create_input_buffer(&vec![c_num_y_workgroups as u32]);
+        let input_size_buf = helper.create_buffer(&vec![input_size as u32]);
+        let num_y_workgroups_buf = helper.create_buffer(&vec![c_num_y_workgroups as u32]);
 
         let thread_group_count = helper.create_thread_group_size(
             c_num_x_workgroups as u64,
@@ -286,8 +286,10 @@ impl ConvertPointAndScalarDecompose {
 
         helper.execute_shader(
             &self.config,
-            &[&coords_buf, &scalars_buf, &input_size_buf],
             &[
+                &coords_buf,
+                &scalars_buf,
+                &input_size_buf,
                 &out_point_x,
                 &out_point_y,
                 &out_scalar_chunks,
@@ -337,14 +339,14 @@ impl Transpose {
     ) -> Result<(Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
 
-        let in_chunks_buf = helper.create_input_buffer(&scalar_chunks.to_vec());
+        let in_chunks_buf = helper.create_buffer(&scalar_chunks.to_vec());
         let out_csc_col_ptr =
-            helper.create_output_buffer(num_subtasks * ((num_columns + 1) as usize) * 4);
-        let out_csc_val_idxs = helper.create_output_buffer(scalar_chunks.len());
-        let out_curr = helper.create_output_buffer(num_subtasks * (num_columns as usize) * 4);
+            helper.create_empty_buffer(num_subtasks * ((num_columns + 1) as usize) * 4);
+        let out_csc_val_idxs = helper.create_empty_buffer(scalar_chunks.len());
+        let out_curr = helper.create_empty_buffer(num_subtasks * (num_columns as usize) * 4);
 
         let params = vec![num_columns, input_size as u32];
-        let params_buf = helper.create_input_buffer(&params);
+        let params_buf = helper.create_buffer(&params);
 
         let thread_group_count = helper.create_thread_group_size(
             t_num_x_workgroups as u64,
@@ -363,7 +365,6 @@ impl Transpose {
                 &out_curr,
                 &params_buf,
             ],
-            &[],
             &thread_group_count,
             &threads_per_threadgroup,
         );
@@ -416,14 +417,14 @@ impl SMVP {
         let bucket_size = (num_columns / 2) as usize * self.config.num_limbs * 4 * num_subtasks;
 
         // Create buffers
-        let row_ptr_buf = helper.create_input_buffer(&csc_col_ptr.to_vec());
-        let val_idx_buf = helper.create_input_buffer(&csc_val_idxs.to_vec());
-        let point_x_buf = helper.create_input_buffer(&point_x.to_vec());
-        let point_y_buf = helper.create_input_buffer(&point_y.to_vec());
+        let row_ptr_buf = helper.create_buffer(&csc_col_ptr.to_vec());
+        let val_idx_buf = helper.create_buffer(&csc_val_idxs.to_vec());
+        let point_x_buf = helper.create_buffer(&point_x.to_vec());
+        let point_y_buf = helper.create_buffer(&point_y.to_vec());
 
-        let bucket_x_buf = helper.create_output_buffer(bucket_size);
-        let bucket_y_buf = helper.create_output_buffer(bucket_size);
-        let bucket_z_buf = helper.create_output_buffer(bucket_size);
+        let bucket_x_buf = helper.create_empty_buffer(bucket_size);
+        let bucket_y_buf = helper.create_empty_buffer(bucket_size);
+        let bucket_z_buf = helper.create_empty_buffer(bucket_size);
 
         // Execute in chunks
         let num_subtask_chunk_size = 4u32;
@@ -434,7 +435,7 @@ impl SMVP {
                 num_subtasks as u32,
                 offset,
             ];
-            let params_buf = helper.create_input_buffer(&params);
+            let params_buf = helper.create_buffer(&params);
 
             let adjusted_x_workgroups =
                 s_num_x_workgroups / (num_subtasks / num_subtask_chunk_size as usize);
@@ -459,7 +460,6 @@ impl SMVP {
                     &bucket_z_buf,
                     &params_buf,
                 ],
-                &[],
                 &thread_group_count,
                 &threads_per_threadgroup,
             );
@@ -518,14 +518,14 @@ impl PBPR {
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
         let mut helper = MetalHelper::new();
 
-        let bucket_sum_x_buf = helper.create_input_buffer(&bucket_x.to_vec());
-        let bucket_sum_y_buf = helper.create_input_buffer(&bucket_y.to_vec());
-        let bucket_sum_z_buf = helper.create_input_buffer(&bucket_z.to_vec());
+        let bucket_sum_x_buf = helper.create_buffer(&bucket_x.to_vec());
+        let bucket_sum_y_buf = helper.create_buffer(&bucket_y.to_vec());
+        let bucket_sum_z_buf = helper.create_buffer(&bucket_z.to_vec());
 
         let g_points_size = num_subtasks * b_workgroup_size * self.stage1_config.num_limbs * 4;
-        let g_points_x_buf = helper.create_output_buffer(g_points_size);
-        let g_points_y_buf = helper.create_output_buffer(g_points_size);
-        let g_points_z_buf = helper.create_output_buffer(g_points_size);
+        let g_points_x_buf = helper.create_empty_buffer(g_points_size);
+        let g_points_y_buf = helper.create_empty_buffer(g_points_size);
+        let g_points_z_buf = helper.create_empty_buffer(g_points_size);
 
         // Stage 1
         for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_1) {
@@ -534,8 +534,8 @@ impl PBPR {
                 num_columns,
                 num_subtasks_per_bpr_1 as u32,
             ];
-            let params_buf = helper.create_input_buffer(&params);
-            let workgroup_size_buf = helper.create_input_buffer(&vec![b_workgroup_size as u32]);
+            let params_buf = helper.create_buffer(&params);
+            let workgroup_size_buf = helper.create_buffer(&vec![b_workgroup_size as u32]);
 
             let stage1_thread_group_count = helper.create_thread_group_size(
                 b_num_x_workgroups as u64,
@@ -557,7 +557,6 @@ impl PBPR {
                     &params_buf,
                     &workgroup_size_buf,
                 ],
-                &[],
                 &stage1_thread_group_count,
                 &stage1_threads_per_threadgroup,
             );
@@ -570,8 +569,8 @@ impl PBPR {
                 num_columns,
                 num_subtasks_per_bpr_2 as u32,
             ];
-            let params_buf = helper.create_input_buffer(&params);
-            let workgroup_size_buf = helper.create_input_buffer(&vec![b_workgroup_size as u32]);
+            let params_buf = helper.create_buffer(&params);
+            let workgroup_size_buf = helper.create_buffer(&vec![b_workgroup_size as u32]);
 
             let stage2_thread_group_count = helper.create_thread_group_size(
                 b_2_num_x_workgroups as u64,
@@ -593,7 +592,6 @@ impl PBPR {
                     &params_buf,
                     &workgroup_size_buf,
                 ],
-                &[],
                 &stage2_thread_group_count,
                 &stage2_threads_per_threadgroup,
             );

@@ -59,15 +59,15 @@ fn test_point_coords_conversion() {
     let coords = [x_packed, y_packed].concat();
 
     // Setup Metal buffers
-    let coords_buf = helper.create_input_buffer(&coords);
-    let scalars_buf = helper.create_input_buffer(&scalars);
-    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
-    let num_y_workgroups_buf = helper.create_input_buffer(&vec![1u32]);
+    let coords_buf = helper.create_buffer(&coords);
+    let scalars_buf = helper.create_buffer(&scalars);
+    let input_size_buf = helper.create_buffer(&vec![1u32]);
+    let num_y_workgroups_buf = helper.create_buffer(&vec![1u32]);
 
     // Prepare output buffers for the kernel
-    let point_x_buf = helper.create_output_buffer(num_limbs);
-    let point_y_buf = helper.create_output_buffer(num_limbs);
-    let chunks_buf = helper.create_output_buffer(num_limbs);
+    let point_x_buf = helper.create_empty_buffer(num_limbs);
+    let point_y_buf = helper.create_empty_buffer(num_limbs);
+    let chunks_buf = helper.create_empty_buffer(num_limbs);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -76,8 +76,10 @@ fn test_point_coords_conversion() {
     // Execute the shader
     helper.execute_shader(
         &config,
-        &[&coords_buf, &scalars_buf, &input_size_buf],
         &[
+            &coords_buf,
+            &scalars_buf,
+            &input_size_buf,
             &point_x_buf,
             &point_y_buf,
             &chunks_buf,
@@ -133,15 +135,15 @@ fn test_scalar_decomposition() {
     let packed_scalars = pack_limbs(&scalars);
 
     // Setup Metal buffers
-    let coords_buf = helper.create_input_buffer(&coords);
-    let scalars_buf = helper.create_input_buffer(&packed_scalars);
-    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
-    let num_y_workgroups_buf = helper.create_input_buffer(&vec![1u32]);
+    let coords_buf = helper.create_buffer(&coords);
+    let scalars_buf = helper.create_buffer(&packed_scalars);
+    let input_size_buf = helper.create_buffer(&vec![1u32]);
+    let num_y_workgroups_buf = helper.create_buffer(&vec![1u32]);
 
     // We'll ignore X,Y outputs, but we must pass them
-    let point_x_buf = helper.create_output_buffer(num_limbs);
-    let point_y_buf = helper.create_output_buffer(num_limbs);
-    let chunks_buf = helper.create_output_buffer(num_subtasks);
+    let point_x_buf = helper.create_empty_buffer(num_limbs);
+    let point_y_buf = helper.create_empty_buffer(num_limbs);
+    let chunks_buf = helper.create_empty_buffer(num_subtasks);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -150,8 +152,10 @@ fn test_scalar_decomposition() {
     // Execute the shader
     helper.execute_shader(
         &config,
-        &[&coords_buf, &scalars_buf, &input_size_buf],
         &[
+            &coords_buf,
+            &scalars_buf,
+            &input_size_buf,
             &point_x_buf,
             &point_y_buf,
             &chunks_buf,
