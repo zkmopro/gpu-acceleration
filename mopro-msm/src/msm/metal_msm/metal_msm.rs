@@ -3,6 +3,9 @@ use crate::msm::metal_msm::utils::limbs_conversion::{
 };
 use crate::msm::metal_msm::utils::metal_wrapper::{MetalConfig, MetalHelper};
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
+use crate::msm::metal_msm::utils::shader_manager::{
+    ShaderManager, ShaderManagerConfig, ShaderType,
+};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{vec::Vec, Zero};
@@ -25,17 +28,33 @@ impl Default for MetalMSMConfig {
     }
 }
 
-/// Main Metal MSM pipeline
-struct MetalMSMPipeline {
+impl From<MetalMSMConfig> for ShaderManagerConfig {
+    fn from(config: MetalMSMConfig) -> Self {
+        Self {
+            num_limbs: config.num_limbs,
+            log_limb_size: config.log_limb_size,
+        }
+    }
+}
+
+/// Main Metal MSM pipeline with pre-compiled shaders
+pub struct MetalMSMPipeline {
     config: MetalMSMConfig,
+    shader_manager: ShaderManager,
 }
 
 impl MetalMSMPipeline {
-    fn new(config: MetalMSMConfig) -> Self {
-        Self { config }
+    fn new(config: MetalMSMConfig) -> Result<Self, Box<dyn Error>> {
+        let shader_config: ShaderManagerConfig = config.clone().into();
+        let shader_manager = ShaderManager::new(shader_config)?;
+
+        Ok(Self {
+            config,
+            shader_manager,
+        })
     }
 
-    fn with_default_config() -> Self {
+    fn with_default_config() -> Result<Self, Box<dyn Error>> {
         Self::new(MetalMSMConfig::default())
     }
 
@@ -55,9 +74,7 @@ impl MetalMSMPipeline {
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
 
         // Stage 1: Convert Point & Scalar Decomposition
-        // 1. Unpack point coordinates and encode them into Montgomery form
-        // 2. Decompose scalars into Signed wNAF form
-        let stage1 = ConvertPointAndScalarDecompose::new(&self.config);
+        let stage1 = ConvertPointAndScalarDecompose::new(&self.shader_manager);
         let mut c_workgroup_size = 256;
         let mut c_num_x_workgroups = 64;
         let mut c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
@@ -98,7 +115,7 @@ impl MetalMSMPipeline {
         let t_num_z_workgroups = 1;
         let t_workgroup_size = num_subtasks;
 
-        let stage2 = Transpose::new(&self.config);
+        let stage2 = Transpose::new(&self.shader_manager);
         let (csc_col_ptr, csc_val_idxs) = stage2.execute(
             &scalar_chunks,
             num_subtasks,
@@ -116,7 +133,7 @@ impl MetalMSMPipeline {
         let s_num_y_workgroups = 2;
         let s_num_z_workgroups = num_subtasks;
 
-        let stage3 = SMVP::new(&self.config);
+        let stage3 = SMVP::new(&self.shader_manager);
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
             &csc_col_ptr,
             &csc_val_idxs,
@@ -132,7 +149,6 @@ impl MetalMSMPipeline {
         )?;
 
         // Stage 4: Parallel Bucket Reduction
-        // dynamic variable that determines the number of CSR matrices processed per invocation of the BPR shader. A safe default is 1.
         let num_subtasks_per_bpr_1 = 16;
         let num_subtasks_per_bpr_2 = 16;
 
@@ -145,7 +161,7 @@ impl MetalMSMPipeline {
         let b_2_num_y_workgroups = 1;
         let b_2_num_z_workgroups = 1;
 
-        let stage4 = PBPR::new(&self.config);
+        let stage4 = PBPR::new(&self.shader_manager);
         let (g_points_x, g_points_y, g_points_z) = stage4.execute(
             &bucket_x,
             &bucket_y,
@@ -237,20 +253,13 @@ impl MetalMSMPipeline {
 }
 
 /// Stage 1: Convert & Decompose
-struct ConvertPointAndScalarDecompose {
-    config: MetalConfig,
+struct ConvertPointAndScalarDecompose<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl ConvertPointAndScalarDecompose {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-                kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
-            },
-        }
+impl<'a> ConvertPointAndScalarDecompose<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -264,13 +273,19 @@ impl ConvertPointAndScalarDecompose {
         c_num_z_workgroups: usize,
         c_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let shader = self
+            .shader_manager
+            .get_shader(&ShaderType::ConvertPointAndDecompose)
+            .ok_or("ConvertPointAndDecompose shader not found")?;
 
         let coords_buf = helper.create_buffer(&coords.to_vec());
         let scalars_buf = helper.create_buffer(&scalars.to_vec());
 
-        let out_point_x = helper.create_empty_buffer(input_size * self.config.num_limbs);
-        let out_point_y = helper.create_empty_buffer(input_size * self.config.num_limbs);
+        let out_point_x =
+            helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
+        let out_point_y =
+            helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
         let out_scalar_chunks = helper.create_empty_buffer(input_size * num_subtasks);
 
         let input_size_buf = helper.create_buffer(&vec![input_size as u32]);
@@ -284,8 +299,8 @@ impl ConvertPointAndScalarDecompose {
         let threads_per_threadgroup =
             helper.create_thread_group_size(c_workgroup_size as u64, 1, 1);
 
-        helper.execute_shader(
-            &self.config,
+        helper.execute_shader_with_pipeline(
+            &shader.pipeline_state,
             &[
                 &coords_buf,
                 &scalars_buf,
@@ -299,8 +314,14 @@ impl ConvertPointAndScalarDecompose {
             &threads_per_threadgroup,
         );
 
-        let point_x = helper.read_results(&out_point_x, input_size * self.config.num_limbs);
-        let point_y = helper.read_results(&out_point_y, input_size * self.config.num_limbs);
+        let point_x = helper.read_results(
+            &out_point_x,
+            input_size * self.shader_manager.config().num_limbs,
+        );
+        let point_y = helper.read_results(
+            &out_point_y,
+            input_size * self.shader_manager.config().num_limbs,
+        );
         let scalar_chunks = helper.read_results(&out_scalar_chunks, input_size * num_subtasks);
 
         helper.drop_all_buffers();
@@ -310,20 +331,13 @@ impl ConvertPointAndScalarDecompose {
 }
 
 /// Stage 2: Transpose
-struct Transpose {
-    config: MetalConfig,
+struct Transpose<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl Transpose {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/transpose.metal".to_string(),
-                kernel_name: "transpose".to_string(),
-            },
-        }
+impl<'a> Transpose<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -337,7 +351,11 @@ impl Transpose {
         t_num_z_workgroups: usize,
         t_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let shader = self
+            .shader_manager
+            .get_shader(&ShaderType::Transpose)
+            .ok_or("Transpose shader not found")?;
 
         let in_chunks_buf = helper.create_buffer(&scalar_chunks.to_vec());
         let out_csc_col_ptr =
@@ -356,8 +374,8 @@ impl Transpose {
         let threads_per_threadgroup =
             helper.create_thread_group_size(t_workgroup_size as u64, 1, 1);
 
-        helper.execute_shader(
-            &self.config,
+        helper.execute_shader_with_pipeline(
+            &shader.pipeline_state,
             &[
                 &in_chunks_buf,
                 &out_csc_col_ptr,
@@ -382,20 +400,13 @@ impl Transpose {
 }
 
 /// Stage 3: SMVP
-struct SMVP {
-    config: MetalConfig,
+struct SMVP<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl SMVP {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/smvp.metal".to_string(),
-                kernel_name: "smvp".to_string(),
-            },
-        }
+impl<'a> SMVP<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -412,9 +423,14 @@ impl SMVP {
         s_num_z_workgroups: usize,
         s_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let shader = self
+            .shader_manager
+            .get_shader(&ShaderType::SMVP)
+            .ok_or("SMVP shader not found")?;
 
-        let bucket_size = (num_columns / 2) as usize * self.config.num_limbs * 4 * num_subtasks;
+        let bucket_size =
+            (num_columns / 2) as usize * self.shader_manager.config().num_limbs * 4 * num_subtasks;
 
         // Create buffers
         let row_ptr_buf = helper.create_buffer(&csc_col_ptr.to_vec());
@@ -448,8 +464,8 @@ impl SMVP {
             let threads_per_threadgroup =
                 helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
 
-            helper.execute_shader(
-                &self.config,
+            helper.execute_shader_with_pipeline(
+                &shader.pipeline_state,
                 &[
                     &row_ptr_buf,
                     &val_idx_buf,
@@ -476,27 +492,13 @@ impl SMVP {
 }
 
 /// Stage 4: PBPR
-struct PBPR {
-    stage1_config: MetalConfig,
-    stage2_config: MetalConfig,
+struct PBPR<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl PBPR {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            stage1_config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/pbpr.metal".to_string(),
-                kernel_name: "bpr_stage_1".to_string(),
-            },
-            stage2_config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/pbpr.metal".to_string(),
-                kernel_name: "bpr_stage_2".to_string(),
-            },
-        }
+impl<'a> PBPR<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -516,13 +518,22 @@ impl PBPR {
         b_2_num_z_workgroups: usize,
         b_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let stage1_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRStage1)
+            .ok_or("BPRStage1 shader not found")?;
+        let stage2_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRStage2)
+            .ok_or("BPRStage2 shader not found")?;
 
         let bucket_sum_x_buf = helper.create_buffer(&bucket_x.to_vec());
         let bucket_sum_y_buf = helper.create_buffer(&bucket_y.to_vec());
         let bucket_sum_z_buf = helper.create_buffer(&bucket_z.to_vec());
 
-        let g_points_size = num_subtasks * b_workgroup_size * self.stage1_config.num_limbs * 4;
+        let g_points_size =
+            num_subtasks * b_workgroup_size * self.shader_manager.config().num_limbs * 4;
         let g_points_x_buf = helper.create_empty_buffer(g_points_size);
         let g_points_y_buf = helper.create_empty_buffer(g_points_size);
         let g_points_z_buf = helper.create_empty_buffer(g_points_size);
@@ -545,8 +556,8 @@ impl PBPR {
             let stage1_threads_per_threadgroup =
                 helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
-            helper.execute_shader(
-                &self.stage1_config,
+            helper.execute_shader_with_pipeline(
+                &stage1_shader.pipeline_state,
                 &[
                     &bucket_sum_x_buf,
                     &bucket_sum_y_buf,
@@ -580,8 +591,8 @@ impl PBPR {
             let stage2_threads_per_threadgroup =
                 helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
-            helper.execute_shader(
-                &self.stage2_config,
+            helper.execute_shader_with_pipeline(
+                &stage2_shader.pipeline_state,
                 &[
                     &bucket_sum_x_buf,
                     &bucket_sum_y_buf,
@@ -623,7 +634,7 @@ pub fn metal_variable_base_msm(
         return Err("Bases and scalars must have the same length".into());
     }
 
-    let pipeline = MetalMSMPipeline::with_default_config();
+    let pipeline = MetalMSMPipeline::with_default_config()?;
     pipeline.execute(bases, scalars)
 }
 
