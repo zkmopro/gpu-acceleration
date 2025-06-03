@@ -1,11 +1,9 @@
+use crate::msm::metal_msm::host::shader_manager::{ShaderManager, ShaderManagerConfig, ShaderType};
 use crate::msm::metal_msm::utils::limbs_conversion::{
     pack_affine_and_scalars, GenericLimbConversion,
 };
 use crate::msm::metal_msm::utils::metal_wrapper::{MetalConfig, MetalHelper};
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
-use crate::msm::metal_msm::utils::shader_manager::{
-    ShaderManager, ShaderManagerConfig, ShaderType,
-};
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{vec::Vec, Zero};
