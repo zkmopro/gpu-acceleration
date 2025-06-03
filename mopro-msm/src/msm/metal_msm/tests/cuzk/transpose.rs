@@ -37,11 +37,11 @@ fn test_sparse_matrix_transposition() {
         }
 
         // Create buffers
-        let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-        let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-        let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-        let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-        let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+        let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+        let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+        let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+        let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+        let params_buf = helper.create_buffer(&vec![n, input_size]);
 
         // Execute shader
         let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -56,7 +56,6 @@ fn test_sparse_matrix_transposition() {
                 &all_curr_buf,
                 &params_buf,
             ],
-            &[],
             &thread_group_count,
             &thread_group_size,
         );
@@ -114,11 +113,11 @@ fn test_transpose_single_element() {
     let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&all_csr_col_idx, n);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -133,7 +132,6 @@ fn test_transpose_single_element() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -175,11 +173,11 @@ fn test_transpose_all_same_column() {
     let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&all_csr_col_idx, n);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -194,7 +192,6 @@ fn test_transpose_all_same_column() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -236,11 +233,11 @@ fn test_transpose_sequential_columns() {
     let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&all_csr_col_idx, n);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -255,7 +252,6 @@ fn test_transpose_sequential_columns() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -297,11 +293,11 @@ fn test_transpose_reverse_order() {
     let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&all_csr_col_idx, n);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -316,7 +312,6 @@ fn test_transpose_reverse_order() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -358,11 +353,11 @@ fn test_transpose_empty_columns() {
     let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&all_csr_col_idx, n);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -377,7 +372,6 @@ fn test_transpose_empty_columns() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -437,11 +431,11 @@ fn test_transpose_multiple_subtasks_edge_cases() {
     all_csr_col_idx.extend_from_slice(&cols2);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -456,7 +450,6 @@ fn test_transpose_multiple_subtasks_edge_cases() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -513,11 +506,11 @@ fn test_transpose_boundary_columns() {
     let (expected_col_ptr, expected_val_idxs) = compute_expected_csc(&all_csr_col_idx, n);
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -532,7 +525,6 @@ fn test_transpose_boundary_columns() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );
@@ -584,11 +576,11 @@ fn test_transpose_large_scale() {
     }
 
     // Create buffers
-    let all_csr_col_idx_buf = helper.create_input_buffer(&all_csr_col_idx);
-    let all_csc_col_ptr_buf = helper.create_output_buffer(num_subtasks * (n as usize + 1));
-    let all_csc_val_idxs_buf = helper.create_output_buffer(num_subtasks * input_size as usize);
-    let all_curr_buf = helper.create_output_buffer(num_subtasks * n as usize);
-    let params_buf = helper.create_input_buffer(&vec![n, input_size]);
+    let all_csr_col_idx_buf = helper.create_buffer(&all_csr_col_idx);
+    let all_csc_col_ptr_buf = helper.create_empty_buffer(num_subtasks * (n as usize + 1));
+    let all_csc_val_idxs_buf = helper.create_empty_buffer(num_subtasks * input_size as usize);
+    let all_curr_buf = helper.create_empty_buffer(num_subtasks * n as usize);
+    let params_buf = helper.create_buffer(&vec![n, input_size]);
 
     // Execute shader
     let thread_group_count = helper.create_thread_group_size(num_subtasks as u64, 1, 1);
@@ -603,7 +595,6 @@ fn test_transpose_large_scale() {
             &all_curr_buf,
             &params_buf,
         ],
-        &[],
         &thread_group_count,
         &thread_group_size,
     );

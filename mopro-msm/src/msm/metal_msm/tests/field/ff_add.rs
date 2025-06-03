@@ -38,9 +38,9 @@ pub fn test_ff_add() {
     assert!(a < p, "a must be less than p");
     assert!(b < p, "b must be less than p");
 
-    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
-    let b_buf = helper.create_input_buffer(&b.to_limbs(config.num_limbs, config.log_limb_size));
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let a_buf = helper.create_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let b_buf = helper.create_buffer(&b.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     // Calculate expected result: (a + b) % p
     let mut expected = a.clone();
@@ -70,8 +70,7 @@ pub fn test_ff_add() {
 
     helper.execute_shader(
         &config,
-        &[&a_buf, &b_buf],
-        &[&result_buf],
+        &[&a_buf, &b_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );

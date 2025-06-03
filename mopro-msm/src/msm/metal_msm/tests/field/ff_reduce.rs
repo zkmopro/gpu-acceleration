@@ -19,8 +19,8 @@ pub fn test_ff_reduce_a_less_than_p() {
 
     let (a, expected) = generate_test_values(false);
 
-    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let a_buf = helper.create_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let expected_limbs = expected.to_limbs(config.num_limbs, config.log_limb_size);
 
@@ -29,8 +29,7 @@ pub fn test_ff_reduce_a_less_than_p() {
 
     helper.execute_shader(
         &config,
-        &[&a_buf],
-        &[&result_buf],
+        &[&a_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );
@@ -58,8 +57,8 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
 
     let (a, expected) = generate_test_values(true);
 
-    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let a_buf = helper.create_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let expected_limbs = expected.to_limbs(config.num_limbs, config.log_limb_size);
 
@@ -68,8 +67,7 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
 
     helper.execute_shader(
         &config,
-        &[&a_buf],
-        &[&result_buf],
+        &[&a_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );

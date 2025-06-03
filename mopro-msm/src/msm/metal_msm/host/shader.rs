@@ -36,6 +36,39 @@ macro_rules! write_constant_array {
     };
 }
 
+/// Get the shader directory path using CARGO_MANIFEST_DIR for proper OS file location
+/// This function provides robust path resolution that works across different build environments
+pub fn get_shader_dir() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let shader_path = manifest_dir
+        .join("src")
+        .join("msm")
+        .join("metal_msm")
+        .join("shader");
+
+    // Verify the path exists, if not try alternative locations
+    if shader_path.exists() {
+        shader_path
+    } else {
+        // Fallback: try relative path from workspace root
+        let workspace_shader_path = manifest_dir
+            .parent() // go up one level from mopro-msm to workspace root
+            .unwrap_or(&manifest_dir)
+            .join("mopro-msm")
+            .join("src")
+            .join("msm")
+            .join("metal_msm")
+            .join("shader");
+
+        if workspace_shader_path.exists() {
+            workspace_shader_path
+        } else {
+            // Final fallback: use the original path and let error handling take care of it
+            shader_path
+        }
+    }
+}
+
 pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -> String {
     let input_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(path_from_cargo_manifest_dir)

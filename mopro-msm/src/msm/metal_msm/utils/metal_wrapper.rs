@@ -1,7 +1,7 @@
 use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
-use crate::msm::metal_msm::host::shader::{compile_metal, write_constants};
+use crate::msm::metal_msm::host::shader::{compile_metal, get_shader_dir, write_constants};
 use crate::msm::metal_msm::utils::barrett_params::calc_barrett_mu;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 
@@ -14,14 +14,12 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-/// Directory containing the Metal shader files
-const SHADER_DIR: &str = "../mopro-msm/src/msm/metal_msm/shader";
-
 /// Cache of precomputed constants
 static CONSTANTS_CACHE: Lazy<Mutex<HashMap<(usize, u32), MSMConstants>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Struct for Metal config
+#[derive(Clone)]
 pub struct MetalConfig {
     pub log_limb_size: u32,
     pub num_limbs: usize,
@@ -51,7 +49,7 @@ impl Default for MetalConfig {
     }
 }
 
-/// Helper to setup Metal device, buffers, and execute shader
+/// Enhanced Metal helper that works with pre-compiled shaders
 pub struct MetalHelper {
     pub device: Device,
     pub command_queue: CommandQueue,
@@ -59,7 +57,7 @@ pub struct MetalHelper {
 }
 
 impl MetalHelper {
-    /// Create a new Metal helper
+    /// Create a new Metal helper with specific device
     pub fn new() -> Self {
         let device = get_default_device();
         let command_queue = device.new_command_queue();
@@ -71,15 +69,26 @@ impl MetalHelper {
         }
     }
 
-    /// Create an input buffer in Vec<u32> and track it
-    pub fn create_input_buffer(&mut self, data: &Vec<u32>) -> Buffer {
+    /// Create a new Metal helper with custom device
+    pub fn with_device(device: Device) -> Self {
+        let command_queue = device.new_command_queue();
+
+        Self {
+            device,
+            command_queue,
+            buffers: Vec::new(),
+        }
+    }
+
+    /// Create a buffer in Vec<u32> and track it
+    pub fn create_buffer(&mut self, data: &Vec<u32>) -> Buffer {
         let buffer = create_buffer(&self.device, data);
         self.buffers.push(buffer.clone());
         buffer
     }
 
-    /// Create an output buffer and track it
-    pub fn create_output_buffer(&mut self, size: usize) -> Buffer {
+    /// Create an empty buffer and track it
+    pub fn create_empty_buffer(&mut self, size: usize) -> Buffer {
         let buffer = create_empty_buffer(&self.device, size);
         self.buffers.push(buffer.clone());
         buffer
@@ -94,12 +103,38 @@ impl MetalHelper {
         }
     }
 
-    /// Execute a Metal compute shader
+    /// Execute a Metal compute shader with pre-compiled pipeline state
+    pub fn execute_shader_with_pipeline(
+        &self,
+        pipeline_state: &ComputePipelineState,
+        buffers: &[&Buffer],
+        thread_group_count: &MTLSize,
+        threads_per_threadgroup: &MTLSize,
+    ) {
+        let command_buffer = self.command_queue.new_command_buffer();
+        let compute_pass_descriptor = ComputePassDescriptor::new();
+        let encoder =
+            command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
+
+        encoder.set_compute_pipeline_state(&pipeline_state);
+
+        // Set buffers
+        for (i, buffer) in buffers.iter().enumerate() {
+            encoder.set_buffer(i as u64, Some(buffer), 0);
+        }
+
+        encoder.dispatch_thread_groups(*thread_group_count, *threads_per_threadgroup);
+        encoder.end_encoding();
+
+        command_buffer.commit();
+        command_buffer.wait_until_completed();
+    }
+
+    /// Execute a Metal compute shader (legacy method - kept for compatibility)
     pub fn execute_shader(
         &self,
         config: &MetalConfig,
-        input_buffers: &[&Buffer],
-        output_buffers: &[&Buffer],
+        buffers: &[&Buffer],
         thread_group_count: &MTLSize,
         threads_per_threadgroup: &MTLSize,
     ) {
@@ -111,7 +146,7 @@ impl MetalHelper {
         // Setup shader constants
         let constants = get_or_calc_constants(config.num_limbs, config.log_limb_size);
         write_constants(
-            SHADER_DIR,
+            get_shader_dir().to_str().unwrap(),
             config.num_limbs,
             config.log_limb_size,
             constants.n0,
@@ -119,7 +154,11 @@ impl MetalHelper {
         );
 
         // Prepare full shader path
-        let shader_path = format!("{}/{}", SHADER_DIR, config.shader_file);
+        let shader_path = format!(
+            "{}/{}",
+            get_shader_dir().to_str().unwrap(),
+            config.shader_file
+        );
         let parts: Vec<&str> = shader_path.rsplitn(2, '/').collect();
         let shader_dir = if parts.len() > 1 { parts[1] } else { "" };
         let shader_file = parts[0];
@@ -144,15 +183,11 @@ impl MetalHelper {
 
         encoder.set_compute_pipeline_state(&pipeline_state);
 
-        // Set input buffers
-        for (i, buffer) in input_buffers.iter().enumerate() {
+        // Set buffers
+        for (i, buffer) in buffers.iter().enumerate() {
             encoder.set_buffer(i as u64, Some(buffer), 0);
         }
 
-        // Set output buffer
-        for (i, buffer) in output_buffers.iter().enumerate() {
-            encoder.set_buffer(input_buffers.len() as u64 + i as u64, Some(buffer), 0);
-        }
         encoder.dispatch_thread_groups(*thread_group_count, *threads_per_threadgroup);
         encoder.end_encoding();
 
@@ -169,6 +204,50 @@ impl MetalHelper {
     pub fn drop_all_buffers(&mut self) {
         self.buffers.clear();
     }
+
+    /// Get device reference
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
+    /// Get command queue reference
+    pub fn command_queue(&self) -> &CommandQueue {
+        &self.command_queue
+    }
+
+    /// Execute multiple compute shaders in sequence with shared command buffer
+    pub fn execute_shaders_batch(&self, operations: Vec<ShaderOperation>) {
+        let command_buffer = self.command_queue.new_command_buffer();
+
+        for operation in operations {
+            let compute_pass_descriptor = ComputePassDescriptor::new();
+            let encoder =
+                command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
+
+            encoder.set_compute_pipeline_state(&operation.pipeline_state);
+
+            for (i, buffer) in operation.buffers.iter().enumerate() {
+                encoder.set_buffer(i as u64, Some(buffer), 0);
+            }
+
+            encoder.dispatch_thread_groups(
+                operation.thread_group_count,
+                operation.threads_per_threadgroup,
+            );
+            encoder.end_encoding();
+        }
+
+        command_buffer.commit();
+        command_buffer.wait_until_completed();
+    }
+}
+
+/// Represents a single shader operation for batch execution
+pub struct ShaderOperation<'a> {
+    pub pipeline_state: ComputePipelineState,
+    pub buffers: Vec<&'a Buffer>,
+    pub thread_group_count: MTLSize,
+    pub threads_per_threadgroup: MTLSize,
 }
 
 // Calculate or retrieve cached constants

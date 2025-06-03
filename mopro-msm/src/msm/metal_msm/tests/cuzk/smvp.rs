@@ -49,16 +49,13 @@ fn smvp_gpu(
     let bucket_sum_coord_bytelength =
         (num_columns / 2) as usize * config.num_limbs as usize * 4 * num_subtasks as usize;
 
-    // Input buffers
-    let row_ptr_buf = helper.create_input_buffer(gpu_csc_col_ptr);
-    let val_idx_buf = helper.create_input_buffer(gpu_csc_val_idxs);
-    let point_x_buf = helper.create_input_buffer(gpu_point_x);
-    let point_y_buf = helper.create_input_buffer(gpu_point_y);
-
-    // Output "bucket" buffers
-    let bucket_x_buf = helper.create_output_buffer(bucket_sum_coord_bytelength);
-    let bucket_y_buf = helper.create_output_buffer(bucket_sum_coord_bytelength);
-    let bucket_z_buf = helper.create_output_buffer(bucket_sum_coord_bytelength);
+    let row_ptr_buf = helper.create_buffer(gpu_csc_col_ptr);
+    let val_idx_buf = helper.create_buffer(gpu_csc_val_idxs);
+    let point_x_buf = helper.create_buffer(gpu_point_x);
+    let point_y_buf = helper.create_buffer(gpu_point_y);
+    let bucket_x_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_y_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_z_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
@@ -69,7 +66,7 @@ fn smvp_gpu(
             s_num_z_workgroups,
             offset,
         ];
-        let params_buf = helper.create_input_buffer(&params);
+        let params_buf = helper.create_buffer(&params);
 
         let adjusted_s_num_x_workgroups = if num_columns < 256 {
             s_num_x_workgroups
@@ -101,7 +98,6 @@ fn smvp_gpu(
                 &bucket_z_buf,
                 &params_buf,
             ],
-            &[],
             &thread_group_count,
             &threads_per_group,
         );

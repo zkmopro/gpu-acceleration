@@ -44,7 +44,7 @@ fn jacobian_scalar_mul_kernel(point: G, scalar: u32, name: &str) -> G {
         .to_limbs(num_limbs, log_limb_size);
 
     // Create input buffers
-    let point_buf = helper.create_input_buffer(
+    let point_buf = helper.create_buffer(
         &[
             axr_limbs.as_slice(),
             ayr_limbs.as_slice(),
@@ -52,8 +52,8 @@ fn jacobian_scalar_mul_kernel(point: G, scalar: u32, name: &str) -> G {
         ]
         .concat(),
     );
-    let scalar_buf = helper.create_input_buffer(&vec![scalar]);
-    let result_buf = helper.create_output_buffer(num_limbs * 3);
+    let scalar_buf = helper.create_buffer(&vec![scalar]);
+    let result_buf = helper.create_empty_buffer(num_limbs * 3);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -61,8 +61,7 @@ fn jacobian_scalar_mul_kernel(point: G, scalar: u32, name: &str) -> G {
 
     helper.execute_shader(
         &config,
-        &[&point_buf, &scalar_buf],
-        &[&result_buf],
+        &[&point_buf, &scalar_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );
