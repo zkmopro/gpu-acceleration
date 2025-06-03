@@ -140,6 +140,7 @@ pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -
 
 pub fn write_constants(
     filepath: &str,
+    input_size: usize,
     num_limbs: usize,
     log_limb_size: u32,
     n0: u32,
@@ -152,9 +153,10 @@ pub fn write_constants(
     let num_limbs_extra_wide = num_limbs * 2;
 
     // MSM instance params
-    let chunk_size = 16;
-    let num_columns = 2u32.pow(chunk_size);
-    let num_subtasks = (256 as f32 / chunk_size as f32).ceil() as u32;
+    let chunk_size = if input_size >= 65536 { 16 } else { 4 };
+
+    let num_columns = 1 << chunk_size;
+    let num_subtasks = (256f64 / chunk_size as f64).ceil() as usize;
 
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
@@ -306,6 +308,8 @@ pub mod tests {
     #[test]
     #[serial_test::serial]
     pub fn test_write_constants() {
-        write_constants("../mopro-msm/src/msm/metal_msm/shader", 16, 16, 25481, 1);
+        let shader_dir = get_shader_dir();
+        let shader_path = shader_dir.to_str().expect("Invalid shader directory path");
+        write_constants(shader_path, 1024, 16, 16, 25481, 1);
     }
 }

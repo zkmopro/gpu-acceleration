@@ -18,6 +18,13 @@ use std::sync::Mutex;
 static CONSTANTS_CACHE: Lazy<Mutex<HashMap<(usize, u32), MSMConstants>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Cache of compiled pipeline states  
+static PIPELINE_CACHE: Lazy<Mutex<HashMap<String, ComputePipelineState>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Track current constants configuration to avoid unnecessary rewrites
+static CURRENT_CONSTANTS_CONFIG: Lazy<Mutex<Option<(usize, u32)>>> = Lazy::new(|| Mutex::new(None));
+
 /// Struct for Metal config
 #[derive(Clone)]
 pub struct MetalConfig {
@@ -57,11 +64,10 @@ pub struct MetalHelper {
 }
 
 impl MetalHelper {
-    /// Create a new Metal helper with specific device
+    /// Create a new Metal helper with default device
     pub fn new() -> Self {
         let device = get_default_device();
         let command_queue = device.new_command_queue();
-
         Self {
             device,
             command_queue,
@@ -69,10 +75,9 @@ impl MetalHelper {
         }
     }
 
-    /// Create a new Metal helper with custom device
+    /// Create a new Metal helper with specified device
     pub fn with_device(device: Device) -> Self {
         let command_queue = device.new_command_queue();
-
         Self {
             device,
             command_queue,
@@ -80,7 +85,7 @@ impl MetalHelper {
         }
     }
 
-    /// Create a buffer in Vec<u32> and track it
+    /// Create a buffer and track it
     pub fn create_buffer(&mut self, data: &Vec<u32>) -> Buffer {
         let buffer = create_buffer(&self.device, data);
         self.buffers.push(buffer.clone());
@@ -130,7 +135,7 @@ impl MetalHelper {
         command_buffer.wait_until_completed();
     }
 
-    /// Execute a Metal compute shader (legacy method - kept for compatibility)
+    /// Thread-safe execute shader that manages constants and caching properly
     pub fn execute_shader(
         &self,
         config: &MetalConfig,
@@ -138,22 +143,55 @@ impl MetalHelper {
         thread_group_count: &MTLSize,
         threads_per_threadgroup: &MTLSize,
     ) {
-        let command_buffer = self.command_queue.new_command_buffer();
-        let compute_pass_descriptor = ComputePassDescriptor::new();
-        let encoder =
-            command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
+        let pipeline_state = self.get_or_create_pipeline(config);
 
-        // Setup shader constants
-        let constants = get_or_calc_constants(config.num_limbs, config.log_limb_size);
-        write_constants(
-            get_shader_dir().to_str().unwrap(),
-            config.num_limbs,
-            config.log_limb_size,
-            constants.n0,
-            constants.nsafe,
+        self.execute_shader_with_pipeline(
+            &pipeline_state,
+            buffers,
+            thread_group_count,
+            threads_per_threadgroup,
+        )
+    }
+
+    /// Get or create a pipeline state, managing constants thread-safely
+    fn get_or_create_pipeline(&self, config: &MetalConfig) -> ComputePipelineState {
+        let cache_key = format!(
+            "{}_{}_{}_{}",
+            config.shader_file, config.kernel_name, config.num_limbs, config.log_limb_size
         );
 
-        // Prepare full shader path
+        // Try to get from cache first
+        {
+            let cache = PIPELINE_CACHE.lock().unwrap();
+            if let Some(pipeline) = cache.get(&cache_key) {
+                return pipeline.clone();
+            }
+        }
+
+        // Need to create new pipeline - this requires writing constants
+        {
+            let mut current_config = CURRENT_CONSTANTS_CONFIG.lock().unwrap();
+            let config_key = (config.num_limbs, config.log_limb_size);
+
+            // Only write constants if they've changed
+            if current_config.as_ref() != Some(&config_key) {
+                let constants = get_or_calc_constants(config.num_limbs, config.log_limb_size);
+                write_constants(
+                    get_shader_dir().to_str().unwrap(),
+                    1, // dummy input size
+                    config.num_limbs,
+                    config.log_limb_size,
+                    constants.n0,
+                    constants.nsafe,
+                );
+                *current_config = Some(config_key);
+
+                // Add small delay to ensure file system sync
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        // Compile shader
         let shader_path = format!(
             "{}/{}",
             get_shader_dir().to_str().unwrap(),
@@ -163,36 +201,24 @@ impl MetalHelper {
         let shader_dir = if parts.len() > 1 { parts[1] } else { "" };
         let shader_file = parts[0];
 
-        // Compile shader
         let library_path = compile_metal(shader_dir, shader_file);
         let library = self.device.new_library_with_file(library_path).unwrap();
         let kernel = library
             .get_function(config.kernel_name.as_str(), None)
             .unwrap();
 
-        // Create pipeline
-        let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-        pipeline_state_descriptor.set_compute_function(Some(&kernel));
-
         let pipeline_state = self
             .device
-            .new_compute_pipeline_state_with_function(
-                pipeline_state_descriptor.compute_function().unwrap(),
-            )
+            .new_compute_pipeline_state_with_function(&kernel)
             .unwrap();
 
-        encoder.set_compute_pipeline_state(&pipeline_state);
-
-        // Set buffers
-        for (i, buffer) in buffers.iter().enumerate() {
-            encoder.set_buffer(i as u64, Some(buffer), 0);
+        // Cache the pipeline
+        {
+            let mut cache = PIPELINE_CACHE.lock().unwrap();
+            cache.insert(cache_key, pipeline_state.clone());
         }
 
-        encoder.dispatch_thread_groups(*thread_group_count, *threads_per_threadgroup);
-        encoder.end_encoding();
-
-        command_buffer.commit();
-        command_buffer.wait_until_completed();
+        pipeline_state
     }
 
     /// Read results in Vec<u32> from a buffer
@@ -240,6 +266,18 @@ impl MetalHelper {
         command_buffer.commit();
         command_buffer.wait_until_completed();
     }
+
+    /// Clear all caches (useful for testing)
+    pub fn clear_all_caches() {
+        {
+            let mut cache = PIPELINE_CACHE.lock().unwrap();
+            cache.clear();
+        }
+        {
+            let mut config = CURRENT_CONSTANTS_CONFIG.lock().unwrap();
+            *config = None;
+        }
+    }
 }
 
 /// Represents a single shader operation for batch execution
@@ -279,4 +317,25 @@ fn calc_constants(num_limbs: usize, log_limb_size: u32) -> MSMConstants {
         nsafe,
         mu,
     }
+}
+
+/// Force constants to be written for a specific configuration (useful for tests)
+pub fn ensure_constants_for_config(num_limbs: usize, log_limb_size: u32) {
+    let mut current_config = CURRENT_CONSTANTS_CONFIG.lock().unwrap();
+    let config_key = (num_limbs, log_limb_size);
+
+    // Force write constants regardless of current state
+    let constants = get_or_calc_constants(num_limbs, log_limb_size);
+    write_constants(
+        get_shader_dir().to_str().unwrap(),
+        65536, // dummy input size for chunk size == 16
+        num_limbs,
+        log_limb_size,
+        constants.n0,
+        constants.nsafe,
+    );
+    *current_config = Some(config_key);
+
+    // Add small delay to ensure file system sync
+    std::thread::sleep(std::time::Duration::from_millis(10));
 }

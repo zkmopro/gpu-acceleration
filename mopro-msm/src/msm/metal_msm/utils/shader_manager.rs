@@ -63,13 +63,18 @@ impl ShaderType {
 /// Configuration for shader manager
 #[derive(Clone, Debug)]
 pub struct ShaderManagerConfig {
+    /// Size of the MSM input (the amount of pairs of points and scalars)
+    pub input_size: usize,
+    /// Number of log_limb_size bits limbs
     pub num_limbs: usize,
+    /// Word size in bits
     pub log_limb_size: u32,
 }
 
 impl Default for ShaderManagerConfig {
     fn default() -> Self {
         Self {
+            input_size: 1024,
             num_limbs: 16,
             log_limb_size: 16,
         }
@@ -102,6 +107,7 @@ impl ShaderManager {
         // Pre-write constants to avoid doing it on every shader execution
         write_constants(
             get_shader_dir().to_str().unwrap(),
+            config.input_size,
             config.num_limbs,
             config.log_limb_size,
             constants.n0,
@@ -253,6 +259,7 @@ impl ShaderManager {
             // Re-write constants
             write_constants(
                 get_shader_dir().to_str().unwrap(),
+                self.config.input_size,
                 self.config.num_limbs,
                 self.config.log_limb_size,
                 self.constants.n0,
@@ -273,45 +280,6 @@ impl ShaderManager {
     }
 }
 
-/// Builder pattern for creating shader manager with custom configuration
-pub struct ShaderManagerBuilder {
-    num_limbs: Option<usize>,
-    log_limb_size: Option<u32>,
-}
-
-impl Default for ShaderManagerBuilder {
-    fn default() -> Self {
-        Self {
-            num_limbs: None,
-            log_limb_size: None,
-        }
-    }
-}
-
-impl ShaderManagerBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn num_limbs(mut self, num_limbs: usize) -> Self {
-        self.num_limbs = Some(num_limbs);
-        self
-    }
-
-    pub fn log_limb_size(mut self, log_limb_size: u32) -> Self {
-        self.log_limb_size = Some(log_limb_size);
-        self
-    }
-
-    pub fn build(self) -> Result<ShaderManager, Box<dyn std::error::Error>> {
-        let config = ShaderManagerConfig {
-            num_limbs: self.num_limbs.unwrap_or(16),
-            log_limb_size: self.log_limb_size.unwrap_or(16),
-        };
-        ShaderManager::new(config)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,19 +288,7 @@ mod tests {
     #[serial_test::serial]
     fn test_shader_manager_creation() {
         let manager = ShaderManager::with_default_config().unwrap();
-        assert_eq!(manager.config().num_limbs, 16);
-        assert_eq!(manager.config().log_limb_size, 16);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_shader_manager_builder() {
-        let manager = ShaderManagerBuilder::new()
-            .num_limbs(16)
-            .log_limb_size(16)
-            .build()
-            .unwrap();
-
+        assert_eq!(manager.config().input_size, 1024);
         assert_eq!(manager.config().num_limbs, 16);
         assert_eq!(manager.config().log_limb_size, 16);
     }

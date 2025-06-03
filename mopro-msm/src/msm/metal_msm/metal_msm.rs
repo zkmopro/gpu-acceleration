@@ -28,11 +28,12 @@ impl Default for MetalMSMConfig {
     }
 }
 
-impl From<MetalMSMConfig> for ShaderManagerConfig {
-    fn from(config: MetalMSMConfig) -> Self {
-        Self {
-            num_limbs: config.num_limbs,
-            log_limb_size: config.log_limb_size,
+impl MetalMSMConfig {
+    fn to_shader_config(&self, input_size: usize) -> ShaderManagerConfig {
+        ShaderManagerConfig {
+            input_size,
+            num_limbs: self.num_limbs,
+            log_limb_size: self.log_limb_size,
         }
     }
 }
@@ -44,8 +45,8 @@ pub struct MetalMSMPipeline {
 }
 
 impl MetalMSMPipeline {
-    fn new(config: MetalMSMConfig) -> Result<Self, Box<dyn Error>> {
-        let shader_config: ShaderManagerConfig = config.clone().into();
+    fn new(config: MetalMSMConfig, input_size: usize) -> Result<Self, Box<dyn Error>> {
+        let shader_config = config.to_shader_config(input_size);
         let shader_manager = ShaderManager::new(shader_config)?;
 
         Ok(Self {
@@ -54,15 +55,17 @@ impl MetalMSMPipeline {
         })
     }
 
-    fn with_default_config() -> Result<Self, Box<dyn Error>> {
-        Self::new(MetalMSMConfig::default())
+    fn with_default_config(input_size: usize) -> Result<Self, Box<dyn Error>> {
+        Self::new(MetalMSMConfig::default(), input_size)
     }
 
     /// Execute the complete MSM pipeline on GPU
     fn execute(&self, bases: &[Affine], scalars: &[ScalarField]) -> Result<G, Box<dyn Error>> {
         let input_size = bases.len();
-        let num_subtasks = 256 / self.config.log_limb_size as usize;
-        let num_columns = 1 << self.config.log_limb_size;
+        let chunk_size = if input_size >= 65536 { 16 } else { 4 };
+
+        let num_columns = 1 << chunk_size;
+        let num_subtasks = (256f64 / chunk_size as f64).ceil() as usize;
 
         // Stage 0: Pack inputs
         let metal_config = MetalConfig {
@@ -624,18 +627,25 @@ pub fn metal_variable_base_msm(
     bases: &[ark_bn254::G1Affine],
     scalars: &[ark_bn254::Fr],
 ) -> Result<ark_bn254::G1Projective, Box<dyn Error>> {
-    // Handle empty input case
+    // Avoid empty input case
     if bases.is_empty() || scalars.is_empty() {
         return Err("Empty input".into());
     }
 
-    // Ensure bases and scalars have the same length
-    if bases.len() != scalars.len() {
-        return Err("Bases and scalars must have the same length".into());
-    }
+    // Align input length
+    if bases.len() == scalars.len() {
+        // Lengths are equal, use arrays directly
+        let pipeline = MetalMSMPipeline::with_default_config(bases.len())?;
+        pipeline.execute(bases, scalars)
+    } else {
+        // Align input length
+        let min_len = std::cmp::min(bases.len(), scalars.len());
+        let aligned_bases = &bases[..min_len];
+        let aligned_scalars = &scalars[..min_len];
 
-    let pipeline = MetalMSMPipeline::with_default_config()?;
-    pipeline.execute(bases, scalars)
+        let pipeline = MetalMSMPipeline::with_default_config(min_len)?;
+        pipeline.execute(aligned_bases, aligned_scalars)
+    }
 }
 
 /// Test utilities module - available for both unit tests and integration tests
@@ -681,7 +691,7 @@ mod tests {
     use std::time::Instant;
 
     #[test]
-    fn test_metal_msm_pipeline() {
+    fn a_test_metal_msm_pipeline() {
         let log_input_size = 20;
         let input_size = 1 << log_input_size;
 

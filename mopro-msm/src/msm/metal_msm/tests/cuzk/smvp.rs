@@ -117,6 +117,10 @@ fn smvp_gpu(
 #[test]
 #[serial_test::serial]
 fn test_smvp() {
+    // Ensure we start with the correct constants configuration
+    use crate::msm::metal_msm::utils::metal_wrapper::ensure_constants_for_config;
+    ensure_constants_for_config(16, 16);
+
     let log_limb_size: u32 = 16;
     let num_limbs: usize = 16;
 

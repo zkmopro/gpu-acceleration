@@ -14,6 +14,10 @@ fn test_point_coords_conversion() {
     let log_limb_size = 16;
     let num_limbs = 16;
 
+    // Ensure we start with the correct constants configuration
+    use crate::msm::metal_msm::utils::metal_wrapper::ensure_constants_for_config;
+    ensure_constants_for_config(num_limbs, log_limb_size);
+
     let config = MetalConfig {
         log_limb_size,
         num_limbs,
@@ -110,6 +114,10 @@ fn test_scalar_decomposition() {
     let chunk_size = 16;
     let num_subtasks = (256f32 / chunk_size as f32).ceil() as usize;
     let num_columns = 1 << chunk_size; // 2^chunk_size
+
+    // Ensure we start with the correct constants configuration
+    use crate::msm::metal_msm::utils::metal_wrapper::ensure_constants_for_config;
+    ensure_constants_for_config(num_limbs, log_limb_size);
 
     let config = MetalConfig {
         log_limb_size,
