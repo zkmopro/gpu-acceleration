@@ -51,14 +51,21 @@ fn compile_shaders() -> std::io::Result<()> {
 
     // Compile combined source to AIR
     let target = env::var("TARGET").unwrap_or_default();
-    let sdk = if target.contains("apple-ios") { "iphoneos" } else { "macosx" };
+    let sdk = if target.contains("apple-ios") {
+        "iphoneos"
+    } else {
+        "macosx"
+    };
     let air = shader_out_dir.join("msm.air");
     let status = Command::new("xcrun")
         .args(&[
-            "-sdk", sdk,
-            "metal", "-c",
+            "-sdk",
+            sdk,
+            "metal",
+            "-c",
             combined.to_str().unwrap(),
-            "-o", air.to_str().unwrap(),
+            "-o",
+            air.to_str().unwrap(),
         ])
         .status()
         .expect("Failed to invoke metal");
@@ -72,10 +79,12 @@ fn compile_shaders() -> std::io::Result<()> {
     let msm_lib = shader_out_dir.join("msm.metallib");
     let status = Command::new("xcrun")
         .args(&[
-            "-sdk", sdk,
+            "-sdk",
+            sdk,
             "metallib",
             air_path,
-            "-o", msm_lib.to_str().unwrap(),
+            "-o",
+            msm_lib.to_str().unwrap(),
         ])
         .status()
         .expect("Failed to invoke metallib");
