@@ -5,8 +5,8 @@ using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
-    constant os_log logger_kernel(/*subsystem=*/"smvp", /*category=*/"metal");
-    #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
+    constant os_log smvp_logger_kernel(/*subsystem=*/"smvp", /*category=*/"metal");
+    #define LOG_DEBUG(...) smvp_logger_kernel.log_debug(__VA_ARGS__)
 #else
     #define LOG_DEBUG(...) ((void)0)
 #endif

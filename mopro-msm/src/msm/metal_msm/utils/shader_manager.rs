@@ -1,5 +1,5 @@
 use crate::msm::metal_msm::host::gpu::get_default_device;
-use crate::msm::metal_msm::host::shader::{compile_metal, get_shader_dir, write_constants};
+use crate::msm::metal_msm::host::shader::{get_shader_dir, write_constants};
 use crate::msm::metal_msm::utils::metal_wrapper::{
     get_or_calc_constants, MSMConstants, MetalConfig,
 };
@@ -8,6 +8,9 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+// Include the single precompiled MSM metallib
+include!(concat!(env!("OUT_DIR"), "/built_shaders.rs"));
 
 /// Cache of compiled pipeline states
 static PIPELINE_CACHE: Lazy<Mutex<HashMap<String, ComputePipelineState>>> =
@@ -175,20 +178,9 @@ impl ShaderManager {
             }
         }
 
-        // Compile shader
-        let shader_path = format!(
-            "{}/{}",
-            get_shader_dir().to_str().unwrap(),
-            config.shader_file
-        );
-        let parts: Vec<&str> = shader_path.rsplitn(2, '/').collect();
-        let shader_dir = if parts.len() > 1 { parts[1] } else { "" };
-        let shader_file = parts[0];
-
-        let library_path = compile_metal(shader_dir, shader_file);
-        let library = self
-            .device
-            .new_library_with_file(library_path)
+        // Load the single embedded MSM metallib
+        let library = self.device
+            .new_library_with_data(MSM_METALLIB)
             .map_err(|e| format!("Failed to create library: {:?}", e))?;
 
         let kernel = library

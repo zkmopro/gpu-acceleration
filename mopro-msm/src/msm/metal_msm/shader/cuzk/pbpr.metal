@@ -5,8 +5,8 @@ using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
-    constant os_log logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
-    #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
+    constant os_log pbpr_logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
+    #define LOG_DEBUG(...) pbpr_logger_kernel.log_debug(__VA_ARGS__)
 #else
     #define LOG_DEBUG(...) ((void)0)
 #endif
@@ -45,9 +45,10 @@ kernel void bpr_stage_1(
 
     const uint subtask_idx = params[0];
     const uint num_columns = params[1];
-    const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation (must be power of 2).
+    const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation
 
     const uint num_buckets_per_subtask = num_columns / 2u;
+    const uint total_buckets = num_buckets_per_subtask * num_subtasks_per_bpr;
 
     // Number of buckets to reduce per thread.
     const uint buckets_per_thread = num_buckets_per_subtask / num_threads_per_subtask;
@@ -59,6 +60,8 @@ kernel void bpr_stage_1(
     if (thread_id % num_threads_per_subtask != 0u) {
         idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread + offset;
     }
+    // guard bucket bounds
+    if (idx >= total_buckets) { return; }
 
     Jacobian m = {
         .x = bucket_sum_x[idx],
@@ -86,6 +89,12 @@ kernel void bpr_stage_1(
     bucket_sum_z[idx] = m.z;
 
     uint g_rw_idx = (subtask_idx / num_subtasks_per_bpr) * (num_threads_per_subtask * num_subtasks_per_bpr) + thread_id;
+    // guard write into g_points buffers
+    if (g_rw_idx < num_threads_per_subtask * num_subtasks_per_bpr) {
+        g_points_x[g_rw_idx] = g.x;
+        g_points_y[g_rw_idx] = g.y;
+        g_points_z[g_rw_idx] = g.z;
+    }
     g_points_x[g_rw_idx] = g.x;
     g_points_y[g_rw_idx] = g.y;
     g_points_z[g_rw_idx] = g.z;
