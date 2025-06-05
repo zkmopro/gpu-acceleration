@@ -38,7 +38,7 @@ fn run_bigint_add_test(a: &BigInt<4>, b: &BigInt<4>, expected: &BigInt<4>) {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "bigint/bigint_add_wide.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_bigint_add_wide".to_string(),
     };
 
     let mut helper = MetalHelper::new();

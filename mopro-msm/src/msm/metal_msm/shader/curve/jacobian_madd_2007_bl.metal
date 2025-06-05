@@ -5,7 +5,7 @@ using namespace metal;
 #include <metal_math>
 #include "jacobian.metal"
 
-kernel void run(
+kernel void test_jacobian_madd_2007_bl(
     device BigInt* a_xr [[ buffer(0) ]],
     device BigInt* a_yr [[ buffer(1) ]],
     device BigInt* a_zr [[ buffer(2) ]],

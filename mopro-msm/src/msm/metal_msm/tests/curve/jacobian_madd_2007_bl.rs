@@ -18,7 +18,7 @@ pub fn test_jacobian_madd_2007_bl() {
         log_limb_size,
         num_limbs,
         shader_file: "curve/jacobian_madd_2007_bl.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_jacobian_madd_2007_bl".to_string(),
     };
 
     let mut helper = MetalHelper::new();

@@ -5,7 +5,7 @@ using namespace metal;
 #include <metal_math>
 #include "mont.metal"
 
-kernel void run(
+kernel void test_mont_mul_modified(
     device BigInt* lhs [[ buffer(0) ]],
     device BigInt* rhs [[ buffer(1) ]],
     device BigInt* result [[ buffer(2) ]],

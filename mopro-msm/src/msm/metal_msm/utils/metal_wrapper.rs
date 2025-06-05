@@ -145,7 +145,6 @@ impl MetalHelper {
         let encoder =
             command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
 
-
         // Load precompiled Metal library and create pipeline
         let library = self.device.new_library_with_data(MSM_METALLIB).unwrap();
         let kernel = library

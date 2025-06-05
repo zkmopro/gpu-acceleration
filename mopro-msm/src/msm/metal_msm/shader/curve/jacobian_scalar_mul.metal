@@ -3,7 +3,7 @@ using namespace metal;
 #include <metal_math>
 #include "jacobian.metal"
 
-kernel void run(
+kernel void test_jacobian_scalar_mul(
     device Jacobian& a [[ buffer(0) ]],
     device uint* scalar [[ buffer(1) ]],
     device Jacobian& result [[ buffer(2) ]],

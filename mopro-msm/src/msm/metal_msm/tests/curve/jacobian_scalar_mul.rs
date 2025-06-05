@@ -7,7 +7,7 @@ use rand::{self, Rng};
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 use crate::msm::metal_msm::utils::metal_wrapper::*;
 
-fn jacobian_scalar_mul_kernel(point: G, scalar: u32, name: &str) -> G {
+fn jacobian_scalar_mul_kernel(point: G, scalar: u32) -> G {
     let log_limb_size = 16;
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
@@ -15,8 +15,8 @@ fn jacobian_scalar_mul_kernel(point: G, scalar: u32, name: &str) -> G {
     let config = MetalConfig {
         log_limb_size,
         num_limbs,
-        shader_file: format!("curve/{}.metal", name),
-        kernel_name: "run".to_string(),
+        shader_file: format!("curve/jacobian_scalar_mul.metal"),
+        kernel_name: "test_jacobian_scalar_mul".to_string(),
     };
 
     let mut helper = MetalHelper::new();
@@ -100,7 +100,7 @@ pub fn test_jacobian_scalar_mul() {
     let base_point = GAffine::generator().into_group();
     let scalar: u32 = 100;
     let expected = base_point * ScalarField::from(scalar as u64);
-    let result = jacobian_scalar_mul_kernel(base_point, scalar, "jacobian_scalar_mul");
+    let result = jacobian_scalar_mul_kernel(base_point, scalar);
     assert!(expected == result);
 }
 
@@ -116,6 +116,6 @@ pub fn test_jacobian_scalar_mul_random() {
     let rand_scalar_field = ScalarField::from(rand_scalar);
 
     let expected = point * rand_scalar_field;
-    let result = jacobian_scalar_mul_kernel(point, rand_scalar, "jacobian_scalar_mul");
+    let result = jacobian_scalar_mul_kernel(point, rand_scalar);
     assert!(expected == result);
 }
