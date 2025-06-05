@@ -1,116 +1,117 @@
-use std::{env, path::Path, process::Command};
+use std::env;
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
-fn main() {
-    compile_shaders();
+fn main() -> std::io::Result<()> {
+    compile_shaders()?;
+    Ok(())
 }
 
-fn compile_shaders() {
-    let shader_dir = "src/msm/metal/shader/";
-    let out_dir = env::var("OUT_DIR").unwrap();
+fn compile_shaders() -> std::io::Result<()> {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let shader_root = manifest_dir
+        .join("src")
+        .join("msm")
+        .join("metal_msm")
+        .join("shader")
+        .join("cuzk");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let shader_out_dir = out_dir.join("shaders");
+    fs::create_dir_all(&shader_out_dir)?;
 
-    // List your Metal shaders here.
-    let shaders = vec!["all.metal"];
+    // Gather all .metal under /shader/cuzk
+    let mut metal_paths = Vec::new();
+    visit_dirs(&shader_root, &mut metal_paths)?;
+    // Filter only the desired kernels
+    metal_paths.retain(|path| {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .map(|name| {
+                name.starts_with("convert_point")
+                    || name.starts_with("barrett_reduction")
+                    || name.starts_with("pbpr")
+                    || name.starts_with("smvp")
+                    || name.starts_with("transpose")
+            })
+            .unwrap_or(false)
+    });
 
-    let shaders_to_check = vec!["all.metal", "msm.h.metal"];
+    // Combine selected kernels into one .metal file
+    let combined = shader_out_dir.join("msm_combined.metal");
+    let mut combined_src = String::new();
+    combined_src.push_str("#include <metal_stdlib>\n#include <metal_math>\n");
+    for path in &metal_paths {
+        let inc = path.to_str().unwrap();
+        combined_src.push_str(&format!("#include \"{}\"\n", inc));
+        println!("cargo:rerun-if-changed={}", inc);
+    }
+    fs::write(&combined, &combined_src)?;
 
-    let mut air_files = vec![];
-
-    // Step 1: Compile every shader to AIR format
-    for shader in &shaders {
-        let shader_path = Path::new(shader_dir).join(shader);
-        let air_output = Path::new(&out_dir).join(format!("{}.air", shader));
-
-        let mut args = vec![
+    // Compile combined source to AIR
+    let target = env::var("TARGET").unwrap_or_default();
+    let sdk = if target.contains("apple-ios") {
+        "iphoneos"
+    } else {
+        "macosx"
+    };
+    let air = shader_out_dir.join("msm.air");
+    let status = Command::new("xcrun")
+        .args(&[
             "-sdk",
-            get_sdk(),
+            sdk,
             "metal",
             "-c",
-            shader_path.to_str().unwrap(),
+            combined.to_str().unwrap(),
             "-o",
-            air_output.to_str().unwrap(),
-        ];
-
-        if cfg!(feature = "profiling-release") {
-            args.push("-frecord-sources");
-        }
-
-        // Compile shader into .air files
-        let status = Command::new("xcrun")
-            .args(&args)
-            .status()
-            .expect("Shader compilation failed");
-
-        if !status.success() {
-            panic!("Shader compilation failed for {}", shader);
-        }
-
-        air_files.push(air_output);
-    }
-
-    // Step 2: Link all the .air files into a Metallib archive
-    let metallib_output = Path::new(&out_dir).join("msm.metallib");
-
-    let mut metallib_args = vec![
-        "-sdk",
-        get_sdk(),
-        "metal",
-        "-o",
-        metallib_output.to_str().unwrap(),
-    ];
-
-    if cfg!(feature = "profiling-release") {
-        metallib_args.push("-frecord-sources");
-    }
-
-    for air_file in &air_files {
-        metallib_args.push(air_file.to_str().unwrap());
-    }
-
-    let status = Command::new("xcrun")
-        .args(&metallib_args)
+            air.to_str().unwrap(),
+        ])
         .status()
-        .expect("Failed to link shaders into metallib");
-
+        .expect("Failed to invoke metal");
     if !status.success() {
-        panic!("Failed to link shaders into metallib");
+        panic!("Metal compile failed");
     }
+    // We now have single .air; proceed to link
+    let air_path = air.to_str().unwrap();
 
-    let symbols_args = vec![
-        "metal-dsymutil",
-        "-flat",
-        "-remove-source",
-        metallib_output.to_str().unwrap(),
-    ];
-
+    // Link AIR into msm.metallib
+    let msm_lib = shader_out_dir.join("msm.metallib");
     let status = Command::new("xcrun")
-        .args(&symbols_args)
+        .args(&[
+            "-sdk",
+            sdk,
+            "metallib",
+            air_path,
+            "-o",
+            msm_lib.to_str().unwrap(),
+        ])
         .status()
-        .expect("Failed to extract symbols");
-
+        .expect("Failed to invoke metallib");
     if !status.success() {
-        panic!("Failed to extract symbols");
+        panic!("Metallib linking failed");
     }
 
-    // Inform cargo to watch all shader files for changes
-    for shader in &shaders_to_check {
-        let shader_path = Path::new(shader_dir).join(shader);
-        println!("cargo:rerun-if-changed={}", shader_path.to_str().unwrap());
+    // Emit a single built_shaders.rs with embedded msm.metallib
+    let dest = out_dir.join("built_shaders.rs");
+    let mut f = fs::File::create(&dest)?;
+    writeln!(
+        f,
+        "pub const MSM_METALLIB: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/shaders/msm.metallib\"));"
+    )?;
+    Ok(())
+}
+
+fn visit_dirs(dir: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir)? {
+            let p = entry?.path();
+            if p.is_dir() {
+                visit_dirs(&p, paths)?;
+            } else if p.extension().and_then(|e| e.to_str()) == Some("metal") {
+                paths.push(p);
+            }
+        }
     }
-}
-
-#[cfg(feature = "macos")]
-fn get_sdk() -> &'static str {
-    "macosx"
-}
-
-#[cfg(not(feature = "macos"))]
-#[cfg(feature = "ios")]
-fn get_sdk() -> &'static str {
-    "iphoneos"
-}
-
-#[cfg(not(feature = "macos"))]
-#[cfg(not(feature = "ios"))]
-fn get_sdk() -> &'static str {
-    panic!("one of the features macos or ios needs to be enabled");
+    Ok(())
 }

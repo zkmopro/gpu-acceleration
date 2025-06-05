@@ -1,13 +1,15 @@
 use crate::msm::metal_msm::host::gpu::get_default_device;
-use crate::msm::metal_msm::host::shader::{compile_metal, get_shader_dir, write_constants};
+// no runtime codegen of shader constants
 use crate::msm::metal_msm::utils::metal_wrapper::{
     get_or_calc_constants, MSMConstants, MetalConfig,
 };
 use metal::*;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Mutex;
+
+// Include the single precompiled MSM metallib
+include!(concat!(env!("OUT_DIR"), "/built_shaders.rs"));
 
 /// Cache of compiled pipeline states
 static PIPELINE_CACHE: Lazy<Mutex<HashMap<String, ComputePipelineState>>> =
@@ -98,25 +100,36 @@ impl ShaderManager {
     pub fn new(config: ShaderManagerConfig) -> Result<Self, Box<dyn std::error::Error>> {
         let device = get_default_device();
         let constants = get_or_calc_constants(config.num_limbs, config.log_limb_size);
-
-        // Pre-write constants to avoid doing it on every shader execution
-        write_constants(
-            get_shader_dir().to_str().unwrap(),
-            config.num_limbs,
-            config.log_limb_size,
-            constants.n0,
-            constants.nsafe,
-        );
-
         let mut manager = Self {
             device,
             config: config.clone(),
             shaders: HashMap::new(),
             constants,
         };
-
-        // Pre-compile all shaders
-        manager.compile_all_shaders()?;
+        // Load precompiled library and build pipelines
+        let library = manager.device.new_library_with_data(MSM_METALLIB)?;
+        for shader_type in [
+            ShaderType::ConvertPointAndDecompose,
+            ShaderType::Transpose,
+            ShaderType::SMVP,
+            ShaderType::BPRStage1,
+            ShaderType::BPRStage2,
+        ] {
+            let conf =
+                shader_type.get_config(manager.config.num_limbs, manager.config.log_limb_size);
+            let kernel = library.get_function(&conf.kernel_name, None)?;
+            let ps = manager
+                .device
+                .new_compute_pipeline_state_with_function(&kernel)?;
+            manager.shaders.insert(
+                shader_type,
+                PrecompiledShader {
+                    pipeline_state: ps,
+                    config: conf,
+                    constants: manager.constants.clone(),
+                },
+            );
+        }
 
         Ok(manager)
     }
@@ -124,98 +137,6 @@ impl ShaderManager {
     /// Create a shader manager with default configuration
     pub fn with_default_config() -> Result<Self, Box<dyn std::error::Error>> {
         Self::new(ShaderManagerConfig::default())
-    }
-
-    /// Get the shader directory path (useful for debugging and external tools)
-    pub fn get_shader_directory() -> PathBuf {
-        get_shader_dir()
-    }
-
-    /// Pre-compile all shaders used in the MSM pipeline
-    fn compile_all_shaders(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let shader_types = vec![
-            ShaderType::ConvertPointAndDecompose,
-            ShaderType::Transpose,
-            ShaderType::SMVP,
-            ShaderType::BPRStage1,
-            ShaderType::BPRStage2,
-        ];
-
-        for shader_type in shader_types {
-            let precompiled = self.compile_shader(&shader_type)?;
-            self.shaders.insert(shader_type, precompiled);
-        }
-
-        Ok(())
-    }
-
-    /// Compile a single shader and return precompiled information
-    fn compile_shader(
-        &self,
-        shader_type: &ShaderType,
-    ) -> Result<PrecompiledShader, Box<dyn std::error::Error>> {
-        let config = shader_type.get_config(self.config.num_limbs, self.config.log_limb_size);
-        let cache_key = format!(
-            "{}_{}_{}_{}",
-            config.shader_file,
-            config.kernel_name,
-            self.config.num_limbs,
-            self.config.log_limb_size
-        );
-
-        // Check if already cached
-        {
-            let cache = PIPELINE_CACHE.lock().unwrap();
-            if let Some(pipeline_state) = cache.get(&cache_key) {
-                return Ok(PrecompiledShader {
-                    pipeline_state: pipeline_state.clone(),
-                    config,
-                    constants: self.constants.clone(),
-                });
-            }
-        }
-
-        // Compile shader
-        let shader_path = format!(
-            "{}/{}",
-            get_shader_dir().to_str().unwrap(),
-            config.shader_file
-        );
-        let parts: Vec<&str> = shader_path.rsplitn(2, '/').collect();
-        let shader_dir = if parts.len() > 1 { parts[1] } else { "" };
-        let shader_file = parts[0];
-
-        let library_path = compile_metal(shader_dir, shader_file);
-        let library = self
-            .device
-            .new_library_with_file(library_path)
-            .map_err(|e| format!("Failed to create library: {:?}", e))?;
-
-        let kernel = library
-            .get_function(config.kernel_name.as_str(), None)
-            .map_err(|e| {
-                format!(
-                    "Failed to get kernel function {}: {:?}",
-                    config.kernel_name, e
-                )
-            })?;
-
-        let pipeline_state = self
-            .device
-            .new_compute_pipeline_state_with_function(&kernel)
-            .map_err(|e| format!("Failed to create pipeline state: {:?}", e))?;
-
-        // Cache the pipeline state
-        {
-            let mut cache = PIPELINE_CACHE.lock().unwrap();
-            cache.insert(cache_key, pipeline_state.clone());
-        }
-
-        Ok(PrecompiledShader {
-            pipeline_state,
-            config,
-            constants: self.constants.clone(),
-        })
     }
 
     /// Get a precompiled shader by type
@@ -236,34 +157,6 @@ impl ShaderManager {
     /// Get the constants
     pub fn constants(&self) -> &MSMConstants {
         &self.constants
-    }
-
-    /// Update configuration and recompile shaders if needed
-    pub fn update_config(
-        &mut self,
-        new_config: ShaderManagerConfig,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.config.num_limbs != new_config.num_limbs
-            || self.config.log_limb_size != new_config.log_limb_size
-        {
-            self.config = new_config;
-            self.constants =
-                get_or_calc_constants(self.config.num_limbs, self.config.log_limb_size);
-
-            // Re-write constants
-            write_constants(
-                get_shader_dir().to_str().unwrap(),
-                self.config.num_limbs,
-                self.config.log_limb_size,
-                self.constants.n0,
-                self.constants.nsafe,
-            );
-
-            // Re-compile all shaders
-            self.shaders.clear();
-            self.compile_all_shaders()?;
-        }
-        Ok(())
     }
 
     /// Clear the pipeline cache (useful for development/testing)
