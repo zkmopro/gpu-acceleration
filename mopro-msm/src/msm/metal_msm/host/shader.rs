@@ -21,8 +21,6 @@ use ark_ff::{BigInt, PrimeField, Zero};
 use num_bigint::BigUint;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
-use std::string::String;
 
 macro_rules! write_constant_array {
     ($data:expr, $name:expr, $values:expr, $size:expr) => {
@@ -34,108 +32,6 @@ macro_rules! write_constant_array {
             .join(",\n");
         $data += "\n};\n";
     };
-}
-
-/// Get the shader directory path using CARGO_MANIFEST_DIR for proper OS file location
-/// This function provides robust path resolution that works across different build environments
-pub fn get_shader_dir() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let shader_path = manifest_dir
-        .join("src")
-        .join("msm")
-        .join("metal_msm")
-        .join("shader");
-
-    // Verify the path exists, if not try alternative locations
-    if shader_path.exists() {
-        shader_path
-    } else {
-        // Fallback: try relative path from workspace root
-        let workspace_shader_path = manifest_dir
-            .parent() // go up one level from mopro-msm to workspace root
-            .unwrap_or(&manifest_dir)
-            .join("mopro-msm")
-            .join("src")
-            .join("msm")
-            .join("metal_msm")
-            .join("shader");
-
-        if workspace_shader_path.exists() {
-            workspace_shader_path
-        } else {
-            // Final fallback: use the original path and let error handling take care of it
-            shader_path
-        }
-    }
-}
-
-pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -> String {
-    let input_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(path_from_cargo_manifest_dir)
-        .join(input_filename);
-    let c = input_path.clone().into_os_string().into_string().unwrap();
-
-    let lib = input_path.clone().into_os_string().into_string().unwrap();
-    let lib = format!("{}.lib", lib);
-
-    let exe = if cfg!(target_os = "ios") {
-        Command::new("xcrun")
-            .args([
-                "-sdk",
-                "iphoneos",
-                "metal",
-                "-std=metal3.2",
-                "-target",
-                "air64-apple-ios18.0",
-                "-fmetal-enable-logging",
-                "-o",
-                lib.as_str(),
-                c.as_str(),
-            ])
-            .output()
-            .expect("failed to compile")
-    } else if cfg!(target_os = "macos") {
-        let macos_version = std::process::Command::new("sw_vers")
-            .args(["-productVersion"])
-            .output()
-            .ok()
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|version| {
-                version
-                    .trim()
-                    .split('.')
-                    .next()
-                    .and_then(|major| major.parse::<u32>().ok())
-            })
-            .unwrap_or(0);
-
-        let mut args = vec!["-sdk", "macosx", "metal"];
-
-        // Only specify Metal 3.2 for metal logging if macOS version is 15.0 or higher
-        if macos_version >= 15 {
-            args.extend([
-                "-std=metal3.2",
-                "-target",
-                "air64-apple-macos15.0",
-                "-fmetal-enable-logging",
-            ]);
-        }
-
-        args.extend(["-o", lib.as_str(), c.as_str()]);
-
-        Command::new("xcrun")
-            .args(args)
-            .output()
-            .expect("failed to compile")
-    } else {
-        panic!("Unsupported architecture");
-    };
-
-    if exe.stderr.len() != 0 {
-        panic!("{}", String::from_utf8(exe.stderr).unwrap());
-    }
-
-    lib
 }
 
 pub fn write_constants(
@@ -292,16 +188,6 @@ pub fn write_constants(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-
-    #[test]
-    #[serial_test::serial]
-    pub fn test_compile() {
-        let lib_filepath = compile_metal(
-            "../mopro-msm/src/msm/metal_msm/shader",
-            "bigint/bigint_add_unsafe.metal",
-        );
-        println!("{}", lib_filepath);
-    }
 
     #[test]
     #[serial_test::serial]

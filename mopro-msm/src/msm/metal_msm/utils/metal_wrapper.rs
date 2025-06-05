@@ -1,7 +1,7 @@
 use crate::msm::metal_msm::host::gpu::{
     create_buffer, create_empty_buffer, get_default_device, read_buffer,
 };
-use crate::msm::metal_msm::host::shader::{compile_metal, get_shader_dir, write_constants};
+// no runtime shader compilation, drop constants generation here
 use crate::msm::metal_msm::utils::barrett_params::calc_barrett_mu;
 use crate::msm::metal_msm::utils::mont_params::{calc_mont_radix, calc_nsafe, calc_rinv_and_n0};
 
@@ -13,6 +13,8 @@ use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;
+// Embed the precompiled Metal library
+include!(concat!(env!("OUT_DIR"), "/built_shaders.rs"));
 
 /// Cache of precomputed constants
 static CONSTANTS_CACHE: Lazy<Mutex<HashMap<(usize, u32), MSMConstants>>> =
@@ -143,42 +145,14 @@ impl MetalHelper {
         let encoder =
             command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
 
-        // Setup shader constants
-        let constants = get_or_calc_constants(config.num_limbs, config.log_limb_size);
-        write_constants(
-            get_shader_dir().to_str().unwrap(),
-            config.num_limbs,
-            config.log_limb_size,
-            constants.n0,
-            constants.nsafe,
-        );
-
-        // Prepare full shader path
-        let shader_path = format!(
-            "{}/{}",
-            get_shader_dir().to_str().unwrap(),
-            config.shader_file
-        );
-        let parts: Vec<&str> = shader_path.rsplitn(2, '/').collect();
-        let shader_dir = if parts.len() > 1 { parts[1] } else { "" };
-        let shader_file = parts[0];
-
-        // Compile shader
-        let library_path = compile_metal(shader_dir, shader_file);
-        let library = self.device.new_library_with_file(library_path).unwrap();
+        // Load precompiled Metal library and create pipeline
+        let library = self.device.new_library_with_data(MSM_METALLIB).unwrap();
         let kernel = library
             .get_function(config.kernel_name.as_str(), None)
             .unwrap();
-
-        // Create pipeline
-        let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-        pipeline_state_descriptor.set_compute_function(Some(&kernel));
-
         let pipeline_state = self
             .device
-            .new_compute_pipeline_state_with_function(
-                pipeline_state_descriptor.compute_function().unwrap(),
-            )
+            .new_compute_pipeline_state_with_function(&kernel)
             .unwrap();
 
         encoder.set_compute_pipeline_state(&pipeline_state);

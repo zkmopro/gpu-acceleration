@@ -18,7 +18,7 @@ pub fn test_jacobian_neg() {
         log_limb_size,
         num_limbs,
         shader_file: "curve/jacobian_neg.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_jacobian_neg".to_string(),
     };
 
     let mut helper = MetalHelper::new();

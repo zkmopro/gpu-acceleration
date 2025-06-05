@@ -3,7 +3,7 @@
 #include "barrett_reduction.metal"
 using namespace metal;
 
-kernel void run(
+kernel void test_field_mul(
     device BigIntWide* a    [[ buffer(0) ]],
     device BigIntWide* b    [[ buffer(1) ]],
     device BigInt* res      [[ buffer(2) ]],

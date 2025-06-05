@@ -17,7 +17,7 @@ pub fn test_barrett_reduce_with_mont_params() {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/kernel_barrett_reduction.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_barrett_reduction".to_string(),
     };
 
     let mut helper = MetalHelper::new();
@@ -70,7 +70,7 @@ pub fn test_field_mul_with_mont_params() {
         log_limb_size,
         num_limbs,
         shader_file: "cuzk/kernel_field_mul.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_field_mul".to_string(),
     };
 
     let mut helper = MetalHelper::new();

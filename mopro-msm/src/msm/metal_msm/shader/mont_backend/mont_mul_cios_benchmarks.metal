@@ -3,7 +3,7 @@ using namespace metal;
 #include <metal_math>
 #include "mont.metal"
 
-kernel void run(
+kernel void test_mont_mul_cios_benchmarks(
     device BigInt* lhs [[ buffer(0) ]],
     device BigInt* rhs [[ buffer(1) ]],
     device array<uint, 1>* cost [[ buffer(2) ]],

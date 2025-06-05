@@ -63,7 +63,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         log_limb_size,
         num_limbs,
         shader_file: shader_file.to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: format!("test_{}_benchmarks", shader_file),
     };
 
     // Get constants for this configuration

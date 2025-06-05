@@ -12,7 +12,7 @@ pub fn test_ff_sub() {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "field/ff_sub.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_ff_sub".to_string(),
     };
 
     let mut helper = MetalHelper::new();

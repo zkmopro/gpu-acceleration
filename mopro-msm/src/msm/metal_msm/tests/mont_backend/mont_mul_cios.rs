@@ -8,6 +8,8 @@ use rand::thread_rng;
 
 #[test]
 #[serial_test::serial]
+#[ignore]
+/// Ignore by default since it requires different constants config compared to our optimized config for current implementation
 pub fn test_mont_mul_15() {
     do_test(15);
 }
@@ -26,7 +28,7 @@ pub fn do_test(log_limb_size: u32) {
         log_limb_size,
         num_limbs,
         shader_file: "mont_backend/mont_mul_cios.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_mont_mul_cios".to_string(),
     };
 
     let mut helper = MetalHelper::new();

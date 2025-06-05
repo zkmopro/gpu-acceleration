@@ -18,7 +18,7 @@ pub fn test_jacobian_dbl_2009_l() {
         log_limb_size,
         num_limbs,
         shader_file: "curve/jacobian_dbl_2009_l.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_jacobian_dbl_2009_l".to_string(),
     };
 
     let mut helper = MetalHelper::new();

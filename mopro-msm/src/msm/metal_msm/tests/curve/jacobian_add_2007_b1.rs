@@ -16,7 +16,7 @@ fn jacobian_add_2007_bl_kernel(a: G, b: G, shader_name: &str) -> G {
         log_limb_size,
         num_limbs,
         shader_file: format!("curve/{}.metal", shader_name),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_jacobian_add_2007_bl".to_string(),
     };
 
     let mut helper = MetalHelper::new();

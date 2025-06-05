@@ -10,7 +10,7 @@ pub fn test_bigint_add_unsafe() {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "bigint/bigint_add_unsafe.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_bigint_add_unsafe".to_string(),
     };
 
     let mut helper = MetalHelper::new();
