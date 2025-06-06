@@ -544,6 +544,7 @@ impl<'a> PBPR<'a> {
                 subtask_chunk_idx as u32,
                 num_columns,
                 num_subtasks_per_bpr_1 as u32,
+                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
             ];
             let params_buf = helper.create_buffer(&params);
             let workgroup_size_buf = helper.create_buffer(&vec![b_workgroup_size as u32]);
@@ -579,6 +580,7 @@ impl<'a> PBPR<'a> {
                 subtask_chunk_idx as u32,
                 num_columns,
                 num_subtasks_per_bpr_2 as u32,
+                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
             ];
             let params_buf = helper.create_buffer(&params);
             let workgroup_size_buf = helper.create_buffer(&vec![b_workgroup_size as u32]);
