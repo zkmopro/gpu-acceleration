@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand, Zero};
 use num_bigint::BigUint;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 fn jacobian_add_2007_bl_kernel(a: G, b: G, shader_name: &str) -> G {
     let log_limb_size = 16;

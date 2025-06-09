@@ -6,7 +6,7 @@ use ark_ff::{
 use rayon::prelude::*;
 use std::convert::TryInto;
 
-use crate::msm::metal_msm::utils::metal_wrapper::MetalConfig;
+use crate::msm::metal_msm::host::metal_wrapper::MetalConfig;
 
 /// A trait that abstracts "to/from limbs" for *any* BigInteger type
 pub trait GenericLimbConversion {

@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::{One, UniformRand, Zero};
 use num_bigint::BigUint;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 /// Simple double-and-add helper that mirrors the Metal implementation.
 fn cpu_double_and_add(point: G, mut scalar: u32) -> G {

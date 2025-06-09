@@ -1,6 +1,6 @@
 use crate::msm::metal_msm::host::gpu::get_default_device;
 // no runtime codegen of shader constants
-use crate::msm::metal_msm::utils::metal_wrapper::{
+use crate::msm::metal_msm::host::metal_wrapper::{
     get_or_calc_constants, MSMConstants, MetalConfig,
 };
 use metal::*;
