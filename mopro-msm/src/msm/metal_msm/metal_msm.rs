@@ -4,6 +4,7 @@ use crate::msm::metal_msm::utils::limbs_conversion::{
     pack_affine_and_scalars, GenericLimbConversion,
 };
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
+use crate::msm::metal_msm::utils::window_size_optimizer::fetch_gpu_core_count_from_device;
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{vec::Vec, Zero};
@@ -39,6 +40,7 @@ impl From<MetalMSMConfig> for ShaderManagerConfig {
 pub struct MetalMSMPipeline {
     config: MetalMSMConfig,
     shader_manager: ShaderManager,
+    gpu_cores: u32,
 }
 
 impl MetalMSMPipeline {
@@ -46,14 +48,23 @@ impl MetalMSMPipeline {
         let shader_config: ShaderManagerConfig = config.clone().into();
         let shader_manager = ShaderManager::new(shader_config)?;
 
+        // Cache GPU core count once during initialization
+        let gpu_cores = fetch_gpu_core_count_from_device(shader_manager.device()) as u32;
+
         Ok(Self {
             config,
             shader_manager,
+            gpu_cores,
         })
     }
 
     fn with_default_config() -> Result<Self, Box<dyn Error>> {
         Self::new(MetalMSMConfig::default())
+    }
+
+    /// Get the cached GPU core count
+    pub fn gpu_cores(&self) -> u32 {
+        self.gpu_cores
     }
 
     /// Execute the complete MSM pipeline on GPU
