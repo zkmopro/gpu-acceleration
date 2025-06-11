@@ -5,8 +5,8 @@ use ark_std::{rand, UniformRand, Zero};
 use rand::Rng;
 use std::ops::Neg;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
 use num_bigint::BigUint;

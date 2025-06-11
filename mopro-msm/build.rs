@@ -99,6 +99,8 @@ fn compile_shaders() -> std::io::Result<()> {
             "-sdk",
             sdk,
             "metal",
+            "-std=metal3.2",
+            "-fmetal-enable-logging",
             "-c",
             combined.to_str().unwrap(),
             "-o",

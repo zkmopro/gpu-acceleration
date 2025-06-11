@@ -1,5 +1,5 @@
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::{Fq as BaseField, G1Projective as G};
 use ark_ec::Group;
