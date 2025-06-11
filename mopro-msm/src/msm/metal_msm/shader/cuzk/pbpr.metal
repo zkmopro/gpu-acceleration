@@ -37,9 +37,9 @@ kernel void bpr_stage_1(
     device BigInt* g_points_y           [[ buffer(4) ]],
     device BigInt* g_points_z           [[ buffer(5) ]],
     constant uint3& params              [[ buffer(6) ]],
-    constant uint& workgroup_size       [[ buffer(7) ]],
-    uint tid                            [[ thread_position_in_grid ]])
-{
+    uint tid                            [[ thread_position_in_grid ]],
+    uint workgroup_size                 [[ dispatch_threads_per_threadgroup ]]
+) {
     const uint thread_id = tid;
     const uint num_threads_per_subtask = workgroup_size;
 
@@ -71,7 +71,7 @@ kernel void bpr_stage_1(
     Jacobian g = m;
 
     for (uint i = 0; i < buckets_per_thread - 1u; i++) {
-        LOG_DEBUG("[bpr_stage_1] i: %u, thread_id: %u, num_threads_per_subtask: %u, buckets_per_thread: %u, offset: %u", i, thread_id, num_threads_per_subtask, buckets_per_thread, offset);
+        // LOG_DEBUG("[bpr_stage_1] i: %u, thread_id: %u, num_threads_per_subtask: %u, buckets_per_thread: %u, offset: %u", i, thread_id, num_threads_per_subtask, buckets_per_thread, offset);
 
         uint idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread - 1u - i;
         uint bi = offset + idx;
@@ -109,9 +109,9 @@ kernel void bpr_stage_2(
     device BigInt* g_points_y           [[ buffer(4) ]],
     device BigInt* g_points_z           [[ buffer(5) ]],
     constant uint3& params              [[ buffer(6) ]],
-    constant uint& workgroup_size       [[ buffer(7) ]],
-    uint tid                            [[ thread_position_in_grid ]])
-{
+    uint tid                            [[ thread_position_in_grid ]],
+    uint workgroup_size                 [[ dispatch_threads_per_threadgroup ]]
+) {
     const uint thread_id = tid;
     const uint num_threads_per_subtask = workgroup_size;
 

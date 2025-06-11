@@ -82,9 +82,6 @@ fn test_pbpr_stage1_and_stage2() {
     let g_points_y_buf = helper.create_buffer(&g_points_y_limbs);
     let g_points_z_buf = helper.create_buffer(&g_points_z_limbs);
 
-    let wg_size_vec = vec![workgroup_size];
-    let wg_size_buf = helper.create_buffer(&wg_size_vec);
-
     let thread_group_count = helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
     let thread_group_size = helper.create_thread_group_size(workgroup_size as u64, 1, 1);
 
@@ -121,7 +118,6 @@ fn test_pbpr_stage1_and_stage2() {
                 &g_points_y_buf,
                 &g_points_z_buf,
                 &params_buf,
-                &wg_size_buf,
             ],
             &thread_group_count,
             &thread_group_size,
@@ -144,7 +140,6 @@ fn test_pbpr_stage1_and_stage2() {
                 &g_points_y_buf,
                 &g_points_z_buf,
                 &params_buf,
-                &wg_size_buf,
             ],
             &thread_group_count,
             &thread_group_size,
