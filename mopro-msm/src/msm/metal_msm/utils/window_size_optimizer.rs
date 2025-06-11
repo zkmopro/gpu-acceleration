@@ -15,7 +15,9 @@ pub struct MsmParameters {
     /// Number of scalar bits (λ)
     pub scalar_bits_size: u32,
     /// Number of parallel threads (t)
-    pub t: u32,
+    pub t: usize,
+    /// SIMD width
+    pub simd_width: usize,
 }
 
 /// Cost calculation result
@@ -93,7 +95,7 @@ pub fn find_optimal_window_size_serial(params: &MsmParameters) -> CostResult {
 }
 
 /// Fetch GPU core count from existing Metal device (more efficient)
-pub fn fetch_gpu_core_count_from_device(device: &Device) -> u64 {
+pub fn fetch_gpu_core_count_and_simd_width_from_device(device: &Device) -> (usize, usize) {
     // fetch the number of parallel cores from the SMVP kernel as example
     let library = device.new_library_with_data(MSM_METALLIB).unwrap();
     let kernel = library.get_function("smvp", None).unwrap();
@@ -101,11 +103,11 @@ pub fn fetch_gpu_core_count_from_device(device: &Device) -> u64 {
         .new_compute_pipeline_state_with_function(&kernel)
         .expect("Failed to create pipeline");
 
-    let lanes = pipeline.thread_execution_width() as u64; // SIMD width per core
-    let max_threads = pipeline.max_total_threads_per_threadgroup() as u64; // Max threads per threadgroup
-    let estimated_cores = max_threads / lanes; // ≈ parallel cores
+    let simd_width = pipeline.thread_execution_width() as usize; // SIMD width per core
+    let max_threads = pipeline.max_total_threads_per_threadgroup() as usize; // Max threads per threadgroup
+    let estimated_cores = max_threads / simd_width; // ≈ parallel cores
 
-    estimated_cores
+    (estimated_cores, simd_width)
 }
 
 #[cfg(test)]
@@ -123,7 +125,7 @@ mod tests {
         println!("Time taken to fetch device: {:?}", start_time.elapsed());
 
         let start_time = Instant::now();
-        let gpu_core_count = fetch_gpu_core_count_from_device(&device);
+        let (gpu_core_count, simd_width) = fetch_gpu_core_count_and_simd_width_from_device(&device);
         println!(
             "Time taken to fetch GPU core count: {:?}",
             start_time.elapsed()
@@ -132,7 +134,8 @@ mod tests {
         let params = MsmParameters {
             n: msm_size,
             scalar_bits_size: ScalarField::MODULUS_BIT_SIZE as u32,
-            t: gpu_core_count as u32,
+            t: gpu_core_count as usize,
+            simd_width,
         };
 
         let start_time = Instant::now();
@@ -161,7 +164,7 @@ mod tests {
     #[ignore]
     fn test_optimal_window_size_range_2_10_to_2_26() {
         let device = Device::system_default().expect("No device found");
-        let gpu_core_count = fetch_gpu_core_count_from_device(&device);
+        let (gpu_core_count, simd_width) = fetch_gpu_core_count_and_simd_width_from_device(&device);
         let scalar_bits_size = ScalarField::MODULUS_BIT_SIZE as u32;
 
         println!("\n{:=<60}", "");
@@ -177,7 +180,8 @@ mod tests {
             let params = MsmParameters {
                 n: 1 << power, // 2^power
                 scalar_bits_size,
-                t: gpu_core_count as u32,
+                t: gpu_core_count,
+                simd_width,
             };
 
             let result = find_optimal_window_size(&params);
