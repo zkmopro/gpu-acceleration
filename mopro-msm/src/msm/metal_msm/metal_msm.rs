@@ -94,11 +94,11 @@ impl MetalMSMPipeline {
         } else {
             scale_factor = 1 << 4;
         }
-        // println!("scale_factor: {:?}", scale_factor);
+        println!("scale_factor: {:?}", scale_factor);
 
-        // println!("window_size: {:?}", window_size);
-        // println!("num_columns: {:?}", num_columns);
-        // println!("num_subtasks: {:?}", num_subtasks);
+        println!("window_size: {:?}", window_size);
+        println!("num_columns: {:?}", num_columns);
+        println!("num_subtasks: {:?}", num_subtasks);
 
         // Stage 0: Pack inputs
         let start = Instant::now();
@@ -110,29 +110,31 @@ impl MetalMSMPipeline {
         };
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
         let pack_time = start.elapsed();
-        // println!("pack_time: {:?}", pack_time);
+        println!("pack_time: {:?}", pack_time);
 
         // Stage 1: Convert Point & Scalar Decomposition
         let start = Instant::now();
         let stage1 = ConvertPointAndScalarDecompose::new(&self.shader_manager);
-        let mut c_workgroup_size = self.simd_width * scale_factor;
-        let mut c_num_x_workgroups = c_workgroup_size;
-        let mut c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        let c_workgroup_size = self.simd_width * scale_factor;
+        let c_num_x_workgroups = c_workgroup_size;
+        let c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
         let c_num_z_workgroups = 1;
 
-        // println!("c_workgroup_size: {:?}", c_workgroup_size);
-        // println!("c_num_x_workgroups: {:?}", c_num_x_workgroups);
-        // println!("c_num_y_workgroups: {:?}", c_num_y_workgroups);
-        // println!("c_num_z_workgroups: {:?}", c_num_z_workgroups);
-        // println!(
-        //     "total_threads: {:?}",
-        //     c_workgroup_size * c_num_x_workgroups * c_num_y_workgroups * c_num_z_workgroups
-        // );
+        println!("c_workgroup_size: {:?}", c_workgroup_size);
+        println!("c_num_x_workgroups: {:?}", c_num_x_workgroups);
+        println!("c_num_y_workgroups: {:?}", c_num_y_workgroups);
+        println!("c_num_z_workgroups: {:?}", c_num_z_workgroups);
+        println!(
+            "total_threads: {:?}",
+            c_workgroup_size * c_num_x_workgroups * c_num_y_workgroups * c_num_z_workgroups
+        );
 
         let (point_x, point_y, scalar_chunks) = stage1.execute(
             &coords,
             &scals,
             input_size,
+            window_size,
+            num_columns,
             num_subtasks,
             c_num_x_workgroups,
             c_num_y_workgroups,
@@ -140,7 +142,7 @@ impl MetalMSMPipeline {
             c_workgroup_size,
         )?;
         let stage1_time = start.elapsed();
-        // println!("stage1_time: {:?}", stage1_time);
+        println!("stage1_time: {:?}", stage1_time);
 
         // Stage 2: Transpose
         let start = Instant::now();
@@ -161,7 +163,7 @@ impl MetalMSMPipeline {
             t_workgroup_size,
         )?;
         let stage2_time = start.elapsed();
-        // println!("stage2_time: {:?}", stage2_time);
+        println!("stage2_time: {:?}", stage2_time);
 
         // Stage 3: Sparse Matrix-Vector Multiplication
         let start = Instant::now();
@@ -174,14 +176,14 @@ impl MetalMSMPipeline {
         let s_num_z_workgroups = num_subtasks / 2;
         let s_num_x_workgroups = input_size / s_workgroup_size / s_num_y_workgroups;
 
-        // println!("s_workgroup_size: {:?}", s_workgroup_size);
-        // println!("s_num_x_workgroups: {:?}", s_num_x_workgroups);
-        // println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
-        // println!("s_num_z_workgroups: {:?}", s_num_z_workgroups);
-        // println!(
-        //     "total_threads: {:?}",
-        //     s_workgroup_size * s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups
-        // );
+        println!("s_workgroup_size: {:?}", s_workgroup_size);
+        println!("s_num_x_workgroups: {:?}", s_num_x_workgroups);
+        println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
+        println!("s_num_z_workgroups: {:?}", s_num_z_workgroups);
+        println!(
+            "total_threads: {:?}",
+            s_workgroup_size * s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups
+        );
 
         let stage3 = SMVP::new(&self.shader_manager);
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
@@ -192,13 +194,12 @@ impl MetalMSMPipeline {
             input_size,
             num_subtasks,
             num_columns,
-            s_num_x_workgroups,
             s_num_y_workgroups,
             s_num_z_workgroups,
             s_workgroup_size,
         )?;
         let stage3_time = start.elapsed();
-        // println!("stage3_time: {:?}", stage3_time);
+        println!("stage3_time: {:?}", stage3_time);
 
         // Stage 4: Parallel Bucket Reduction
         let start = Instant::now();
@@ -218,12 +219,18 @@ impl MetalMSMPipeline {
         let b_2_num_y_workgroups = 1;
         let b_2_num_z_workgroups = 1;
 
-        // println!("== PBPR ==");
-        // println!("num_subtasks_per_bpr_1: {:?}", num_subtasks_per_bpr_1);
-        // println!("num_subtasks_per_bpr_2: {:?}", num_subtasks_per_bpr_2);
-        // println!("b_workgroup_size: {:?}", b_workgroup_size);
-        // println!("total threads for bpr1: {:?}", b_workgroup_size * b_num_x_workgroups * b_num_y_workgroups * b_num_z_workgroups);
-        // println!("total threads for bpr2: {:?}", b_workgroup_size * b_2_num_x_workgroups * b_2_num_y_workgroups * b_2_num_z_workgroups);
+        println!("== PBPR ==");
+        println!("num_subtasks_per_bpr_1: {:?}", num_subtasks_per_bpr_1);
+        println!("num_subtasks_per_bpr_2: {:?}", num_subtasks_per_bpr_2);
+        println!("b_workgroup_size: {:?}", b_workgroup_size);
+        println!(
+            "total threads for bpr1: {:?}",
+            b_workgroup_size * b_num_x_workgroups * b_num_y_workgroups * b_num_z_workgroups
+        );
+        println!(
+            "total threads for bpr2: {:?}",
+            b_workgroup_size * b_2_num_x_workgroups * b_2_num_y_workgroups * b_2_num_z_workgroups
+        );
 
         let stage4 = PBPR::new(&self.shader_manager);
         let (g_points_x, g_points_y, g_points_z) = stage4.execute(
@@ -243,7 +250,7 @@ impl MetalMSMPipeline {
             b_workgroup_size,
         )?;
         let stage4_time = start.elapsed();
-        // println!("stage4_time: {:?}", stage4_time);
+        println!("stage4_time: {:?}", stage4_time);
 
         // Stage 5: Final reduction and Horner's method
         let start = Instant::now();
@@ -256,7 +263,7 @@ impl MetalMSMPipeline {
             b_workgroup_size,
         )?;
         let stage5_time = start.elapsed();
-        // println!("stage5_time: {:?}", stage5_time);
+        println!("stage5_time: {:?}", stage5_time);
 
         Ok(result)
     }
@@ -336,6 +343,8 @@ impl<'a> ConvertPointAndScalarDecompose<'a> {
         coords: &[u32],
         scalars: &[u32],
         input_size: usize,
+        window_size: usize,
+        num_columns: usize,
         num_subtasks: usize,
         c_num_x_workgroups: usize,
         c_num_y_workgroups: usize,
@@ -357,8 +366,12 @@ impl<'a> ConvertPointAndScalarDecompose<'a> {
             helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
         let out_scalar_chunks = helper.create_empty_buffer(input_size * num_subtasks);
 
-        let input_size_buf = helper.create_buffer(&vec![input_size as u32]);
-        let num_y_workgroups_buf = helper.create_buffer(&vec![c_num_y_workgroups as u32]);
+        let params_buf = helper.create_buffer(&vec![
+            input_size as u32,
+            window_size as u32,
+            num_columns as u32,
+            num_subtasks as u32,
+        ]);
 
         let thread_group_count = helper.create_thread_group_size(
             c_num_x_workgroups as u64,
@@ -373,11 +386,10 @@ impl<'a> ConvertPointAndScalarDecompose<'a> {
             &[
                 &coords_buf,
                 &scalars_buf,
-                &input_size_buf,
                 &out_point_x,
                 &out_point_y,
                 &out_scalar_chunks,
-                &num_y_workgroups_buf,
+                &params_buf,
             ],
             &thread_group_count,
             &threads_per_threadgroup,
@@ -414,7 +426,7 @@ impl<'a> Transpose<'a> {
         scalar_chunks: &[u32],
         num_subtasks: usize,
         input_size: usize,
-        num_columns: u32,
+        num_columns: usize,
         t_num_x_workgroups: usize,
         t_num_y_workgroups: usize,
         t_num_z_workgroups: usize,
@@ -432,8 +444,7 @@ impl<'a> Transpose<'a> {
         let out_csc_val_idxs = helper.create_empty_buffer(scalar_chunks.len());
         let out_curr = helper.create_empty_buffer(num_subtasks * (num_columns as usize) * 4);
 
-        let params = vec![num_columns, input_size as u32];
-        let params_buf = helper.create_buffer(&params);
+        let params_buf = helper.create_buffer(&vec![num_columns as u32, input_size as u32]);
 
         let thread_group_count = helper.create_thread_group_size(
             t_num_x_workgroups as u64,
@@ -486,8 +497,7 @@ impl<'a> SMVP<'a> {
         point_y: &[u32],
         input_size: usize,
         num_subtasks: usize,
-        num_columns: u32,
-        s_num_x_workgroups: usize,
+        num_columns: usize,
         s_num_y_workgroups: usize,
         s_num_z_workgroups: usize,
         s_workgroup_size: usize,
@@ -514,37 +524,39 @@ impl<'a> SMVP<'a> {
         // Execute in chunks
         let num_subtask_chunk_size = 4u32;
         for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-            let params = vec![
-                input_size as u32,
-                s_num_y_workgroups as u32,
-                s_num_z_workgroups as u32,
-                offset,
-            ];
-            let params_buf = helper.create_buffer(&params);
-
             let remaining_subtasks = (num_subtasks as u32 - offset).min(num_subtask_chunk_size);
             let threads_this_chunk = (num_columns / 2) as u64 * remaining_subtasks as u64;
 
-            let adjusted_x_workgroups = threads_this_chunk
-                / s_workgroup_size as u64
-                / (s_num_y_workgroups * s_num_z_workgroups) as u64;
+            let adjusted_x_workgroups = std::cmp::max(
+                1,
+                threads_this_chunk
+                    / s_workgroup_size as u64
+                    / (s_num_y_workgroups * s_num_z_workgroups) as u64,
+            );
+
+            let params_buf = helper.create_buffer(&vec![
+                input_size as u32,
+                num_columns as u32,
+                num_subtasks as u32,
+                offset,
+            ]);
 
             let thread_group_count = helper.create_thread_group_size(
-                adjusted_x_workgroups as u64,
+                adjusted_x_workgroups,
                 s_num_y_workgroups as u64,
                 s_num_z_workgroups as u64,
             );
             let threads_per_threadgroup =
                 helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
 
-            // println!("== SMVP subtask chunk {} ==", offset);
-            // println!("adjusted_x_workgroups: {:?}", adjusted_x_workgroups);
-            // println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
-            // println!("s_num_z_workgroups: {:?}", s_num_z_workgroups);
-            // println!("s_workgroup_size: {:?}", s_workgroup_size);
-            // println!("total_threads: {:?}", threads_this_chunk);
-            // println!("threads_per_threadgroup: {:?}", threads_per_threadgroup);
-            // println!("thread_group_count: {:?}", thread_group_count);
+            println!("== SMVP subtask chunk {} ==", offset);
+            println!("adjusted_x_workgroups: {:?}", adjusted_x_workgroups);
+            println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
+            println!("s_num_z_workgroups: {:?}", s_num_z_workgroups);
+            println!("s_workgroup_size: {:?}", s_workgroup_size);
+            println!("total_threads: {:?}", threads_this_chunk);
+            println!("threads_per_threadgroup: {:?}", threads_per_threadgroup);
+            println!("thread_group_count: {:?}", thread_group_count);
 
             helper.execute_shader_with_pipeline(
                 &shader.pipeline_state,
@@ -589,7 +601,7 @@ impl<'a> PBPR<'a> {
         bucket_y: &[u32],
         bucket_z: &[u32],
         num_subtasks: usize,
-        num_columns: u32,
+        num_columns: usize,
         num_subtasks_per_bpr_1: usize,
         num_subtasks_per_bpr_2: usize,
         b_num_x_workgroups: usize,
@@ -624,7 +636,7 @@ impl<'a> PBPR<'a> {
         for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_1) {
             let params = vec![
                 subtask_chunk_idx as u32,
-                num_columns,
+                num_columns as u32,
                 num_subtasks_per_bpr_1 as u32,
                 0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
             ];
@@ -638,19 +650,19 @@ impl<'a> PBPR<'a> {
             let stage1_threads_per_threadgroup =
                 helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
-            // println!("== PBPR 1 subtask chunk {} ==", subtask_chunk_idx);
-            // println!("b_num_x_workgroups: {:?}", b_num_x_workgroups);
-            // println!("b_num_y_workgroups: {:?}", b_num_y_workgroups);
-            // println!("b_num_z_workgroups: {:?}", b_num_z_workgroups);
-            // println!("b_workgroup_size: {:?}", b_workgroup_size);
-            // println!(
-            //     "total_threads: {:?}",
-            //     b_num_x_workgroups * b_num_y_workgroups * b_num_z_workgroups * b_workgroup_size
-            // );
-            // println!(
-            //     "threads_per_threadgroup: {:?}",
-            //     stage1_threads_per_threadgroup
-            // );
+            println!("== PBPR 1 subtask chunk {} ==", subtask_chunk_idx);
+            println!("b_num_x_workgroups: {:?}", b_num_x_workgroups);
+            println!("b_num_y_workgroups: {:?}", b_num_y_workgroups);
+            println!("b_num_z_workgroups: {:?}", b_num_z_workgroups);
+            println!("b_workgroup_size: {:?}", b_workgroup_size);
+            println!(
+                "total_threads: {:?}",
+                b_num_x_workgroups * b_num_y_workgroups * b_num_z_workgroups * b_workgroup_size
+            );
+            println!(
+                "threads_per_threadgroup: {:?}",
+                stage1_threads_per_threadgroup
+            );
 
             helper.execute_shader_with_pipeline(
                 &stage1_shader.pipeline_state,
@@ -672,7 +684,7 @@ impl<'a> PBPR<'a> {
         for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_2) {
             let params = vec![
                 subtask_chunk_idx as u32,
-                num_columns,
+                num_columns as u32,
                 num_subtasks_per_bpr_2 as u32,
                 0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
             ];
@@ -686,22 +698,22 @@ impl<'a> PBPR<'a> {
             let stage2_threads_per_threadgroup =
                 helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
-            // println!("== PBPR 2 subtask chunk {} ==", subtask_chunk_idx);
-            // println!("b_2_num_x_workgroups: {:?}", b_2_num_x_workgroups);
-            // println!("b_2_num_y_workgroups: {:?}", b_2_num_y_workgroups);
-            // println!("b_2_num_z_workgroups: {:?}", b_2_num_z_workgroups);
-            // println!("b_workgroup_size: {:?}", b_workgroup_size);
-            // println!(
-            //     "total_threads: {:?}",
-            //     b_2_num_x_workgroups
-            //         * b_2_num_y_workgroups
-            //         * b_2_num_z_workgroups
-            //         * b_workgroup_size
-            // );
-            // println!(
-            //     "threads_per_threadgroup: {:?}",
-            //     stage2_threads_per_threadgroup
-            // );
+            println!("== PBPR 2 subtask chunk {} ==", subtask_chunk_idx);
+            println!("b_2_num_x_workgroups: {:?}", b_2_num_x_workgroups);
+            println!("b_2_num_y_workgroups: {:?}", b_2_num_y_workgroups);
+            println!("b_2_num_z_workgroups: {:?}", b_2_num_z_workgroups);
+            println!("b_workgroup_size: {:?}", b_workgroup_size);
+            println!(
+                "total_threads: {:?}",
+                b_2_num_x_workgroups
+                    * b_2_num_y_workgroups
+                    * b_2_num_z_workgroups
+                    * b_workgroup_size
+            );
+            println!(
+                "threads_per_threadgroup: {:?}",
+                stage2_threads_per_threadgroup
+            );
 
             helper.execute_shader_with_pipeline(
                 &stage2_shader.pipeline_state,
@@ -793,28 +805,29 @@ mod tests {
 
     #[test]
     fn test_metal_msm_pipeline() {
-        let log_input_size = 23;
+        let log_input_size = 20;
         let input_size = 1 << log_input_size;
 
-        // println!("Generating {} elements", input_size);
+        println!("Generating {} elements", input_size);
         let start = Instant::now();
         let (bases, scalars) = test_utils::generate_random_bases_and_scalars(input_size);
-        // println!("Generated {} elements in {:?}", input_size, start.elapsed());
+        println!("Generated {} elements in {:?}", input_size, start.elapsed());
 
-        // println!("running metal_variable_base_msm");
+        println!("running metal_variable_base_msm");
         let start = Instant::now();
         let metal_msm_result = metal_variable_base_msm(&bases, &scalars).unwrap();
-        // println!("metal_variable_base_msm took {:?}", start.elapsed());
+        println!("metal_variable_base_msm took {:?}", start.elapsed());
 
-        // println!("running arkworks_msm");
+        println!("running arkworks_msm");
         let start = Instant::now();
         let arkworks_msm = G::msm(&bases, &scalars).unwrap();
-        // println!("arkworks_msm took {:?}", start.elapsed());
+        println!("arkworks_msm took {:?}", start.elapsed());
 
         assert_eq!(metal_msm_result, arkworks_msm);
     }
 
     #[test]
+    #[ignore]
     fn benchmark_metal_vs_arkworks_msm() {
         println!("\n=== MSM Benchmark: Metal vs Arkworks ===");
         println!(

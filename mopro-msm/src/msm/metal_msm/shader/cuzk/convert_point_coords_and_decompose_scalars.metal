@@ -14,18 +14,23 @@ using namespace metal;
 #endif
 
 kernel void convert_point_coords_and_decompose_scalars(
-    device const uint* coords           [[buffer(0)]],
-    device const uint* scalars          [[buffer(1)]],
-    constant uint& input_size           [[buffer(2)]],
-    device BigInt* point_x              [[buffer(3)]],
-    device BigInt* point_y              [[buffer(4)]],
-    device uint* chunks                 [[buffer(5)]],
-    device const uint* num_y_workgroups [[buffer(6)]],
-    uint3 gid                           [[thread_position_in_grid]]
+    device const uint* coords               [[ buffer(0) ]],
+    device const uint* scalars              [[ buffer(1) ]],
+    device BigInt* point_x                  [[ buffer(2) ]],
+    device BigInt* point_y                  [[ buffer(3) ]],
+    device uint* chunks                     [[ buffer(4) ]],
+    constant uint4& params                  [[ buffer(5) ]],
+    uint3 gid                               [[ thread_position_in_grid ]],
+    uint3 threadgroup_size                  [[ threadgroups_per_grid ]]
 ) {
+    const uint input_size = params[0];
+    const uint window_size = params[1];
+    const uint num_columns = params[2];
+    const uint num_subtask = params[3];
+
     uint gidx = gid.x;
     uint gidy = gid.y;
-    uint id   = gidx * (*num_y_workgroups) + gidy;
+    uint id   = gidx * threadgroup_size.y + gidy;
 
     // 1) Convert coords to BigInt in Montgomery form
     // We read 16 halfwords for x and 16 halfwords for y. 
@@ -82,38 +87,32 @@ kernel void convert_point_coords_and_decompose_scalars(
         scalar_bytes[15u - (i * 2u) - 1u] = hi;
     }
 
-    // Extract wNAF representation. each chunk is CHUNK_SIZE bits from the scalar.
-    uint chunks_arr[NUM_SUBTASKS];
-    for (uint i = 0; i < NUM_SUBTASKS - 1u; i++) {
-        chunks_arr[i] = extract_word_from_bytes_le(scalar_bytes, i, CHUNK_SIZE);
-    }
-
-    // The last chunk is special if (NUM_SUBTASKS * CHUNK_SIZE > 256)
-    chunks_arr[NUM_SUBTASKS - 1] =
-        scalar_bytes[0] >> (((NUM_SUBTASKS * CHUNK_SIZE - 256u) + 16u) - CHUNK_SIZE);
-
-    // 3) Signed wNAF in the range [−(l−1), (l−1)]
-    uint l = NUM_COLUMNS;
+    // Extract wNAF representation. each chunk is window_size bits from the scalar.
+    uint l = num_columns;
     uint s = l / 2u;
-
-    int signed_slices[NUM_SUBTASKS];
     uint carry = 0;
-    for (uint i = 0; i < NUM_SUBTASKS; i++) {
-        int slice_val = int(chunks_arr[i] + carry);
+
+    for (uint i = 0; i < num_subtask; i++) {
+        // Extract chunk on-demand
+        uint chunk_val;
+        if (i < num_subtask - 1u) {
+            chunk_val = extract_word_from_bytes_le(scalar_bytes, i, window_size);
+        } else {
+            // The last chunk is special
+            chunk_val = scalar_bytes[0] >> (((num_subtask * window_size - 256u) + 16u) - window_size);
+        }
+        
+        // Process signed wNAF directly
+        int slice_val = int(chunk_val + carry);
         if (slice_val >= int(s)) {
             slice_val = (int(l) - slice_val) * (-1);
             carry = 1u;
-        }
-        else {
+        } else {
             carry = 0u;
         }
-        signed_slices[i] = slice_val;
-    }
-
-    // Store final values into chunks
-    for (uint i = 0; i < NUM_SUBTASKS; i++) {
+        
+        // Store final value directly
         uint offset = i * input_size;
-        // shift negative slices by +s to keep them in [0, l) range
-        chunks[id + offset] = uint(signed_slices[i]) + s;
+        chunks[id + offset] = uint(slice_val) + s;
     }
 }

@@ -12,37 +12,37 @@ using namespace metal;
 #endif
 
 kernel void smvp(
-    device const uint*          row_ptr         [[ buffer(0) ]],
-    device const uint*          val_idx         [[ buffer(1) ]],
-    device const BigInt*        new_point_x     [[ buffer(2) ]],
-    device const BigInt*        new_point_y     [[ buffer(3) ]],
-    device BigInt*              bucket_x        [[ buffer(4) ]],
-    device BigInt*              bucket_y        [[ buffer(5) ]],
-    device BigInt*              bucket_z        [[ buffer(6) ]],
-    constant uint4&             params          [[ buffer(7) ]],
-    uint3                       tgid            [[threadgroup_position_in_grid]],
-    uint3                       tid             [[thread_position_in_threadgroup]],
-    uint3                       workgroup_size  [[ dispatch_threads_per_threadgroup ]]
+    device const uint*          row_ptr             [[ buffer(0) ]],
+    device const uint*          val_idx             [[ buffer(1) ]],
+    device const BigInt*        new_point_x         [[ buffer(2) ]],
+    device const BigInt*        new_point_y         [[ buffer(3) ]],
+    device BigInt*              bucket_x            [[ buffer(4) ]],
+    device BigInt*              bucket_y            [[ buffer(5) ]],
+    device BigInt*              bucket_z            [[ buffer(6) ]],
+    constant uint4&             params              [[ buffer(7) ]],
+    uint3                       tgid                [[ threadgroup_position_in_grid ]],
+    uint3                       tid                 [[ thread_position_in_threadgroup ]],
+    uint3                       workgroup_size      [[ dispatch_threads_per_threadgroup ]],
+    uint3                       threadgroup_size    [[ threadgroups_per_grid ]]
 ) {
     const uint input_size        = params[0];
-    const uint num_y_workgroups  = params[1];
-    const uint num_z_workgroups  = params[2];
+    const uint num_columns       = params[1];
+    const uint num_subtasks      = params[2];
     const uint subtask_offset    = params[3];
 
     const uint tgidx = tgid.x;
     const uint tgidy = tgid.y;
     const uint tgidz = tgid.z;
 
-    const uint group_id = (tgidx * num_y_workgroups + tgidy) * num_z_workgroups + tgidz;
+    const uint group_id = (tgidx * threadgroup_size.y + tgidy) * threadgroup_size.z + tgidz;
     const uint id = group_id * workgroup_size.x + tid.x;
-    
-    const uint num_columns = NUM_COLUMNS;
+
     const uint half_columns = num_columns / 2;
 
     const uint subtask_idx = id / half_columns;
 
     // Add bounds checking to prevent out-of-bounds access
-    if (subtask_idx + subtask_offset >= 16) { // num_subtasks = 16
+    if (subtask_idx + subtask_offset >= num_subtasks) {
         LOG_DEBUG("tgidx %u, tgidy %u, tgidz %u, tid.x %u, workgroup_size.x %u, group_id %u, id %u, subtask_idx %u, subtask_offset %u", tgidx, tgidy, tgidz, tid.x, workgroup_size.x, group_id, id, subtask_idx, subtask_offset);
         return;
     }
@@ -87,6 +87,13 @@ kernel void smvp(
 
         // Accumulate all the points for that bucket
         Jacobian sum = inf;
+
+        LOG_DEBUG("SMVP: row_begin %u, row_end %u, subtask_idx %u, subtask_offset %u", row_begin, row_end, subtask_idx, subtask_offset);
+        if (row_begin > row_end) {
+            LOG_DEBUG("SMVP: row_begin %u is greater than row_end %u", row_begin, row_end);
+            continue;
+        }
+
         for (uint k = row_begin; k < row_end; k++) {
             // Add bounds checking for val_idx access
             const uint val_idx_offset = (subtask_idx + subtask_offset) * input_size + k;
@@ -128,7 +135,7 @@ kernel void smvp(
         const uint bi = id + subtask_offset * half_columns;
         
         // Add bounds checking for bucket array access
-        const uint bucket_size = (num_columns / 2) * 16 * 4; // half_columns * num_limbs * num_subtasks
+        const uint bucket_size = half_columns * NUM_LIMBS * num_subtasks;
         if (bi >= bucket_size) {
             LOG_DEBUG("SMVP: Bucket index %u exceeds buffer size %u", bi, bucket_size);
             return;

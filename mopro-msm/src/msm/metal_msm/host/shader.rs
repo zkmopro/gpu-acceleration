@@ -47,11 +47,6 @@ pub fn write_constants(
     let num_limbs_wide = num_limbs + 1;
     let num_limbs_extra_wide = num_limbs * 2;
 
-    // MSM instance params
-    let chunk_size = 16;
-    let num_columns = 2u32.pow(chunk_size);
-    let num_subtasks = (256 as f32 / chunk_size as f32).ceil() as u32;
-
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
@@ -77,9 +72,6 @@ pub fn write_constants(
     data += format!("#define N0 {}\n", n0).as_str();
     data += format!("#define NSAFE {}\n", nsafe).as_str();
     data += format!("#define SLACK {}\n", slack).as_str();
-    data += format!("#define CHUNK_SIZE {}\n", chunk_size).as_str();
-    data += format!("#define NUM_COLUMNS {}\n", num_columns).as_str();
-    data += format!("#define NUM_SUBTASKS {}\n", num_subtasks).as_str();
 
     let mu_limbs = mu_in_ark.to_limbs(num_limbs, log_limb_size);
     write_constant_array!(data, "BARRETT_MU", mu_limbs, "NUM_LIMBS");
