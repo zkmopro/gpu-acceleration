@@ -25,27 +25,17 @@ kernel void smvp(
     uint3                       workgroup_size      [[ dispatch_threads_per_threadgroup ]],
     uint3                       threadgroup_size    [[ threadgroups_per_grid ]]
 ) {
+    const uint group_id = (tgid.x * threadgroup_size.y + tgid.y) * threadgroup_size.z + tgid.z;
+    const uint id = group_id * workgroup_size.x + tid.x;
+
     const uint input_size        = params[0];
     const uint num_columns       = params[1];
     const uint num_subtasks      = params[2];
     const uint subtask_offset    = params[3];
 
-    const uint tgidx = tgid.x;
-    const uint tgidy = tgid.y;
-    const uint tgidz = tgid.z;
-
-    const uint group_id = (tgidx * threadgroup_size.y + tgidy) * threadgroup_size.z + tgidz;
-    const uint id = group_id * workgroup_size.x + tid.x;
-
     const uint half_columns = num_columns / 2;
 
     const uint subtask_idx = id / half_columns;
-
-    // Add bounds checking to prevent out-of-bounds access
-    if (subtask_idx + subtask_offset >= num_subtasks) {
-        LOG_DEBUG("tgidx %u, tgidy %u, tgidz %u, tid.x %u, workgroup_size.x %u, group_id %u, id %u, subtask_idx %u, subtask_offset %u", tgidx, tgidy, tgidz, tid.x, workgroup_size.x, group_id, id, subtask_idx, subtask_offset);
-        return;
-    }
 
     Jacobian inf = get_bn254_zero_mont();
 
@@ -62,54 +52,16 @@ kernel void smvp(
             row_idx = 0;
         }
 
-        // Add bounds checking for row_ptr access
-        if (rp_offset + row_idx + 1 >= (16 * (num_columns + 1) * 4)) { // Total row_ptr buffer size
-            LOG_DEBUG("SMVP: row_ptr bounds exceeded at offset %u, row_idx %u", rp_offset, row_idx);
-            return;
-        }
-
         const uint row_begin = row_ptr[rp_offset + row_idx];
         const uint row_end = row_ptr[rp_offset + row_idx + 1];
-
-        // Add safety check to prevent infinite loops
-        if (row_end > input_size || row_begin > row_end) {
-            LOG_DEBUG("SMVP: Invalid row range [%u, %u) for subtask %u, offset %u", 
-                     row_begin, row_end, subtask_idx, subtask_offset);
-            continue; // Skip this bucket instead of hanging
-        }
-
-        // Add another safety check to prevent very large loops
-        if (row_end - row_begin > input_size / 2) {
-            LOG_DEBUG("SMVP: Suspiciously large bucket size %u for subtask %u", 
-                     row_end - row_begin, subtask_idx + subtask_offset);
-            continue; // Skip this bucket
-        }
 
         // Accumulate all the points for that bucket
         Jacobian sum = inf;
 
-        LOG_DEBUG("SMVP: row_begin %u, row_end %u, subtask_idx %u, subtask_offset %u", row_begin, row_end, subtask_idx, subtask_offset);
-        if (row_begin > row_end) {
-            LOG_DEBUG("SMVP: row_begin %u is greater than row_end %u", row_begin, row_end);
-            continue;
-        }
-
         for (uint k = row_begin; k < row_end; k++) {
-            // Add bounds checking for val_idx access
             const uint val_idx_offset = (subtask_idx + subtask_offset) * input_size + k;
-            if (val_idx_offset >= (16 * input_size)) { // Total val_idx buffer size
-                LOG_DEBUG("SMVP: val_idx bounds exceeded at offset %u", val_idx_offset);
-                break;
-            }
-            
             const uint idx = val_idx[val_idx_offset];
-            
-            // Add bounds checking for point array access
-            if (idx >= input_size) {
-                LOG_DEBUG("SMVP: Point index %u exceeds input_size %u", idx, input_size);
-                continue;
-            }
-            
+
             Jacobian b = {
                 .x = new_point_x[idx],
                 .y = new_point_y[idx],
@@ -135,12 +87,7 @@ kernel void smvp(
         const uint bi = id + subtask_offset * half_columns;
         
         // Add bounds checking for bucket array access
-        const uint bucket_size = half_columns * NUM_LIMBS * num_subtasks;
-        if (bi >= bucket_size) {
-            LOG_DEBUG("SMVP: Bucket index %u exceeds buffer size %u", bi, bucket_size);
-            return;
-        }
-        
+        const uint bucket_size = half_columns * NUM_LIMBS * num_subtasks;        
         if (bucket_idx > 0) {
             // If j == 1, add to the existing bucket at index `bi`.
             if (j == 1) {

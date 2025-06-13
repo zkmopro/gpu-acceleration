@@ -73,10 +73,6 @@ BigInt get_higher_with_slack(BigIntExtraWide a) {
 }
 
 BigInt barrett_reduce(BigIntExtraWide a) {
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        LOG_DEBUG_DUPL("res.limbs[%u] = %u", i, a.limbs[i]);
-    }
-
     BigInt p = MODULUS;
     BigInt mu = get_mu();
 
