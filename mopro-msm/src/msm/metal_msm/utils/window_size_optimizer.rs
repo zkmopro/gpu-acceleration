@@ -71,29 +71,6 @@ pub fn find_optimal_window_size(params: &MsmParameters) -> CostResult {
         })
 }
 
-/// Find the optimal window size for given MSM parameters
-///
-/// This function evaluates all feasible window sizes and returns the one
-/// with minimum computational cost.
-pub fn find_optimal_window_size_serial(params: &MsmParameters) -> CostResult {
-    let max_window_size = 30;
-    let mut best_result = CostResult {
-        window_size: 1,
-        cost: f64::INFINITY,
-    };
-
-    // Evaluate window sizes from 1 to max_window_size
-    for window_size in 1..=max_window_size {
-        let cost = calculate_cost(params, window_size);
-
-        if cost < best_result.cost {
-            best_result = CostResult { window_size, cost };
-        }
-    }
-
-    best_result
-}
-
 /// Fetch GPU core count from existing Metal device (more efficient)
 pub fn fetch_gpu_core_count_and_simd_width_from_device(device: &Device) -> (usize, usize) {
     // fetch the number of parallel cores from the SMVP kernel as example
