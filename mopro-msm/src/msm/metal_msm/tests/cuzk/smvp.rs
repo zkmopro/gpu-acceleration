@@ -59,11 +59,11 @@ fn smvp_gpu(
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-        // params => [input_size, num_y_workgroups, num_z_workgroups, offset]
+        // params => [input_size, num_columns, num_subtasks, offset]
         let params = vec![
             input_size as u32,
-            s_num_y_workgroups,
-            s_num_z_workgroups,
+            num_columns as u32,
+            num_subtasks as u32,
             offset,
         ];
         let params_buf = helper.create_buffer(&params);

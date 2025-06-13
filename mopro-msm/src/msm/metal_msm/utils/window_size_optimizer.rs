@@ -1,8 +1,12 @@
-use metal::*;
 /// Window size optimizer for MSM computation
 ///
-/// This module implements the cost function described in Section 3.2 to determine
-/// the optimal window size for parallel MSM algorithms.
+/// This module implements for finding the optimal window size for Metal MSM described in
+/// https://eprint.iacr.org/2022/1321.pdf
+///
+/// However, in the experiments on the real device,
+/// the optimal size is not always the same as the one in the paper.
+/// So this module is only used as a reference.
+use metal::*;
 use rayon::prelude::*;
 // Embed the precompiled Metal library
 include!(concat!(env!("OUT_DIR"), "/built_shaders.rs"));
@@ -69,29 +73,6 @@ pub fn find_optimal_window_size(params: &MsmParameters) -> CostResult {
             window_size: 1,
             cost: f64::INFINITY,
         })
-}
-
-/// Find the optimal window size for given MSM parameters
-///
-/// This function evaluates all feasible window sizes and returns the one
-/// with minimum computational cost.
-pub fn find_optimal_window_size_serial(params: &MsmParameters) -> CostResult {
-    let max_window_size = 30;
-    let mut best_result = CostResult {
-        window_size: 1,
-        cost: f64::INFINITY,
-    };
-
-    // Evaluate window sizes from 1 to max_window_size
-    for window_size in 1..=max_window_size {
-        let cost = calculate_cost(params, window_size);
-
-        if cost < best_result.cost {
-            best_result = CostResult { window_size, cost };
-        }
-    }
-
-    best_result
 }
 
 /// Fetch GPU core count from existing Metal device (more efficient)
