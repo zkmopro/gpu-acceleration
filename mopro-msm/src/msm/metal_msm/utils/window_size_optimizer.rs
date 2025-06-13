@@ -1,8 +1,12 @@
-use metal::*;
 /// Window size optimizer for MSM computation
 ///
-/// This module implements the cost function described in Section 3.2 to determine
-/// the optimal window size for parallel MSM algorithms.
+/// This module implements for finding the optimal window size for Metal MSM described in
+/// https://eprint.iacr.org/2022/1321.pdf
+///
+/// However, in the experiments on the real device,
+/// the optimal size is not always the same as the one in the paper.
+/// So this module is only used as a reference.
+use metal::*;
 use rayon::prelude::*;
 // Embed the precompiled Metal library
 include!(concat!(env!("OUT_DIR"), "/built_shaders.rs"));
