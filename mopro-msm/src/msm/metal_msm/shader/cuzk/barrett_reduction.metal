@@ -15,8 +15,10 @@ using namespace metal;
 
 BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
     BigIntExtraWide res = bigint_zero_extra_wide();
-    
+
+    #pragma unroll(17)
     for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
+        #pragma unroll(17)
         for (uint j = 0; j < NUM_LIMBS_WIDE; j++) {
             ulong c = (ulong)a.limbs[i] * (ulong)b.limbs[j];
             res.limbs[i+j] += c & MASK;
@@ -25,6 +27,7 @@ BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
     }
 
     // Start from 0 and carry the extra over to the next index.
+    #pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
         res.limbs[i+1] += res.limbs[i] >> LOG_LIMB_SIZE;
         res.limbs[i] = res.limbs[i] & MASK;
@@ -37,6 +40,7 @@ BigIntResultExtraWide sub_512(BigIntExtraWide a, BigIntExtraWide b) {
     res.value = bigint_zero_extra_wide();
     res.carry = 0;
 
+    #pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
         res.value.limbs[i] = a.limbs[i] - b.limbs[i] - res.carry;
         if (a.limbs[i] < (b.limbs[i] + res.carry)) {
@@ -55,6 +59,7 @@ BigIntResultExtraWide add_512(BigIntExtraWide a, BigIntExtraWide b) {
     res.value = bigint_zero_extra_wide();
     res.carry = 0;
 
+    #pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
         ulong sum = (ulong)a.limbs[i] + (ulong)b.limbs[i] + res.carry;
         res.value.limbs[i] = sum & MASK;
@@ -65,6 +70,8 @@ BigIntResultExtraWide add_512(BigIntExtraWide a, BigIntExtraWide b) {
 
 BigInt get_higher_with_slack(BigIntExtraWide a) {
     BigInt out = bigint_zero();
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         out.limbs[i] = ((a.limbs[i + NUM_LIMBS] << SLACK) + 
                         (a.limbs[i + NUM_LIMBS - 1] >> (LOG_LIMB_SIZE - SLACK))) & MASK;
@@ -92,6 +99,8 @@ BigInt barrett_reduce(BigIntExtraWide a) {
     }
 
     BigInt r = bigint_zero();
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         r.limbs[i] = r_wide.limbs[i];
     }

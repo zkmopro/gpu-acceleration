@@ -11,6 +11,7 @@ inline bool is_jacobian_zero(Jacobian a) {
 }
 
 inline bool jacobian_eq(Jacobian lhs, Jacobian rhs) {
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         if (lhs.x.limbs[i] != rhs.x.limbs[i]) return false;
         else if (lhs.y.limbs[i] != rhs.y.limbs[i]) return false;

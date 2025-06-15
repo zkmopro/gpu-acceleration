@@ -42,6 +42,7 @@ kernel void convert_point_coords_and_decompose_scalars(
     //  so each point uses 16 x 32-bit = 16 indices.
     uint base_offset = id * 16u;
 
+    #pragma unroll(8)
     for (uint i = 0u; i < 8u; i++) {
         // coords[base_offset + i] is the i-th 32-bit chunk of x
         // coords[base_offset + 8 + i] is the i-th 32-bit chunk of y
@@ -58,6 +59,7 @@ kernel void convert_point_coords_and_decompose_scalars(
     BigInt x_bigint = bigint_zero();
     BigInt y_bigint = bigint_zero();
 
+    #pragma unroll(15)
     for (uint i = 0; i < NUM_LIMBS - 1u; i++) {
         x_bigint.limbs[i] = extract_word_from_bytes_le(x_bytes, i, LOG_LIMB_SIZE);
         y_bigint.limbs[i] = extract_word_from_bytes_le(y_bytes, i, LOG_LIMB_SIZE);
@@ -79,6 +81,8 @@ kernel void convert_point_coords_and_decompose_scalars(
 
     // 2) Decompose scalars: read 8 32-bit values => 16 halfwords in `scalar_bytes`.
     uint scalar_bytes[16];
+
+    #pragma unroll(8)
     for (uint i = 0; i < 8u; i++) {
         uint s = scalars[id * 8u + i];
         uint hi = s >> 16u;
