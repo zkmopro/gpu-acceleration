@@ -37,6 +37,8 @@ constant BigInt MODULUS = {
 
 BigInt get_mu() {
     BigInt mu;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         mu.limbs[i] = BARRETT_MU[i];
     }
@@ -46,6 +48,8 @@ BigInt get_mu() {
 BigInt get_n0() {
     BigInt n0;
     uint tmp = N0;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         n0.limbs[i] = tmp & MASK;
         tmp >>= LOG_LIMB_SIZE;
@@ -55,6 +59,8 @@ BigInt get_n0() {
 
 BigIntWide get_r() {
     BigIntWide r;
+
+    #pragma unroll(17)
     for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
         r.limbs[i] = MONT_RADIX[i];
     }
@@ -63,6 +69,8 @@ BigIntWide get_r() {
 
 BigIntWide get_p_wide() {
     BigIntWide p;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         p.limbs[i] = BN254_BASEFIELD_MODULUS[i];
     }
@@ -71,6 +79,8 @@ BigIntWide get_p_wide() {
 
 BigIntExtraWide get_p_extra_wide() {
     BigIntExtraWide p;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         p.limbs[i] = BN254_BASEFIELD_MODULUS[i];
     }
@@ -79,6 +89,8 @@ BigIntExtraWide get_p_extra_wide() {
 
 BigInt bigint_zero() {
     BigInt s;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         s.limbs[i] = 0;
     }
@@ -87,6 +99,8 @@ BigInt bigint_zero() {
 
 BigIntWide bigint_zero_wide() {
     BigIntWide s;
+
+    #pragma unroll(17)
     for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
         s.limbs[i] = 0;
     }
@@ -95,6 +109,8 @@ BigIntWide bigint_zero_wide() {
 
 BigIntExtraWide bigint_zero_extra_wide() {
     BigIntExtraWide s;
+
+    #pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
         s.limbs[i] = 0;
     }
@@ -103,6 +119,8 @@ BigIntExtraWide bigint_zero_extra_wide() {
 
 Jacobian get_bn254_zero() {
     Jacobian zero;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         zero.x.limbs[i] = BN254_ZERO_X[i];
         zero.y.limbs[i] = BN254_ZERO_Y[i];
@@ -113,6 +131,8 @@ Jacobian get_bn254_zero() {
 
 Jacobian get_bn254_one() {
     Jacobian one;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         one.x.limbs[i] = BN254_ONE_X[i];
         one.y.limbs[i] = BN254_ONE_Y[i];
@@ -123,6 +143,8 @@ Jacobian get_bn254_one() {
 
 Jacobian get_bn254_zero_mont() {
     Jacobian zero;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         zero.x.limbs[i] = BN254_ZERO_XR[i];
         zero.y.limbs[i] = BN254_ZERO_YR[i];
@@ -133,6 +155,8 @@ Jacobian get_bn254_zero_mont() {
 
 Jacobian get_bn254_one_mont() {
     Jacobian one;
+
+    #pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         one.x.limbs[i] = BN254_ONE_XR[i];
         one.y.limbs[i] = BN254_ONE_YR[i];
