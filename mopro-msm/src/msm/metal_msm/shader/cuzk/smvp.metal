@@ -12,14 +12,14 @@ using namespace metal;
 #endif
 
 kernel void smvp(
-    device const uint*          row_ptr             [[ buffer(0) ]],
-    device const uint*          val_idx             [[ buffer(1) ]],
-    device const BigInt*        new_point_x         [[ buffer(2) ]],
-    device const BigInt*        new_point_y         [[ buffer(3) ]],
-    device BigInt*              bucket_x            [[ buffer(4) ]],
-    device BigInt*              bucket_y            [[ buffer(5) ]],
-    device BigInt*              bucket_z            [[ buffer(6) ]],
-    constant uint4&             params              [[ buffer(7) ]],
+    device const uint*          row_ptr             [[ buffer(0), access(read) ]],
+    device const uint*          val_idx             [[ buffer(1), access(read) ]],
+    device const BigInt*        new_point_x         [[ buffer(2), access(read) ]],
+    device const BigInt*        new_point_y         [[ buffer(3), access(read) ]],
+    device BigInt*              bucket_x            [[ buffer(4), access(read_write) ]],
+    device BigInt*              bucket_y            [[ buffer(5), access(read_write) ]],
+    device BigInt*              bucket_z            [[ buffer(6), access(read_write) ]],
+    constant uint4&             params              [[ buffer(7), access(read) ]],
     uint3                       tgid                [[ threadgroup_position_in_grid ]],
     uint3                       tid                 [[ thread_position_in_threadgroup ]],
     uint3                       workgroup_size      [[ dispatch_threads_per_threadgroup ]],

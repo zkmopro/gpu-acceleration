@@ -14,12 +14,12 @@ using namespace metal;
 #endif
 
 kernel void convert_point_coords_and_decompose_scalars(
-    device const uint* coords               [[ buffer(0) ]],
-    device const uint* scalars              [[ buffer(1) ]],
-    device BigInt* point_x                  [[ buffer(2) ]],
-    device BigInt* point_y                  [[ buffer(3) ]],
-    device uint* chunks                     [[ buffer(4) ]],
-    constant uint4& params                  [[ buffer(5) ]],
+    device const uint* coords               [[ buffer(0), access(read) ]],
+    device const uint* scalars              [[ buffer(1), access(read) ]],
+    device BigInt* point_x                  [[ buffer(2), access(write) ]],
+    device BigInt* point_y                  [[ buffer(3), access(write) ]],
+    device uint* chunks                     [[ buffer(4), access(write) ]],
+    constant uint4& params                  [[ buffer(5), access(read) ]],
     uint3 gid                               [[ thread_position_in_grid ]],
     uint3 threadgroup_size                  [[ threadgroups_per_grid ]]
 ) {
