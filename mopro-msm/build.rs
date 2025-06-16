@@ -68,12 +68,10 @@ fn compile_shaders() -> std::io::Result<()> {
     }
 
     println!(
-        "cargo:warning=Found {} Metal shaders to compile",
-        metal_paths.len()
+        "cargo:warning=Found {} Metal shaders to compile from {}",
+        metal_paths.len(),
+        shader_root.to_str().unwrap()
     );
-    for path in &metal_paths {
-        println!("cargo:warning=Including shader: {}", path.display());
-    }
 
     // Combine selected kernels into one .metal file
     let combined = shader_out_dir.join("msm_combined.metal");
