@@ -100,7 +100,9 @@ impl MetalMSMPipeline {
             shader_file: String::new(),
             kernel_name: String::new(),
         };
+        let start = Instant::now();
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
+
         let pack_time = start.elapsed();
         println!("pack_time: {:?}", pack_time);
 
@@ -121,6 +123,15 @@ impl MetalMSMPipeline {
             c_workgroup_size * c_num_x_workgroups * c_num_y_workgroups * c_num_z_workgroups
         );
 
+        println!(
+            "\n=============================== \nc_num_x_workgroups: {}",
+            c_num_x_workgroups
+        );
+        println!("c_num_y_workgroups: {}", c_num_y_workgroups);
+        println!("c_num_z_workgroups: {}", c_num_z_workgroups);
+        println!("c_workgroup_size: {}", c_workgroup_size);
+        println!("===============================\n");
+
         let (point_x, point_y, scalar_chunks) = stage1.execute(
             &coords,
             &scals,
@@ -133,6 +144,7 @@ impl MetalMSMPipeline {
             c_num_z_workgroups,
             c_workgroup_size,
         )?;
+
         let stage1_time = start.elapsed();
         println!("stage1_time: {:?}", stage1_time);
 
@@ -154,6 +166,7 @@ impl MetalMSMPipeline {
             t_num_z_workgroups,
             t_workgroup_size,
         )?;
+
         let stage2_time = start.elapsed();
         println!("stage2_time: {:?}", stage2_time);
 
@@ -178,6 +191,7 @@ impl MetalMSMPipeline {
         );
 
         let stage3 = SMVP::new(&self.shader_manager);
+
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
             &csc_col_ptr,
             &csc_val_idxs,
@@ -189,6 +203,7 @@ impl MetalMSMPipeline {
             self.simd_width,
             s_workgroup_size,
         )?;
+
         let stage3_time = start.elapsed();
         println!("stage3_time: {:?}", stage3_time);
 
@@ -239,6 +254,7 @@ impl MetalMSMPipeline {
             b_2_num_z_workgroups,
             b_workgroup_size,
         )?;
+
         let stage4_time = start.elapsed();
         println!("stage4_time: {:?}", stage4_time);
 
@@ -252,6 +268,7 @@ impl MetalMSMPipeline {
             window_size,
             b_workgroup_size,
         )?;
+
         let stage5_time = start.elapsed();
         println!("stage5_time: {:?}", stage5_time);
 
@@ -805,6 +822,7 @@ pub mod test_utils {
     use ark_ec::CurveGroup;
     use ark_ff::UniformRand;
     use ark_std::test_rng;
+    use rayon::prelude::*;
 
     /// Utility function to generate random bases and scalars for testing
     /// This is made public so it can be used in integration tests
