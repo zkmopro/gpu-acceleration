@@ -3,12 +3,13 @@
 #pragma once
 
 using namespace metal;
-#include <metal_stdlib>
-#include <metal_math>
 #include "../mont_backend/mont.metal"
 #include "./utils.metal"
+#include <metal_math>
+#include <metal_stdlib>
 
-inline Jacobian jacobian_dbl_2009_l(Jacobian pt) {
+inline Jacobian jacobian_dbl_2009_l(Jacobian pt)
+{
     BigInt x = pt.x;
     BigInt y = pt.y;
     BigInt z = pt.z;
@@ -42,10 +43,14 @@ inline Jacobian jacobian_dbl_2009_l(Jacobian pt) {
     return result;
 }
 
-inline Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
-    if (is_jacobian_zero(a)) return b;
-    if (is_jacobian_zero(b)) return a;
-    if (a == b) return jacobian_dbl_2009_l(a);
+inline Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b)
+{
+    if (is_jacobian_zero(a))
+        return b;
+    if (is_jacobian_zero(b))
+        return a;
+    if (a == b)
+        return jacobian_dbl_2009_l(a);
 
     BigInt x1 = a.x;
     BigInt y1 = a.y;
@@ -96,7 +101,8 @@ inline Jacobian jacobian_add_2007_bl(Jacobian a, Jacobian b) {
 
 // Notice that this algo only takes standard form instead of Montgomery form
 // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-madd-2007-bl
-inline Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
+inline Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b)
+{
     BigInt x1 = a.x;
     BigInt y1 = a.y;
     BigInt z1 = a.z;
@@ -105,53 +111,53 @@ inline Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
 
     // Z1Z1 = Z1^2
     BigInt z1z1 = mont_mul_cios(z1, z1);
-    
+
     // U2 = X2*Z1Z1
     BigInt u2 = mont_mul_cios(x2, z1z1);
-    
+
     // S2 = Y2*Z1*Z1Z1
     BigInt temp_s2 = mont_mul_cios(y2, z1);
     BigInt s2 = mont_mul_cios(temp_s2, z1z1);
-    
+
     // H = U2-X1
     BigInt h = ff_sub(u2, x1);
-    
+
     // HH = H^2
     BigInt hh = mont_mul_cios(h, h);
-    
+
     // I = 4*HH
     BigInt i = ff_add(hh, hh); // *2
-    i = ff_add(i, i);          // *4
-    
+    i = ff_add(i, i); // *4
+
     // J = H*I
     BigInt j = mont_mul_cios(h, i);
-    
+
     // r = 2*(S2-Y1)
     BigInt s2_minus_y1 = ff_sub(s2, y1);
     BigInt r = ff_add(s2_minus_y1, s2_minus_y1);
-    
+
     // V = X1*I
     BigInt v = mont_mul_cios(x1, i);
-    
+
     // X3 = r^2-J-2*V
     BigInt r2 = mont_mul_cios(r, r);
     BigInt v2 = ff_add(v, v);
     BigInt jv2 = ff_add(j, v2);
     BigInt x3 = ff_sub(r2, jv2);
-    
+
     // Y3 = r*(V-X3)-2*Y1*J
     BigInt v_minus_x3 = ff_sub(v, x3);
     BigInt r_vmx3 = mont_mul_cios(r, v_minus_x3);
     BigInt y1j = mont_mul_cios(y1, j);
     BigInt y1j2 = ff_add(y1j, y1j);
     BigInt y3 = ff_sub(r_vmx3, y1j2);
-    
+
     // Z3 = (Z1+H)^2-Z1Z1-HH
     BigInt z1_plus_h = ff_add(z1, h);
     BigInt z1_plus_h_squared = mont_mul_cios(z1_plus_h, z1_plus_h);
     BigInt temp = ff_sub(z1_plus_h_squared, z1z1);
     BigInt z3 = ff_sub(temp, hh);
-    
+
     Jacobian result;
     result.x = x3;
     result.y = y3;
@@ -161,8 +167,8 @@ inline Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b) {
 
 inline Jacobian jacobian_scalar_mul(
     Jacobian pt,
-    uint scalar
-) {
+    uint scalar)
+{
     // Handle special cases first
     if (scalar == 0 || is_bigint_zero(pt.z)) {
         return get_bn254_zero_mont();
@@ -182,12 +188,15 @@ inline Jacobian jacobian_scalar_mul(
         temp = jacobian_dbl_2009_l(temp);
         s = s >> 1;
     }
-    
+
     return result;
 }
 
-inline Jacobian jacobian_neg(Jacobian pt) {
-    if (is_jacobian_zero(pt)) { return pt; }
+inline Jacobian jacobian_neg(Jacobian pt)
+{
+    if (is_jacobian_zero(pt)) {
+        return pt;
+    }
 
     // Negate Y (mod p): newY = p - Y
     BigInt p = MODULUS;
@@ -201,14 +210,17 @@ inline Jacobian jacobian_neg(Jacobian pt) {
 }
 
 // Override operators in Jacobian
-constexpr Jacobian operator+(const Jacobian lhs, const Jacobian rhs) {
+constexpr Jacobian operator+(const Jacobian lhs, const Jacobian rhs)
+{
     return jacobian_add_2007_bl(lhs, rhs);
 }
 
-constexpr Jacobian operator+(const Jacobian lhs, const Affine rhs) {
+constexpr Jacobian operator+(const Jacobian lhs, const Affine rhs)
+{
     return jacobian_madd_2007_bl(lhs, rhs);
 }
 
-constexpr Jacobian operator-(const Jacobian pt) {
+constexpr Jacobian operator-(const Jacobian pt)
+{
     return jacobian_neg(pt);
 }

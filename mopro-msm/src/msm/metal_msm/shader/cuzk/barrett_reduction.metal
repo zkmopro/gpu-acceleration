@@ -1,65 +1,67 @@
 #pragma once
 
-#include <metal_stdlib>
-#include <metal_math>
 #include "../field/ff.metal"
+#include <metal_math>
+#include <metal_stdlib>
 using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
-    #include <metal_logging>
-    constant os_log logger(/*subsystem=*/"barret_reduction", /*category=*/"metal");
-    #define LOG_DEBUG_DUPL(...) logger.log_debug(__VA_ARGS__)
+#include <metal_logging>
+constant os_log logger(/*subsystem=*/"barret_reduction", /*category=*/"metal");
+#define LOG_DEBUG_DUPL(...) logger.log_debug(__VA_ARGS__)
 #else
-    #define LOG_DEBUG_DUPL(...) ((void)0)
+#define LOG_DEBUG_DUPL(...) ((void)0)
 #endif
 
-BigIntExtraWide mul(BigIntWide a, BigIntWide b) {
+BigIntExtraWide mul(BigIntWide a, BigIntWide b)
+{
     BigIntExtraWide res = bigint_zero_extra_wide();
 
-    #pragma unroll(17)
+#pragma unroll(17)
     for (uint i = 0; i < NUM_LIMBS_WIDE; i++) {
-        #pragma unroll(17)
+#pragma unroll(17)
         for (uint j = 0; j < NUM_LIMBS_WIDE; j++) {
             ulong c = (ulong)a.limbs[i] * (ulong)b.limbs[j];
-            res.limbs[i+j] += c & MASK;
-            res.limbs[i+j+1] += c >> LOG_LIMB_SIZE;
+            res.limbs[i + j] += c & MASK;
+            res.limbs[i + j + 1] += c >> LOG_LIMB_SIZE;
         }
     }
 
-    // Start from 0 and carry the extra over to the next index.
-    #pragma unroll(32)
+// Start from 0 and carry the extra over to the next index.
+#pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
-        res.limbs[i+1] += res.limbs[i] >> LOG_LIMB_SIZE;
+        res.limbs[i + 1] += res.limbs[i] >> LOG_LIMB_SIZE;
         res.limbs[i] = res.limbs[i] & MASK;
     }
     return res;
 }
 
-BigIntResultExtraWide sub_512(BigIntExtraWide a, BigIntExtraWide b) {
+BigIntResultExtraWide sub_512(BigIntExtraWide a, BigIntExtraWide b)
+{
     BigIntResultExtraWide res;
     res.value = bigint_zero_extra_wide();
     res.carry = 0;
 
-    #pragma unroll(32)
+#pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
         res.value.limbs[i] = a.limbs[i] - b.limbs[i] - res.carry;
         if (a.limbs[i] < (b.limbs[i] + res.carry)) {
             res.value.limbs[i] += (MASK + 1);
             res.carry = 1;
-        }
-        else {
+        } else {
             res.carry = 0;
         }
     }
     return res;
 }
 
-BigIntResultExtraWide add_512(BigIntExtraWide a, BigIntExtraWide b) {
+BigIntResultExtraWide add_512(BigIntExtraWide a, BigIntExtraWide b)
+{
     BigIntResultExtraWide res;
     res.value = bigint_zero_extra_wide();
     res.carry = 0;
 
-    #pragma unroll(32)
+#pragma unroll(32)
     for (uint i = 0; i < NUM_LIMBS_EXTRA_WIDE; i++) {
         ulong sum = (ulong)a.limbs[i] + (ulong)b.limbs[i] + res.carry;
         res.value.limbs[i] = sum & MASK;
@@ -68,18 +70,19 @@ BigIntResultExtraWide add_512(BigIntExtraWide a, BigIntExtraWide b) {
     return res;
 }
 
-BigInt get_higher_with_slack(BigIntExtraWide a) {
+BigInt get_higher_with_slack(BigIntExtraWide a)
+{
     BigInt out = bigint_zero();
 
-    #pragma unroll(16)
+#pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
-        out.limbs[i] = ((a.limbs[i + NUM_LIMBS] << SLACK) + 
-                        (a.limbs[i + NUM_LIMBS - 1] >> (LOG_LIMB_SIZE - SLACK))) & MASK;
+        out.limbs[i] = ((a.limbs[i + NUM_LIMBS] << SLACK) + (a.limbs[i + NUM_LIMBS - 1] >> (LOG_LIMB_SIZE - SLACK))) & MASK;
     }
     return out;
 }
 
-BigInt barrett_reduce(BigIntExtraWide a) {
+BigInt barrett_reduce(BigIntExtraWide a)
+{
     BigInt p = MODULUS;
     BigInt mu = get_mu();
 
@@ -100,7 +103,7 @@ BigInt barrett_reduce(BigIntExtraWide a) {
 
     BigInt r = bigint_zero();
 
-    #pragma unroll(16)
+#pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         r.limbs[i] = r_wide.limbs[i];
     }
@@ -108,7 +111,8 @@ BigInt barrett_reduce(BigIntExtraWide a) {
     return ff_reduce(r);
 }
 
-inline BigInt field_mul(BigIntWide a, BigIntWide b) {
+inline BigInt field_mul(BigIntWide a, BigIntWide b)
+{
     BigIntExtraWide xy = mul(a, b);
     return barrett_reduce(xy);
 }

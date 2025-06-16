@@ -4,14 +4,14 @@
 #pragma clang diagnostic ignored "-Wdivision-by-zero" // to avoid warning on debug build, but we should always know what NSAFE is
 
 using namespace metal;
-#include <metal_stdlib>
-#include <metal_math>
 #include "../field/ff.metal"
+#include <metal_math>
+#include <metal_stdlib>
 
 BigInt conditional_reduce(
     BigInt x,
-    BigInt y
-) {
+    BigInt y)
+{
     if (x >= y) {
         return x - y;
     }
@@ -21,20 +21,21 @@ BigInt conditional_reduce(
 /// An optimised variant of the Montgomery product algorithm from
 /// https://github.com/mitschabaude/montgomery#13-x-30-bit-multiplication.
 /// Known to work with 12 and 13-bit limbs.
-BigInt mont_mul_optimised(BigInt x, BigInt y) {
+BigInt mont_mul_optimised(BigInt x, BigInt y)
+{
     BigInt p = MODULUS;
     BigInt s = bigint_zero();
 
-    #pragma unroll(16)
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
+#pragma unroll(16)
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         uint t = s.limbs[0] + x.limbs[i] * y.limbs[0];
         uint tprime = t & MASK;
         uint qi = (N0 * tprime) & MASK;
         uint c = (t + qi * p.limbs[0]) >> LOG_LIMB_SIZE;
         s.limbs[0] = s.limbs[1] + x.limbs[i] * y.limbs[1] + qi * p.limbs[1] + c;
 
-        #pragma unroll(14)
-        for (uint j = 2; j < NUM_LIMBS; j ++) {
+#pragma unroll(14)
+        for (uint j = 2; j < NUM_LIMBS; j++) {
             s.limbs[j - 1] = s.limbs[j] + x.limbs[i] * y.limbs[j] + qi * p.limbs[j];
         }
         s.limbs[NUM_LIMBS - 2] = x.limbs[i] * y.limbs[NUM_LIMBS - 1] + qi * p.limbs[NUM_LIMBS - 1];
@@ -42,8 +43,8 @@ BigInt mont_mul_optimised(BigInt x, BigInt y) {
 
     uint c = 0;
 
-    #pragma unroll(16)
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
+#pragma unroll(16)
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         uint v = s.limbs[i] + c;
         c = v >> LOG_LIMB_SIZE;
         s.limbs[i] = v & MASK;
@@ -55,19 +56,20 @@ BigInt mont_mul_optimised(BigInt x, BigInt y) {
 /// An modified variant of the Montgomery product algorithm from
 /// https://github.com/mitschabaude/montgomery#13-x-30-bit-multiplication.
 /// Known to work with 14 and 15-bit limbs.
-BigInt mont_mul_modified(BigInt x, BigInt y) {
+BigInt mont_mul_modified(BigInt x, BigInt y)
+{
     BigInt p = MODULUS;
     BigInt s = bigint_zero();
 
-    #pragma unroll(16)
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
+#pragma unroll(16)
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         uint t = s.limbs[0] + x.limbs[i] * y.limbs[0];
         uint tprime = t & MASK;
         uint qi = (N0 * tprime) & MASK;
         uint c = (t + qi * p.limbs[0]) >> LOG_LIMB_SIZE;
 
-        #pragma unroll(14)
-        for (uint j = 1; j < NUM_LIMBS - 1; j ++) {
+#pragma unroll(14)
+        for (uint j = 1; j < NUM_LIMBS - 1; j++) {
             uint t = s.limbs[j] + x.limbs[i] * y.limbs[j] + qi * p.limbs[j];
             if ((j - 1) % NSAFE == 0) {
                 t = t + c;
@@ -87,8 +89,8 @@ BigInt mont_mul_modified(BigInt x, BigInt y) {
 
     uint c = 0;
 
-    #pragma unroll(16)
-    for (uint i = 0; i < NUM_LIMBS; i ++) {
+#pragma unroll(16)
+    for (uint i = 0; i < NUM_LIMBS; i++) {
         uint v = s.limbs[i] + c;
         c = v >> LOG_LIMB_SIZE;
         s.limbs[i] = v & MASK;
@@ -100,18 +102,19 @@ BigInt mont_mul_modified(BigInt x, BigInt y) {
 /// The CIOS method for Montgomery multiplication from Tolga Acar's thesis:
 /// High-Speed Algorithms & Architectures For Number-Theoretic Cryptosystems
 /// https://www.proquest.com/openview/1018972f191afe55443658b28041c118/1
-inline BigInt mont_mul_cios(BigInt x, BigInt y) {
+inline BigInt mont_mul_cios(BigInt x, BigInt y)
+{
     BigInt p = MODULUS;
 
     BigInt result;
-    uint t[NUM_LIMBS + 2] = {0};  // Extra space for carries
-    
-    #pragma unroll(16)
+    uint t[NUM_LIMBS + 2] = { 0 }; // Extra space for carries
+
+#pragma unroll(16)
     for (uint i = 0; i < NUM_LIMBS; i++) {
         // Step 1: Multiply and add
         uint c = 0;
 
-        #pragma unroll(16)
+#pragma unroll(16)
         for (uint j = 0; j < NUM_LIMBS; j++) {
             uint r = t[j] + x.limbs[j] * y.limbs[i] + c;
             c = r >> LOG_LIMB_SIZE;
@@ -126,7 +129,7 @@ inline BigInt mont_mul_cios(BigInt x, BigInt y) {
         r = t[0] + m * p.limbs[0];
         c = r >> LOG_LIMB_SIZE;
 
-        #pragma unroll(15)
+#pragma unroll(15)
         for (uint j = 1; j < NUM_LIMBS; j++) {
             r = t[j] + m * p.limbs[j] + c;
             c = r >> LOG_LIMB_SIZE;
@@ -142,7 +145,7 @@ inline BigInt mont_mul_cios(BigInt x, BigInt y) {
     // Final reduction check
     bool t_lt_p = false;
 
-    #pragma unroll(16)
+#pragma unroll(16)
     for (uint idx = 0; idx < NUM_LIMBS; idx++) {
         uint i = NUM_LIMBS - 1 - idx;
         if (t[i] < p.limbs[i]) {
@@ -154,14 +157,14 @@ inline BigInt mont_mul_cios(BigInt x, BigInt y) {
     }
 
     if (t_lt_p) {
-        #pragma unroll(16)
+#pragma unroll(16)
         for (uint i = 0; i < NUM_LIMBS; i++) {
             result.limbs[i] = t[i];
         }
     } else {
         uint borrow = 0;
 
-        #pragma unroll(16)
+#pragma unroll(16)
         for (uint i = 0; i < NUM_LIMBS; i++) {
             uint diff = t[i] - p.limbs[i] - borrow;
             if (t[i] < (p.limbs[i] + borrow)) {

@@ -1,19 +1,20 @@
-#include <metal_stdlib>
 #include "../curve/jacobian.metal"
 #include "../misc/get_constant.metal"
+#include <metal_stdlib>
 using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
-    #include <metal_logging>
-    constant os_log pbpr_logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
-    #define LOG_DEBUG(...) pbpr_logger_kernel.log_debug(__VA_ARGS__)
+#include <metal_logging>
+constant os_log pbpr_logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
+#define LOG_DEBUG(...) pbpr_logger_kernel.log_debug(__VA_ARGS__)
 #else
-    #define LOG_DEBUG(...) ((void)0)
+#define LOG_DEBUG(...) ((void)0)
 #endif
 
 // This double-and-add code is adapted from the ZPrize test harness:
 // https://github.com/demox-labs/webgpu-msm/blob/main/src/reference/webgpu/wgsl/Curve.ts#L78.
-static Jacobian double_and_add(Jacobian point, uint scalar) {
+static Jacobian double_and_add(Jacobian point, uint scalar)
+{
     Jacobian result = get_bn254_zero_mont(); // Point at infinity
 
     uint s = scalar;
@@ -30,22 +31,22 @@ static Jacobian double_and_add(Jacobian point, uint scalar) {
 }
 
 kernel void bpr_stage_1(
-    device BigInt* bucket_sum_x         [[ buffer(0), access(read_write) ]],
-    device BigInt* bucket_sum_y         [[ buffer(1), access(read_write) ]],
-    device BigInt* bucket_sum_z         [[ buffer(2), access(read_write) ]],
-    device BigInt* g_points_x           [[ buffer(3), access(write) ]],
-    device BigInt* g_points_y           [[ buffer(4), access(write) ]],
-    device BigInt* g_points_z           [[ buffer(5), access(write) ]],
-    constant uint3& params              [[ buffer(6), access(read) ]],
-    uint tid                            [[ thread_position_in_grid ]],
-    uint workgroup_size                 [[ dispatch_threads_per_threadgroup ]]
-) {
+    device BigInt* bucket_sum_x [[buffer(0), access(read_write)]],
+    device BigInt* bucket_sum_y [[buffer(1), access(read_write)]],
+    device BigInt* bucket_sum_z [[buffer(2), access(read_write)]],
+    device BigInt* g_points_x [[buffer(3), access(write)]],
+    device BigInt* g_points_y [[buffer(4), access(write)]],
+    device BigInt* g_points_z [[buffer(5), access(write)]],
+    constant uint3& params [[buffer(6), access(read)]],
+    uint tid [[thread_position_in_grid]],
+    uint workgroup_size [[dispatch_threads_per_threadgroup]])
+{
     const uint thread_id = tid;
     const uint num_threads_per_subtask = workgroup_size;
 
     const uint subtask_idx = params[0];
     const uint num_columns = params[1];
-    const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation
+    const uint num_subtasks_per_bpr = params[2]; // Number of subtasks per shader invocation
 
     const uint num_buckets_per_subtask = num_columns / 2u;
     const uint total_buckets = num_buckets_per_subtask * num_subtasks_per_bpr;
@@ -61,7 +62,9 @@ kernel void bpr_stage_1(
         idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread + offset;
     }
     // guard bucket bounds
-    if (idx >= total_buckets) { return; }
+    if (idx >= total_buckets) {
+        return;
+    }
 
     Jacobian m = {
         .x = bucket_sum_x[idx],
@@ -92,18 +95,17 @@ kernel void bpr_stage_1(
     g_points_z[g_rw_idx] = g.z;
 }
 
-
 kernel void bpr_stage_2(
-    device BigInt* bucket_sum_x         [[ buffer(0), access(read) ]],
-    device BigInt* bucket_sum_y         [[ buffer(1), access(read) ]],
-    device BigInt* bucket_sum_z         [[ buffer(2), access(read) ]],
-    device BigInt* g_points_x           [[ buffer(3), access(read_write) ]],
-    device BigInt* g_points_y           [[ buffer(4), access(read_write) ]],
-    device BigInt* g_points_z           [[ buffer(5), access(read_write) ]],
-    constant uint3& params              [[ buffer(6), access(read) ]],
-    uint tid                            [[ thread_position_in_grid ]],
-    uint workgroup_size                 [[ dispatch_threads_per_threadgroup ]]
-) {
+    device BigInt* bucket_sum_x [[buffer(0), access(read)]],
+    device BigInt* bucket_sum_y [[buffer(1), access(read)]],
+    device BigInt* bucket_sum_z [[buffer(2), access(read)]],
+    device BigInt* g_points_x [[buffer(3), access(read_write)]],
+    device BigInt* g_points_y [[buffer(4), access(read_write)]],
+    device BigInt* g_points_z [[buffer(5), access(read_write)]],
+    constant uint3& params [[buffer(6), access(read)]],
+    uint tid [[thread_position_in_grid]],
+    uint workgroup_size [[dispatch_threads_per_threadgroup]])
+{
     const uint thread_id = tid;
     const uint num_threads_per_subtask = workgroup_size;
 
@@ -128,7 +130,7 @@ kernel void bpr_stage_2(
         .y = bucket_sum_y[idx],
         .z = bucket_sum_z[idx]
     };
-    
+
     const uint g_rw_idx = (subtask_idx / num_subtasks_per_bpr) * (num_threads_per_subtask * num_subtasks_per_bpr) + thread_id;
     Jacobian g = {
         .x = g_points_x[g_rw_idx],

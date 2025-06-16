@@ -1,8 +1,8 @@
 #pragma once
 
 using namespace metal;
-#include <metal_stdlib>
 #include "../constants.metal"
+#include <metal_stdlib>
 
 struct BigInt {
     array<uint, NUM_LIMBS> limbs;
