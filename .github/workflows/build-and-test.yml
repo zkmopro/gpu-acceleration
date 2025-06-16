@@ -40,5 +40,4 @@ jobs:
               uses: mozilla-actions/sccache-action@v0.0.3
             - name: Run Metal MSM tests for Shaders
               run: |
-                cd mopro-msm
-                cargo test msm::metal_msm::tests
+                MSM_COMPILE_ALL_SHADERS=1 cargo test --release metal_msm::tests

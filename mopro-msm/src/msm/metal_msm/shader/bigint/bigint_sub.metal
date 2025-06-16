@@ -5,7 +5,7 @@ using namespace metal;
 #include <metal_math>
 #include "bigint.metal"
 
-kernel void run(
+kernel void test_bigint_sub(
     device BigInt* a [[ buffer(0) ]],
     device BigInt* b [[ buffer(1) ]],
     device BigInt* res [[ buffer(2) ]],

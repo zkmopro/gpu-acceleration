@@ -1,0 +1,4 @@
+module moproFFI {
+    header "moproFFI.h"
+    export *
+}

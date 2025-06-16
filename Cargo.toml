@@ -1,4 +1,4 @@
 [workspace]
 members = ["mopro-msm"]
 resolver = "2"
-exclude = ["gpu-acceleration-app"]
+exclude = ["example-app"]

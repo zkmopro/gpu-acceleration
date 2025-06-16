@@ -21,8 +21,6 @@ use ark_ff::{BigInt, PrimeField, Zero};
 use num_bigint::BigUint;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
-use std::string::String;
 
 macro_rules! write_constant_array {
     ($data:expr, $name:expr, $values:expr, $size:expr) => {
@@ -34,75 +32,6 @@ macro_rules! write_constant_array {
             .join(",\n");
         $data += "\n};\n";
     };
-}
-
-pub fn compile_metal(path_from_cargo_manifest_dir: &str, input_filename: &str) -> String {
-    let input_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(path_from_cargo_manifest_dir)
-        .join(input_filename);
-    let c = input_path.clone().into_os_string().into_string().unwrap();
-
-    let lib = input_path.clone().into_os_string().into_string().unwrap();
-    let lib = format!("{}.lib", lib);
-
-    let exe = if cfg!(target_os = "ios") {
-        Command::new("xcrun")
-            .args([
-                "-sdk",
-                "iphoneos",
-                "metal",
-                "-std=metal3.2",
-                "-target",
-                "air64-apple-ios18.0",
-                "-fmetal-enable-logging",
-                "-o",
-                lib.as_str(),
-                c.as_str(),
-            ])
-            .output()
-            .expect("failed to compile")
-    } else if cfg!(target_os = "macos") {
-        let macos_version = std::process::Command::new("sw_vers")
-            .args(["-productVersion"])
-            .output()
-            .ok()
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|version| {
-                version
-                    .trim()
-                    .split('.')
-                    .next()
-                    .and_then(|major| major.parse::<u32>().ok())
-            })
-            .unwrap_or(0);
-
-        let mut args = vec!["-sdk", "macosx", "metal"];
-
-        // Only specify Metal 3.2 for metal logging if macOS version is 15.0 or higher
-        if macos_version >= 15 {
-            args.extend([
-                "-std=metal3.2",
-                "-target",
-                "air64-apple-macos15.0",
-                "-fmetal-enable-logging",
-            ]);
-        }
-
-        args.extend(["-o", lib.as_str(), c.as_str()]);
-
-        Command::new("xcrun")
-            .args(args)
-            .output()
-            .expect("failed to compile")
-    } else {
-        panic!("Unsupported architecture");
-    };
-
-    if exe.stderr.len() != 0 {
-        panic!("{}", String::from_utf8(exe.stderr).unwrap());
-    }
-
-    lib
 }
 
 pub fn write_constants(
@@ -117,11 +46,6 @@ pub fn write_constants(
     let slack = num_limbs as u32 * log_limb_size - BaseField::MODULUS_BIT_SIZE;
     let num_limbs_wide = num_limbs + 1;
     let num_limbs_extra_wide = num_limbs * 2;
-
-    // MSM instance params
-    let chunk_size = 16;
-    let num_columns = 2u32.pow(chunk_size);
-    let num_subtasks = (256 as f32 / chunk_size as f32).ceil() as u32;
 
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
@@ -148,9 +72,6 @@ pub fn write_constants(
     data += format!("#define N0 {}\n", n0).as_str();
     data += format!("#define NSAFE {}\n", nsafe).as_str();
     data += format!("#define SLACK {}\n", slack).as_str();
-    data += format!("#define CHUNK_SIZE {}\n", chunk_size).as_str();
-    data += format!("#define NUM_COLUMNS {}\n", num_columns).as_str();
-    data += format!("#define NUM_SUBTASKS {}\n", num_subtasks).as_str();
 
     let mu_limbs = mu_in_ark.to_limbs(num_limbs, log_limb_size);
     write_constant_array!(data, "BARRETT_MU", mu_limbs, "NUM_LIMBS");
@@ -259,16 +180,6 @@ pub fn write_constants(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-
-    #[test]
-    #[serial_test::serial]
-    pub fn test_compile() {
-        let lib_filepath = compile_metal(
-            "../mopro-msm/src/msm/metal_msm/shader",
-            "bigint/bigint_add_unsafe.metal",
-        );
-        println!("{}", lib_filepath);
-    }
 
     #[test]
     #[serial_test::serial]

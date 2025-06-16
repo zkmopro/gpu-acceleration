@@ -5,8 +5,8 @@ use ark_std::{rand, UniformRand, Zero};
 use rand::Rng;
 use std::ops::Neg;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
 use num_bigint::BigUint;
@@ -49,27 +49,24 @@ fn smvp_gpu(
     let bucket_sum_coord_bytelength =
         (num_columns / 2) as usize * config.num_limbs as usize * 4 * num_subtasks as usize;
 
-    // Input buffers
-    let row_ptr_buf = helper.create_input_buffer(gpu_csc_col_ptr);
-    let val_idx_buf = helper.create_input_buffer(gpu_csc_val_idxs);
-    let point_x_buf = helper.create_input_buffer(gpu_point_x);
-    let point_y_buf = helper.create_input_buffer(gpu_point_y);
-
-    // Output "bucket" buffers
-    let bucket_x_buf = helper.create_output_buffer(bucket_sum_coord_bytelength);
-    let bucket_y_buf = helper.create_output_buffer(bucket_sum_coord_bytelength);
-    let bucket_z_buf = helper.create_output_buffer(bucket_sum_coord_bytelength);
+    let row_ptr_buf = helper.create_buffer(gpu_csc_col_ptr);
+    let val_idx_buf = helper.create_buffer(gpu_csc_val_idxs);
+    let point_x_buf = helper.create_buffer(gpu_point_x);
+    let point_y_buf = helper.create_buffer(gpu_point_y);
+    let bucket_x_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_y_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_z_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-        // params => [input_size, num_y_workgroups, num_z_workgroups, offset]
+        // params => [input_size, num_columns, num_subtasks, offset]
         let params = vec![
             input_size as u32,
-            s_num_y_workgroups,
-            s_num_z_workgroups,
+            num_columns as u32,
+            num_subtasks as u32,
             offset,
         ];
-        let params_buf = helper.create_input_buffer(&params);
+        let params_buf = helper.create_buffer(&params);
 
         let adjusted_s_num_x_workgroups = if num_columns < 256 {
             s_num_x_workgroups
@@ -101,7 +98,6 @@ fn smvp_gpu(
                 &bucket_z_buf,
                 &params_buf,
             ],
-            &[],
             &thread_group_count,
             &threads_per_group,
         );

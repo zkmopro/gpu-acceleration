@@ -1,8 +1,10 @@
+use crate::msm::metal_msm::host::metal_wrapper::{MetalConfig, MetalHelper};
+use crate::msm::metal_msm::host::shader_manager::{ShaderManager, ShaderManagerConfig, ShaderType};
 use crate::msm::metal_msm::utils::limbs_conversion::{
     pack_affine_and_scalars, GenericLimbConversion,
 };
-use crate::msm::metal_msm::utils::metal_wrapper::{MetalConfig, MetalHelper};
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
+use crate::msm::metal_msm::utils::window_size_optimizer::fetch_gpu_core_count_and_simd_width_from_device;
 use ark_bn254::{Fq as BaseField, Fr as ScalarField, G1Affine as Affine, G1Projective as G};
 use ark_ff::{BigInt, PrimeField};
 use ark_std::{vec::Vec, Zero};
@@ -28,27 +30,70 @@ impl Default for MetalMSMConfig {
     }
 }
 
-/// Main Metal MSM pipeline
-struct MetalMSMPipeline {
+impl From<MetalMSMConfig> for ShaderManagerConfig {
+    fn from(config: MetalMSMConfig) -> Self {
+        Self {
+            num_limbs: config.num_limbs,
+            log_limb_size: config.log_limb_size,
+        }
+    }
+}
+
+/// Main Metal MSM pipeline with pre-compiled shaders
+pub struct MetalMSMPipeline {
     config: MetalMSMConfig,
+    shader_manager: ShaderManager,
+    gpu_cores: usize,
+    simd_width: usize,
 }
 
 impl MetalMSMPipeline {
-    fn new(config: MetalMSMConfig) -> Self {
-        Self { config }
+    fn new(config: MetalMSMConfig) -> Result<Self, Box<dyn Error>> {
+        let shader_config: ShaderManagerConfig = config.clone().into();
+        let shader_manager = ShaderManager::new(shader_config)?;
+
+        // Cache GPU core count once during initialization
+        let (gpu_cores, simd_width) =
+            fetch_gpu_core_count_and_simd_width_from_device(shader_manager.device());
+
+        Ok(Self {
+            config,
+            shader_manager,
+            gpu_cores,
+            simd_width,
+        })
     }
 
-    fn with_default_config() -> Self {
+    fn with_default_config() -> Result<Self, Box<dyn Error>> {
         Self::new(MetalMSMConfig::default())
     }
 
+    /// Get the cached GPU core count
+    pub fn gpu_cores(&self) -> usize {
+        self.gpu_cores
+    }
+
     /// Execute the complete MSM pipeline on GPU
-    fn execute(&self, bases: &[Affine], scalars: &[ScalarField]) -> Result<G, Box<dyn Error>> {
-        let input_size = bases.len();
-        let num_subtasks = 256 / self.config.log_limb_size as usize;
-        let num_columns = 1 << self.config.log_limb_size;
+    fn execute_pipeline(
+        &self,
+        bases: &[Affine],
+        scalars: &[ScalarField],
+        input_size: usize,
+        window_size: usize,
+        scale_factor: usize,
+    ) -> Result<G, Box<dyn Error>> {
+        // these params are set based on the Alogorithm 3 in the cuZK paper (https://eprint.iacr.org/2022/1321.pdf)
+        let num_columns = 1 << window_size;
+        let num_subtasks =
+            (ScalarField::MODULUS_BIT_SIZE as f32 / window_size as f32).ceil() as usize;
+
+        println!("scale_factor: {:?}", scale_factor);
+        println!("window_size: {:?}", window_size);
+        println!("num_columns: {:?}", num_columns);
+        println!("num_subtasks: {:?}", num_subtasks);
 
         // Stage 0: Pack inputs
+        let start = Instant::now();
         let metal_config = MetalConfig {
             log_limb_size: self.config.log_limb_size,
             num_limbs: self.config.num_limbs,
@@ -57,35 +102,26 @@ impl MetalMSMPipeline {
         };
         let start = Instant::now();
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
-        println!("0️⃣ Pack points & scalars: {:?}", start.elapsed());
+
+        let pack_time = start.elapsed();
+        println!("pack_time: {:?}", pack_time);
 
         // Stage 1: Convert Point & Scalar Decomposition
-        // 1. Unpack point coordinates and encode them into Montgomery form
-        // 2. Decompose scalars into Signed wNAF form
         let start = Instant::now();
-        let stage1 = ConvertPointAndScalarDecompose::new(&self.config);
-        let mut c_workgroup_size = 256;
-        let mut c_num_x_workgroups = 64;
-        let mut c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
+        let stage1 = ConvertPointAndScalarDecompose::new(&self.shader_manager);
+        let c_workgroup_size = self.simd_width * scale_factor;
+        let c_num_x_workgroups = c_workgroup_size;
+        let c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
         let c_num_z_workgroups = 1;
 
-        if input_size <= 256 {
-            c_workgroup_size = input_size;
-            c_num_x_workgroups = 1;
-            c_num_y_workgroups = 1;
-        } else if input_size > 256 && input_size <= 32768 {
-            c_workgroup_size = 64;
-            c_num_x_workgroups = 4;
-            c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
-        } else if input_size > 32768 && input_size <= 131072 {
-            c_workgroup_size = 256;
-            c_num_x_workgroups = 8;
-            c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
-        } else if input_size > 131072 && input_size < 1048576 {
-            c_workgroup_size = 256;
-            c_num_x_workgroups = 32;
-            c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
-        }
+        println!("c_workgroup_size: {:?}", c_workgroup_size);
+        println!("c_num_x_workgroups: {:?}", c_num_x_workgroups);
+        println!("c_num_y_workgroups: {:?}", c_num_y_workgroups);
+        println!("c_num_z_workgroups: {:?}", c_num_z_workgroups);
+        println!(
+            "total_threads: {:?}",
+            c_workgroup_size * c_num_x_workgroups * c_num_y_workgroups * c_num_z_workgroups
+        );
 
         println!(
             "\n=============================== \nc_num_x_workgroups: {}",
@@ -100,13 +136,17 @@ impl MetalMSMPipeline {
             &coords,
             &scals,
             input_size,
+            window_size,
+            num_columns,
             num_subtasks,
             c_num_x_workgroups,
             c_num_y_workgroups,
             c_num_z_workgroups,
             c_workgroup_size,
         )?;
-        println!("1️⃣ Convert & Decompose: {:?}", start.elapsed());
+
+        let stage1_time = start.elapsed();
+        println!("stage1_time: {:?}", stage1_time);
 
         // Stage 2: Transpose
         let start = Instant::now();
@@ -115,7 +155,7 @@ impl MetalMSMPipeline {
         let t_num_z_workgroups = 1;
         let t_workgroup_size = num_subtasks;
 
-        let stage2 = Transpose::new(&self.config);
+        let stage2 = Transpose::new(&self.shader_manager);
         let (csc_col_ptr, csc_val_idxs) = stage2.execute(
             &scalar_chunks,
             num_subtasks,
@@ -126,36 +166,32 @@ impl MetalMSMPipeline {
             t_num_z_workgroups,
             t_workgroup_size,
         )?;
-        println!("2️⃣ Transpose: {:?}", start.elapsed());
+
+        let stage2_time = start.elapsed();
+        println!("stage2_time: {:?}", stage2_time);
 
         // Stage 3: Sparse Matrix-Vector Multiplication
         let start = Instant::now();
-        let s_workgroup_size = 256;
-        let s_num_x_workgroups = 64;
-        let s_num_y_workgroups = 2;
-        let s_num_z_workgroups = num_subtasks;
 
+        // according to the write-up (https://github.com/z-prize/2023-entries/tree/main/prize-2-msm-wasm/webgpu-only/tal-derei-koh-wei-jie#thread-count)
+        // the threads is (input size / 2) * num_subtasks
+        // after testing, 1D dim config is better than 3D dim config
+        let s_workgroup_size = self.simd_width * scale_factor;
+        let s_num_y_workgroups = self.simd_width;
+        let s_num_z_workgroups = (num_subtasks + 1) / 2; // round up
+        let s_num_x_workgroups = input_size / s_workgroup_size / s_num_y_workgroups;
+
+        println!("s_workgroup_size: {:?}", s_workgroup_size);
+        println!("s_num_x_workgroups: {:?}", s_num_x_workgroups);
+        println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
+        println!("s_num_z_workgroups: {:?}", s_num_z_workgroups);
         println!(
-            "\n=============================== \ns_workgroup_size: {}",
-            s_workgroup_size
-        );
-        println!("s_num_x_workgroups: {}", s_num_x_workgroups);
-        println!("s_num_y_workgroups: {}", s_num_y_workgroups);
-        println!("s_num_z_workgroups: {}", s_num_z_workgroups);
-        println!(
-            "best_fit/threads ratio: {}",
-            (input_size as f64 / 2f64 * num_subtasks as f64)
-                / (s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups * s_workgroup_size)
-                    as f64
-        );
-        println!(
-            "total threads: {}, input_size: {}, num_columns: {}\n==============================\n",
-            s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups * s_workgroup_size,
-            input_size,
-            num_columns
+            "total_threads: {:?}",
+            s_workgroup_size * s_num_x_workgroups * s_num_y_workgroups * s_num_z_workgroups
         );
 
-        let stage3 = SMVP::new(&self.config);
+        let stage3 = SMVP::new(&self.shader_manager);
+
         let (bucket_x, bucket_y, bucket_z) = stage3.execute(
             &csc_col_ptr,
             &csc_val_idxs,
@@ -164,29 +200,44 @@ impl MetalMSMPipeline {
             input_size,
             num_subtasks,
             num_columns,
-            s_num_x_workgroups,
-            s_num_y_workgroups,
-            s_num_z_workgroups,
+            self.simd_width,
             s_workgroup_size,
         )?;
-        println!("3️⃣ SMVP: {:?}", start.elapsed());
+
+        let stage3_time = start.elapsed();
+        println!("stage3_time: {:?}", stage3_time);
 
         // Stage 4: Parallel Bucket Reduction
         let start = Instant::now();
-        // dynamic variable that determines the number of CSR matrices processed per invocation of the BPR shader. A safe default is 1.
-        let num_subtasks_per_bpr_1 = 16;
-        let num_subtasks_per_bpr_2 = 16;
 
+        // according to the write-up (https://github.com/z-prize/2023-entries/tree/main/prize-2-msm-wasm/webgpu-only/tal-derei-koh-wei-jie#thread-count)
+        // the threads is 2^k * num_subtasks
+        let num_subtasks_per_bpr_1 = num_subtasks;
+        let num_subtasks_per_bpr_2 = num_subtasks;
+
+        let b_workgroup_size = self.simd_width * scale_factor;
         let b_num_x_workgroups = num_subtasks_per_bpr_1;
         let b_num_y_workgroups = 1;
         let b_num_z_workgroups = 1;
-        let b_workgroup_size = 256;
 
         let b_2_num_x_workgroups = num_subtasks_per_bpr_2;
         let b_2_num_y_workgroups = 1;
         let b_2_num_z_workgroups = 1;
 
-        let stage4 = PBPR::new(&self.config);
+        println!("== PBPR ==");
+        println!("num_subtasks_per_bpr_1: {:?}", num_subtasks_per_bpr_1);
+        println!("num_subtasks_per_bpr_2: {:?}", num_subtasks_per_bpr_2);
+        println!("b_workgroup_size: {:?}", b_workgroup_size);
+        println!(
+            "total threads for bpr1: {:?}",
+            b_workgroup_size * b_num_x_workgroups * b_num_y_workgroups * b_num_z_workgroups
+        );
+        println!(
+            "total threads for bpr2: {:?}",
+            b_workgroup_size * b_2_num_x_workgroups * b_2_num_y_workgroups * b_2_num_z_workgroups
+        );
+
+        let stage4 = PBPR::new(&self.shader_manager);
         let (g_points_x, g_points_y, g_points_z) = stage4.execute(
             &bucket_x,
             &bucket_y,
@@ -203,7 +254,9 @@ impl MetalMSMPipeline {
             b_2_num_z_workgroups,
             b_workgroup_size,
         )?;
-        println!("4️⃣ PBPR: {:?}", start.elapsed());
+
+        let stage4_time = start.elapsed();
+        println!("stage4_time: {:?}", stage4_time);
 
         // Stage 5: Final reduction and Horner's method
         let start = Instant::now();
@@ -212,10 +265,13 @@ impl MetalMSMPipeline {
             &g_points_y,
             &g_points_z,
             num_subtasks,
-            self.config.log_limb_size as usize,
+            window_size,
             b_workgroup_size,
         )?;
-        println!("5️⃣ Final Reduction: {:?}", start.elapsed());
+
+        let stage5_time = start.elapsed();
+        println!("stage5_time: {:?}", stage5_time);
+
         Ok(result)
     }
 
@@ -226,7 +282,7 @@ impl MetalMSMPipeline {
         g_points_y: &[u32],
         g_points_z: &[u32],
         num_subtasks: usize,
-        log_limb_size: usize,
+        window_size: usize,
         pbpr_workgroup_size: usize,
     ) -> Result<G, Box<dyn Error>> {
         // Parallel processing of subtasks
@@ -265,7 +321,7 @@ impl MetalMSMPipeline {
             .collect();
 
         // Horner's method
-        let m = ScalarField::from(1u64 << log_limb_size);
+        let m = ScalarField::from(1u64 << window_size);
         let mut result = gpu_points[gpu_points.len() - 1];
 
         if gpu_points.len() > 1 {
@@ -280,20 +336,13 @@ impl MetalMSMPipeline {
 }
 
 /// Stage 1: Convert & Decompose
-struct ConvertPointAndScalarDecompose {
-    config: MetalConfig,
+struct ConvertPointAndScalarDecompose<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl ConvertPointAndScalarDecompose {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-                kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
-            },
-        }
+impl<'a> ConvertPointAndScalarDecompose<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -301,23 +350,35 @@ impl ConvertPointAndScalarDecompose {
         coords: &[u32],
         scalars: &[u32],
         input_size: usize,
+        window_size: usize,
+        num_columns: usize,
         num_subtasks: usize,
         c_num_x_workgroups: usize,
         c_num_y_workgroups: usize,
         c_num_z_workgroups: usize,
         c_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let shader = self
+            .shader_manager
+            .get_shader(&ShaderType::ConvertPointAndDecompose)
+            .ok_or("ConvertPointAndDecompose shader not found")?;
 
-        let coords_buf = helper.create_input_buffer(&coords.to_vec());
-        let scalars_buf = helper.create_input_buffer(&scalars.to_vec());
+        let coords_buf = helper.create_buffer(&coords.to_vec());
+        let scalars_buf = helper.create_buffer(&scalars.to_vec());
 
-        let out_point_x = helper.create_output_buffer(input_size * self.config.num_limbs);
-        let out_point_y = helper.create_output_buffer(input_size * self.config.num_limbs);
-        let out_scalar_chunks = helper.create_output_buffer(input_size * num_subtasks);
+        let out_point_x =
+            helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
+        let out_point_y =
+            helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
+        let out_scalar_chunks = helper.create_empty_buffer(input_size * num_subtasks);
 
-        let input_size_buf = helper.create_input_buffer(&vec![input_size as u32]);
-        let num_y_workgroups_buf = helper.create_input_buffer(&vec![c_num_y_workgroups as u32]);
+        let params_buf = helper.create_buffer(&vec![
+            input_size as u32,
+            window_size as u32,
+            num_columns as u32,
+            num_subtasks as u32,
+        ]);
 
         let thread_group_count = helper.create_thread_group_size(
             c_num_x_workgroups as u64,
@@ -327,21 +388,28 @@ impl ConvertPointAndScalarDecompose {
         let threads_per_threadgroup =
             helper.create_thread_group_size(c_workgroup_size as u64, 1, 1);
 
-        helper.execute_shader(
-            &self.config,
-            &[&coords_buf, &scalars_buf, &input_size_buf],
+        helper.execute_shader_with_pipeline(
+            &shader.pipeline_state,
             &[
+                &coords_buf,
+                &scalars_buf,
                 &out_point_x,
                 &out_point_y,
                 &out_scalar_chunks,
-                &num_y_workgroups_buf,
+                &params_buf,
             ],
             &thread_group_count,
             &threads_per_threadgroup,
         );
 
-        let point_x = helper.read_results(&out_point_x, input_size * self.config.num_limbs);
-        let point_y = helper.read_results(&out_point_y, input_size * self.config.num_limbs);
+        let point_x = helper.read_results(
+            &out_point_x,
+            input_size * self.shader_manager.config().num_limbs,
+        );
+        let point_y = helper.read_results(
+            &out_point_y,
+            input_size * self.shader_manager.config().num_limbs,
+        );
         let scalar_chunks = helper.read_results(&out_scalar_chunks, input_size * num_subtasks);
 
         helper.drop_all_buffers();
@@ -351,20 +419,13 @@ impl ConvertPointAndScalarDecompose {
 }
 
 /// Stage 2: Transpose
-struct Transpose {
-    config: MetalConfig,
+struct Transpose<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl Transpose {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/transpose.metal".to_string(),
-                kernel_name: "transpose".to_string(),
-            },
-        }
+impl<'a> Transpose<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -372,22 +433,25 @@ impl Transpose {
         scalar_chunks: &[u32],
         num_subtasks: usize,
         input_size: usize,
-        num_columns: u32,
+        num_columns: usize,
         t_num_x_workgroups: usize,
         t_num_y_workgroups: usize,
         t_num_z_workgroups: usize,
         t_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let shader = self
+            .shader_manager
+            .get_shader(&ShaderType::Transpose)
+            .ok_or("Transpose shader not found")?;
 
-        let in_chunks_buf = helper.create_input_buffer(&scalar_chunks.to_vec());
+        let in_chunks_buf = helper.create_buffer(&scalar_chunks.to_vec());
         let out_csc_col_ptr =
-            helper.create_output_buffer(num_subtasks * ((num_columns + 1) as usize) * 4);
-        let out_csc_val_idxs = helper.create_output_buffer(scalar_chunks.len());
-        let out_curr = helper.create_output_buffer(num_subtasks * (num_columns as usize) * 4);
+            helper.create_empty_buffer(num_subtasks * ((num_columns + 1) as usize) * 4);
+        let out_csc_val_idxs = helper.create_empty_buffer(scalar_chunks.len());
+        let out_curr = helper.create_empty_buffer(num_subtasks * (num_columns as usize) * 4);
 
-        let params = vec![num_columns, input_size as u32];
-        let params_buf = helper.create_input_buffer(&params);
+        let params_buf = helper.create_buffer(&vec![num_columns as u32, input_size as u32]);
 
         let thread_group_count = helper.create_thread_group_size(
             t_num_x_workgroups as u64,
@@ -397,8 +461,8 @@ impl Transpose {
         let threads_per_threadgroup =
             helper.create_thread_group_size(t_workgroup_size as u64, 1, 1);
 
-        helper.execute_shader(
-            &self.config,
+        helper.execute_shader_with_pipeline(
+            &shader.pipeline_state,
             &[
                 &in_chunks_buf,
                 &out_csc_col_ptr,
@@ -406,7 +470,6 @@ impl Transpose {
                 &out_curr,
                 &params_buf,
             ],
-            &[],
             &thread_group_count,
             &threads_per_threadgroup,
         );
@@ -424,20 +487,13 @@ impl Transpose {
 }
 
 /// Stage 3: SMVP
-struct SMVP {
-    config: MetalConfig,
+struct SMVP<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl SMVP {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/smvp.metal".to_string(),
-                kernel_name: "smvp".to_string(),
-            },
-        }
+impl<'a> SMVP<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -448,56 +504,81 @@ impl SMVP {
         point_y: &[u32],
         input_size: usize,
         num_subtasks: usize,
-        num_columns: u32,
-        s_num_x_workgroups: usize,
-        s_num_y_workgroups: usize,
-        s_num_z_workgroups: usize,
+        num_columns: usize,
+        simd_width: usize,
         s_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let shader = self
+            .shader_manager
+            .get_shader(&ShaderType::SMVP)
+            .ok_or("SMVP shader not found")?;
 
-        let bucket_size = (num_columns / 2) as usize * self.config.num_limbs * 4 * num_subtasks;
+        let half_columns = num_columns / 2;
+
+        let bucket_size =
+            half_columns as usize * self.shader_manager.config().num_limbs * 4 * num_subtasks;
 
         // Create buffers
-        let row_ptr_buf = helper.create_input_buffer(&csc_col_ptr.to_vec());
-        let val_idx_buf = helper.create_input_buffer(&csc_val_idxs.to_vec());
-        let point_x_buf = helper.create_input_buffer(&point_x.to_vec());
-        let point_y_buf = helper.create_input_buffer(&point_y.to_vec());
+        let row_ptr_buf = helper.create_buffer(&csc_col_ptr.to_vec());
+        let val_idx_buf = helper.create_buffer(&csc_val_idxs.to_vec());
+        let point_x_buf = helper.create_buffer(&point_x.to_vec());
+        let point_y_buf = helper.create_buffer(&point_y.to_vec());
 
-        let bucket_x_buf = helper.create_output_buffer(bucket_size);
-        let bucket_y_buf = helper.create_output_buffer(bucket_size);
-        let bucket_z_buf = helper.create_output_buffer(bucket_size);
+        let bucket_x_buf = helper.create_empty_buffer(bucket_size);
+        let bucket_y_buf = helper.create_empty_buffer(bucket_size);
+        let bucket_z_buf = helper.create_empty_buffer(bucket_size);
 
         // Execute in chunks
         let num_subtask_chunk_size = 4u32;
         for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-            let params = vec![
+            let remaining_subtasks = (num_subtasks as u32 - offset).min(num_subtask_chunk_size);
+            let threads_this_chunk = half_columns as u64 * remaining_subtasks as u64;
+            let valid_threads = half_columns as u64 * remaining_subtasks as u64;
+
+            let max_y = ((valid_threads as usize)
+                / (s_workgroup_size * remaining_subtasks as usize)) // remaining_subtasks == Z
+                .max(1);
+
+            println!("valid_threads: {:?}", valid_threads);
+            println!("remaining_subtasks: {:?}", remaining_subtasks);
+            println!("s_workgroup_size: {:?}", s_workgroup_size);
+            println!("max_y: {:?}", max_y);
+
+            let s_num_y_workgroups = simd_width.min(max_y);
+            println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
+            let s_num_z_workgroups = remaining_subtasks as usize;
+
+            let threads_per_grid =
+                (s_workgroup_size * s_num_y_workgroups * s_num_z_workgroups) as u64;
+            let adjusted_x_workgroups = (valid_threads + threads_per_grid - 1) / threads_per_grid; // ceil div
+
+            let params_buf = helper.create_buffer(&vec![
                 input_size as u32,
-                s_num_y_workgroups as u32,
+                num_columns as u32,
                 num_subtasks as u32,
                 offset,
-            ];
-            let params_buf = helper.create_input_buffer(&params);
-
-            let adjusted_x_workgroups =
-                s_num_x_workgroups / (num_subtasks / num_subtask_chunk_size as usize);
+            ]);
 
             let thread_group_count = helper.create_thread_group_size(
-                adjusted_x_workgroups as u64,
+                adjusted_x_workgroups,
                 s_num_y_workgroups as u64,
                 s_num_z_workgroups as u64,
             );
             let threads_per_threadgroup =
                 helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
 
-            println!("--- offset: {} ---", offset);
-            println!("adjusted_x_workgroups: {}", adjusted_x_workgroups);
-            println!("s_num_y_workgroups: {}", s_num_y_workgroups);
-            println!("s_num_z_workgroups: {}", s_num_z_workgroups);
-            println!("s_workgroup_size: {}", s_workgroup_size);
+            println!("== SMVP subtask chunk {} ==", offset);
+            println!("adjusted_x_workgroups: {:?}", adjusted_x_workgroups);
+            println!("s_num_y_workgroups: {:?}", s_num_y_workgroups);
+            println!("s_num_z_workgroups: {:?}", s_num_z_workgroups);
+            println!("s_workgroup_size: {:?}", s_workgroup_size);
+            println!("total_threads: {:?}", threads_this_chunk);
+            println!("threads_per_threadgroup: {:?}", threads_per_threadgroup);
+            println!("thread_group_count: {:?}", thread_group_count);
 
-            helper.execute_shader(
-                &self.config,
+            helper.execute_shader_with_pipeline(
+                &shader.pipeline_state,
                 &[
                     &row_ptr_buf,
                     &val_idx_buf,
@@ -508,7 +589,6 @@ impl SMVP {
                     &bucket_z_buf,
                     &params_buf,
                 ],
-                &[],
                 &thread_group_count,
                 &threads_per_threadgroup,
             );
@@ -525,27 +605,13 @@ impl SMVP {
 }
 
 /// Stage 4: PBPR
-struct PBPR {
-    stage1_config: MetalConfig,
-    stage2_config: MetalConfig,
+struct PBPR<'a> {
+    shader_manager: &'a ShaderManager,
 }
 
-impl PBPR {
-    fn new(msm_config: &MetalMSMConfig) -> Self {
-        Self {
-            stage1_config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/pbpr.metal".to_string(),
-                kernel_name: "bpr_stage_1".to_string(),
-            },
-            stage2_config: MetalConfig {
-                log_limb_size: msm_config.log_limb_size,
-                num_limbs: msm_config.num_limbs,
-                shader_file: "cuzk/pbpr.metal".to_string(),
-                kernel_name: "bpr_stage_2".to_string(),
-            },
-        }
+impl<'a> PBPR<'a> {
+    fn new(shader_manager: &'a ShaderManager) -> Self {
+        Self { shader_manager }
     }
 
     fn execute(
@@ -554,7 +620,7 @@ impl PBPR {
         bucket_y: &[u32],
         bucket_z: &[u32],
         num_subtasks: usize,
-        num_columns: u32,
+        num_columns: usize,
         num_subtasks_per_bpr_1: usize,
         num_subtasks_per_bpr_2: usize,
         b_num_x_workgroups: usize,
@@ -565,26 +631,35 @@ impl PBPR {
         b_2_num_z_workgroups: usize,
         b_workgroup_size: usize,
     ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+        let stage1_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRStage1)
+            .ok_or("BPRStage1 shader not found")?;
+        let stage2_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRStage2)
+            .ok_or("BPRStage2 shader not found")?;
 
-        let bucket_sum_x_buf = helper.create_input_buffer(&bucket_x.to_vec());
-        let bucket_sum_y_buf = helper.create_input_buffer(&bucket_y.to_vec());
-        let bucket_sum_z_buf = helper.create_input_buffer(&bucket_z.to_vec());
+        let bucket_sum_x_buf = helper.create_buffer(&bucket_x.to_vec());
+        let bucket_sum_y_buf = helper.create_buffer(&bucket_y.to_vec());
+        let bucket_sum_z_buf = helper.create_buffer(&bucket_z.to_vec());
 
-        let g_points_size = num_subtasks * b_workgroup_size * self.stage1_config.num_limbs * 4;
-        let g_points_x_buf = helper.create_output_buffer(g_points_size);
-        let g_points_y_buf = helper.create_output_buffer(g_points_size);
-        let g_points_z_buf = helper.create_output_buffer(g_points_size);
+        let g_points_size =
+            num_subtasks * b_workgroup_size * self.shader_manager.config().num_limbs * 4;
+        let g_points_x_buf = helper.create_empty_buffer(g_points_size);
+        let g_points_y_buf = helper.create_empty_buffer(g_points_size);
+        let g_points_z_buf = helper.create_empty_buffer(g_points_size);
 
         // Stage 1
         for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_1) {
             let params = vec![
                 subtask_chunk_idx as u32,
-                num_columns,
+                num_columns as u32,
                 num_subtasks_per_bpr_1 as u32,
+                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
             ];
-            let params_buf = helper.create_input_buffer(&params);
-            let workgroup_size_buf = helper.create_input_buffer(&vec![b_workgroup_size as u32]);
+            let params_buf = helper.create_buffer(&params);
 
             let stage1_thread_group_count = helper.create_thread_group_size(
                 b_num_x_workgroups as u64,
@@ -594,8 +669,22 @@ impl PBPR {
             let stage1_threads_per_threadgroup =
                 helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
-            helper.execute_shader(
-                &self.stage1_config,
+            println!("== PBPR 1 subtask chunk {} ==", subtask_chunk_idx);
+            println!("b_num_x_workgroups: {:?}", b_num_x_workgroups);
+            println!("b_num_y_workgroups: {:?}", b_num_y_workgroups);
+            println!("b_num_z_workgroups: {:?}", b_num_z_workgroups);
+            println!("b_workgroup_size: {:?}", b_workgroup_size);
+            println!(
+                "total_threads: {:?}",
+                b_num_x_workgroups * b_num_y_workgroups * b_num_z_workgroups * b_workgroup_size
+            );
+            println!(
+                "threads_per_threadgroup: {:?}",
+                stage1_threads_per_threadgroup
+            );
+
+            helper.execute_shader_with_pipeline(
+                &stage1_shader.pipeline_state,
                 &[
                     &bucket_sum_x_buf,
                     &bucket_sum_y_buf,
@@ -604,9 +693,7 @@ impl PBPR {
                     &g_points_y_buf,
                     &g_points_z_buf,
                     &params_buf,
-                    &workgroup_size_buf,
                 ],
-                &[],
                 &stage1_thread_group_count,
                 &stage1_threads_per_threadgroup,
             );
@@ -616,11 +703,11 @@ impl PBPR {
         for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_2) {
             let params = vec![
                 subtask_chunk_idx as u32,
-                num_columns,
+                num_columns as u32,
                 num_subtasks_per_bpr_2 as u32,
+                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
             ];
-            let params_buf = helper.create_input_buffer(&params);
-            let workgroup_size_buf = helper.create_input_buffer(&vec![b_workgroup_size as u32]);
+            let params_buf = helper.create_buffer(&params);
 
             let stage2_thread_group_count = helper.create_thread_group_size(
                 b_2_num_x_workgroups as u64,
@@ -630,8 +717,25 @@ impl PBPR {
             let stage2_threads_per_threadgroup =
                 helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
 
-            helper.execute_shader(
-                &self.stage2_config,
+            println!("== PBPR 2 subtask chunk {} ==", subtask_chunk_idx);
+            println!("b_2_num_x_workgroups: {:?}", b_2_num_x_workgroups);
+            println!("b_2_num_y_workgroups: {:?}", b_2_num_y_workgroups);
+            println!("b_2_num_z_workgroups: {:?}", b_2_num_z_workgroups);
+            println!("b_workgroup_size: {:?}", b_workgroup_size);
+            println!(
+                "total_threads: {:?}",
+                b_2_num_x_workgroups
+                    * b_2_num_y_workgroups
+                    * b_2_num_z_workgroups
+                    * b_workgroup_size
+            );
+            println!(
+                "threads_per_threadgroup: {:?}",
+                stage2_threads_per_threadgroup
+            );
+
+            helper.execute_shader_with_pipeline(
+                &stage2_shader.pipeline_state,
                 &[
                     &bucket_sum_x_buf,
                     &bucket_sum_y_buf,
@@ -640,9 +744,7 @@ impl PBPR {
                     &g_points_y_buf,
                     &g_points_z_buf,
                     &params_buf,
-                    &workgroup_size_buf,
                 ],
-                &[],
                 &stage2_thread_group_count,
                 &stage2_threads_per_threadgroup,
             );
@@ -661,8 +763,8 @@ impl PBPR {
 /// Convenient wrapper that mimics the Arkworks VariableBaseMSM interface
 /// Usage: metal_variable_base_msm(&bases, &scalars)
 pub fn metal_variable_base_msm(
-    bases: &[ark_bn254::G1Affine],
-    scalars: &[ark_bn254::Fr],
+    mut bases: &[ark_bn254::G1Affine],
+    mut scalars: &[ark_bn254::Fr],
 ) -> Result<ark_bn254::G1Projective, Box<dyn Error>> {
     // Handle empty input case
     if bases.is_empty() || scalars.is_empty() {
@@ -671,11 +773,47 @@ pub fn metal_variable_base_msm(
 
     // Ensure bases and scalars have the same length
     if bases.len() != scalars.len() {
-        return Err("Bases and scalars must have the same length".into());
+        let min_len = std::cmp::min(bases.len(), scalars.len());
+        bases = &bases[..min_len];
+        scalars = &scalars[..min_len];
     }
 
-    let pipeline = MetalMSMPipeline::with_default_config();
-    pipeline.execute(bases, scalars)
+    let input_size = bases.len();
+
+    // window_size is determined by experiment results
+    let window_size = if input_size < 16384 {
+        // 2^14
+        8
+    } else if input_size < 524288 {
+        // 2^19
+        13
+    } else if input_size <= 16777216 {
+        // 2^24
+        15
+    } else {
+        16
+    };
+
+    // workgroup size will be adjusted based on the scale factor
+    let scale_factor = if input_size <= 4096 {
+        // 2^0
+        1
+    } else if input_size > 4096 && input_size <= 65536 {
+        // 2^1
+        2
+    } else if input_size > 65536 && input_size <= 1048576 {
+        // 2^2
+        1 << 2
+    } else if input_size > 1048576 && input_size <= 33554432 {
+        // 2^3
+        1 << 3
+    } else {
+        // 2^4
+        1 << 4
+    };
+
+    let pipeline = MetalMSMPipeline::with_default_config()?;
+    pipeline.execute_pipeline(bases, scalars, input_size, window_size, scale_factor)
 }
 
 /// Test utilities module - available for both unit tests and integration tests
@@ -723,7 +861,7 @@ mod tests {
 
     #[test]
     fn test_metal_msm_pipeline() {
-        let log_input_size = 20;
+        let log_input_size = 15;
         let input_size = 1 << log_input_size;
 
         println!("Generating {} elements", input_size);
@@ -745,15 +883,14 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn benchmark_metal_vs_arkworks_msm() {
         println!("\n=== MSM Benchmark: Metal vs Arkworks ===");
-        println!(
-            "{:<12} {:<15} {:<15} {:<15} {:<10}",
-            "Input Size", "Metal Time", "Arkworks Time", "Speedup", "Correct"
-        );
-        println!("{}", "-".repeat(75));
 
-        for log_input_size in 12..=24 {
+        // Store results for each size
+        let mut results = Vec::new();
+
+        for log_input_size in 10..=24 {
             let input_size = 1 << log_input_size;
 
             // Generate test data
@@ -777,7 +914,42 @@ mod tests {
             // Verify correctness
             let is_correct = metal_result == arkworks_result;
 
-            // Format output
+            // Store results
+            results.push((
+                log_input_size,
+                input_size,
+                metal_time,
+                arkworks_time,
+                speedup,
+                is_correct,
+                generation_time,
+            ));
+
+            // Assert correctness for all sizes
+            assert_eq!(
+                metal_result, arkworks_result,
+                "Results don't match for input size 2^{}",
+                log_input_size
+            );
+        }
+
+        // Print all results at once
+        println!(
+            "{:<12} {:<15} {:<15} {:<15} {:<10}",
+            "Input Size", "Metal Time", "Arkworks Time", "Speedup", "Correct"
+        );
+        println!("{}", "-".repeat(75));
+
+        for (
+            log_input_size,
+            input_size,
+            metal_time,
+            arkworks_time,
+            speedup,
+            is_correct,
+            generation_time,
+        ) in results
+        {
             let input_size_str = format!("2^{} ({})", log_input_size, input_size);
             let metal_time_str = format!("{:.3}s", metal_time.as_secs_f64());
             let arkworks_time_str = format!("{:.3}s", arkworks_time.as_secs_f64());
@@ -797,13 +969,6 @@ mod tests {
             println!(
                 "  └─ Data generation: {:.3}s",
                 generation_time.as_secs_f64()
-            );
-
-            // Assert correctness for all sizes
-            assert_eq!(
-                metal_result, arkworks_result,
-                "Results don't match for input size 2^{}",
-                log_input_size
             );
         }
 

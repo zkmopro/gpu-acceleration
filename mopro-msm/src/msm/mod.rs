@@ -1,6 +1,6 @@
 pub mod arkworks_pippenger;
 pub mod bucket_wise_msm;
-pub mod metal;
+// pub mod metal;
 pub mod metal_msm;
 // TODO: fix(precompute_msm): the correctness test will fail occasionally
 // pub mod precompute_msm;

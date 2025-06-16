@@ -1,5 +1,5 @@
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::{Fq as BaseField, G1Projective as G};
 use ark_ec::Group;
@@ -22,14 +22,13 @@ pub fn test_get_n0() {
     };
 
     let mut helper = MetalHelper::new();
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&result_buf],
         &thread_group_count,
         &thread_group_size,
@@ -58,14 +57,13 @@ pub fn test_get_p() {
     };
 
     let mut helper = MetalHelper::new();
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&result_buf],
         &thread_group_count,
         &thread_group_size,
@@ -93,14 +91,13 @@ pub fn test_get_r() {
     };
 
     let mut helper = MetalHelper::new();
-    let result_buf = helper.create_output_buffer(NUM_LIMBS_WIDE);
+    let result_buf = helper.create_empty_buffer(NUM_LIMBS_WIDE);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&result_buf],
         &thread_group_count,
         &thread_group_size,
@@ -129,14 +126,13 @@ pub fn test_get_p_wide() {
     };
 
     let mut helper = MetalHelper::new();
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&result_buf],
         &thread_group_count,
         &thread_group_size,
@@ -164,16 +160,15 @@ pub fn test_get_bn254_zero() {
     };
 
     let mut helper = MetalHelper::new();
-    let x_buf = helper.create_output_buffer(config.num_limbs);
-    let y_buf = helper.create_output_buffer(config.num_limbs);
-    let z_buf = helper.create_output_buffer(config.num_limbs);
+    let x_buf = helper.create_empty_buffer(config.num_limbs);
+    let y_buf = helper.create_empty_buffer(config.num_limbs);
+    let z_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&x_buf, &y_buf, &z_buf],
         &thread_group_count,
         &thread_group_size,
@@ -204,16 +199,15 @@ pub fn test_get_bn254_one() {
     };
 
     let mut helper = MetalHelper::new();
-    let x_buf = helper.create_output_buffer(config.num_limbs);
-    let y_buf = helper.create_output_buffer(config.num_limbs);
-    let z_buf = helper.create_output_buffer(config.num_limbs);
+    let x_buf = helper.create_empty_buffer(config.num_limbs);
+    let y_buf = helper.create_empty_buffer(config.num_limbs);
+    let z_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&x_buf, &y_buf, &z_buf],
         &thread_group_count,
         &thread_group_size,
@@ -242,16 +236,15 @@ pub fn test_get_bn254_zero_mont() {
     };
 
     let mut helper = MetalHelper::new();
-    let x_buf = helper.create_output_buffer(config.num_limbs);
-    let y_buf = helper.create_output_buffer(config.num_limbs);
-    let z_buf = helper.create_output_buffer(config.num_limbs);
+    let x_buf = helper.create_empty_buffer(config.num_limbs);
+    let y_buf = helper.create_empty_buffer(config.num_limbs);
+    let z_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&x_buf, &y_buf, &z_buf],
         &thread_group_count,
         &thread_group_size,
@@ -292,16 +285,15 @@ pub fn test_get_bn254_one_mont() {
     };
 
     let mut helper = MetalHelper::new();
-    let x_buf = helper.create_output_buffer(config.num_limbs);
-    let y_buf = helper.create_output_buffer(config.num_limbs);
-    let z_buf = helper.create_output_buffer(config.num_limbs);
+    let x_buf = helper.create_empty_buffer(config.num_limbs);
+    let y_buf = helper.create_empty_buffer(config.num_limbs);
+    let z_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&x_buf, &y_buf, &z_buf],
         &thread_group_count,
         &thread_group_size,
@@ -343,14 +335,13 @@ pub fn test_get_mu() {
 
     let mut helper = MetalHelper::new();
 
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[],
         &[&result_buf],
         &thread_group_count,
         &thread_group_size,

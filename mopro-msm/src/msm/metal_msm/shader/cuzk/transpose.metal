@@ -6,12 +6,12 @@
 using namespace metal;
 
 kernel void transpose(
-    device const uint* all_csr_col_idx      [[buffer(0)]],
-    device atomic_uint* all_csc_col_ptr     [[buffer(1)]],
-    device uint* all_csc_val_idxs           [[buffer(2)]],
-    device uint* all_curr                   [[buffer(3)]],
-    constant uint2& params                  [[buffer(4)]],
-    uint gid                                [[thread_position_in_grid]]
+    device const uint* all_csr_col_idx      [[ buffer(0), access(read) ]],
+    device atomic_uint* all_csc_col_ptr     [[ buffer(1), access(read_write) ]],
+    device uint* all_csc_val_idxs           [[ buffer(2), access(read_write) ]],
+    device uint* all_curr                   [[ buffer(3), access(read_write) ]],
+    constant uint2& params                  [[ buffer(4), access(read) ]],
+    uint gid                                [[ thread_position_in_grid ]]
 ) {
     const uint subtask_idx = gid;
 
@@ -54,12 +54,11 @@ kernel void transpose(
         const uint col = all_csr_col_idx[cci_offset + j];
         
         // Get current position for this column
-        uint loc = atomic_load_explicit(
+        const uint loc = atomic_load_explicit(
             &all_csc_col_ptr[ccp_offset + col], 
             memory_order_relaxed
-        );
-
-        loc += all_curr[curr_offset + col];
+        ) + all_curr[curr_offset + col];
+        
         all_curr[curr_offset + col]++;
         
         // Store the value index in CSC format

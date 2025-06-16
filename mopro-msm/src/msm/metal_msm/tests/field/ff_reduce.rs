@@ -1,5 +1,5 @@
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, BigInteger, PrimeField, UniformRand};
@@ -12,15 +12,15 @@ pub fn test_ff_reduce_a_less_than_p() {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "field/ff_reduce.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_ff_reduce".to_string(),
     };
 
     let mut helper = MetalHelper::new();
 
     let (a, expected) = generate_test_values(false);
 
-    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let a_buf = helper.create_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let expected_limbs = expected.to_limbs(config.num_limbs, config.log_limb_size);
 
@@ -29,8 +29,7 @@ pub fn test_ff_reduce_a_less_than_p() {
 
     helper.execute_shader(
         &config,
-        &[&a_buf],
-        &[&result_buf],
+        &[&a_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );
@@ -51,15 +50,15 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
         log_limb_size: 16,
         num_limbs: 16,
         shader_file: "field/ff_reduce.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_ff_reduce".to_string(),
     };
 
     let mut helper = MetalHelper::new();
 
     let (a, expected) = generate_test_values(true);
 
-    let a_buf = helper.create_input_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
-    let result_buf = helper.create_output_buffer(config.num_limbs);
+    let a_buf = helper.create_buffer(&a.to_limbs(config.num_limbs, config.log_limb_size));
+    let result_buf = helper.create_empty_buffer(config.num_limbs);
 
     let expected_limbs = expected.to_limbs(config.num_limbs, config.log_limb_size);
 
@@ -68,8 +67,7 @@ pub fn test_ff_reduce_a_greater_than_p_less_than_2p() {
 
     helper.execute_shader(
         &config,
-        &[&a_buf],
-        &[&result_buf],
+        &[&a_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );

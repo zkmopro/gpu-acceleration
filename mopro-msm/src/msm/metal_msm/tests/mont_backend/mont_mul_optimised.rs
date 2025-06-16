@@ -1,5 +1,5 @@
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
@@ -8,6 +8,8 @@ use rand::thread_rng;
 
 #[test]
 #[serial_test::serial]
+#[ignore]
+/// Ignore by default since it requires different constants config compared to our optimized config for current implementation
 pub fn test_mont_mul_13() {
     do_test(13);
 }
@@ -20,7 +22,7 @@ pub fn do_test(log_limb_size: u32) {
         log_limb_size,
         num_limbs,
         shader_file: "mont_backend/mont_mul_optimised.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_mont_mul_optimised".to_string(),
     };
 
     let mut helper = MetalHelper::new();
@@ -44,19 +46,16 @@ pub fn do_test(log_limb_size: u32) {
         .into_bigint()
         .to_limbs(num_limbs, log_limb_size);
 
-    let a_buf =
-        helper.create_input_buffer(&a_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
-    let b_buf =
-        helper.create_input_buffer(&b_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
-    let result_buf = helper.create_output_buffer(num_limbs);
+    let a_buf = helper.create_buffer(&a_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
+    let b_buf = helper.create_buffer(&b_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
+    let result_buf = helper.create_empty_buffer(num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
     helper.execute_shader(
         &config,
-        &[&a_buf, &b_buf],
-        &[&result_buf],
+        &[&a_buf, &b_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );

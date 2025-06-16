@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField, UniformRand};
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 #[test]
 #[serial_test::serial]
@@ -59,15 +59,14 @@ fn test_point_coords_conversion() {
     let coords = [x_packed, y_packed].concat();
 
     // Setup Metal buffers
-    let coords_buf = helper.create_input_buffer(&coords);
-    let scalars_buf = helper.create_input_buffer(&scalars);
-    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
-    let num_y_workgroups_buf = helper.create_input_buffer(&vec![1u32]);
+    let coords_buf = helper.create_buffer(&coords);
+    let scalars_buf = helper.create_buffer(&scalars);
+    let params_buf = helper.create_buffer(&vec![1u32, 16u32, 16u32, 1u32]);
 
     // Prepare output buffers for the kernel
-    let point_x_buf = helper.create_output_buffer(num_limbs);
-    let point_y_buf = helper.create_output_buffer(num_limbs);
-    let chunks_buf = helper.create_output_buffer(num_limbs);
+    let point_x_buf = helper.create_empty_buffer(num_limbs);
+    let point_y_buf = helper.create_empty_buffer(num_limbs);
+    let chunks_buf = helper.create_empty_buffer(num_limbs);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -76,12 +75,13 @@ fn test_point_coords_conversion() {
     // Execute the shader
     helper.execute_shader(
         &config,
-        &[&coords_buf, &scalars_buf, &input_size_buf],
         &[
+            &coords_buf,
+            &scalars_buf,
             &point_x_buf,
             &point_y_buf,
             &chunks_buf,
-            &num_y_workgroups_buf,
+            &params_buf,
         ],
         &thread_group_count,
         &thread_group_size,
@@ -105,9 +105,9 @@ fn test_scalar_decomposition() {
     // Setup test config
     let log_limb_size = 16;
     let num_limbs = 16;
-    let chunk_size = 16;
-    let num_subtasks = (256f32 / chunk_size as f32).ceil() as usize;
-    let num_columns = 1 << chunk_size; // 2^chunk_size
+    let window_size = 16;
+    let num_subtasks = (256f32 / window_size as f32).ceil() as usize;
+    let num_columns = 1 << window_size; // 2^window_size
 
     let config = MetalConfig {
         log_limb_size,
@@ -133,15 +133,19 @@ fn test_scalar_decomposition() {
     let packed_scalars = pack_limbs(&scalars);
 
     // Setup Metal buffers
-    let coords_buf = helper.create_input_buffer(&coords);
-    let scalars_buf = helper.create_input_buffer(&packed_scalars);
-    let input_size_buf = helper.create_input_buffer(&vec![1u32]);
-    let num_y_workgroups_buf = helper.create_input_buffer(&vec![1u32]);
+    let coords_buf = helper.create_buffer(&coords);
+    let scalars_buf = helper.create_buffer(&packed_scalars);
+    let params_buf = helper.create_buffer(&vec![
+        1u32,
+        window_size as u32,
+        num_columns as u32,
+        num_subtasks as u32,
+    ]);
 
     // We'll ignore X,Y outputs, but we must pass them
-    let point_x_buf = helper.create_output_buffer(num_limbs);
-    let point_y_buf = helper.create_output_buffer(num_limbs);
-    let chunks_buf = helper.create_output_buffer(num_subtasks);
+    let point_x_buf = helper.create_empty_buffer(num_limbs);
+    let point_y_buf = helper.create_empty_buffer(num_limbs);
+    let chunks_buf = helper.create_empty_buffer(num_subtasks);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -150,12 +154,13 @@ fn test_scalar_decomposition() {
     // Execute the shader
     helper.execute_shader(
         &config,
-        &[&coords_buf, &scalars_buf, &input_size_buf],
         &[
+            &coords_buf,
+            &scalars_buf,
             &point_x_buf,
             &point_y_buf,
             &chunks_buf,
-            &num_y_workgroups_buf,
+            &params_buf,
         ],
         &thread_group_count,
         &thread_group_size,
@@ -166,7 +171,7 @@ fn test_scalar_decomposition() {
 
     // Now replicate the GPU logic in Rust:
     // (1) build scalar_bytes[16]
-    // (2) extract chunk_size bits
+    // (2) extract window_size bits
     // (3) fix up the last chunk for BN254 (254 bits)
     // (4) do sign logic => range [-s..s-1], then store +s
     let mut scalar_bytes = vec![0u32; 16];
@@ -178,11 +183,11 @@ fn test_scalar_decomposition() {
         scalar_bytes[15 - (i * 2) - 1] = hi;
     }
 
-    fn extract_word_from_bytes_le_mock(bytes: &[u32], word_idx: u32, chunk_size: u32) -> u32 {
-        let start_byte_idx = 15 - ((word_idx * chunk_size + chunk_size) / 16);
-        let end_byte_idx = 15 - ((word_idx * chunk_size) / 16);
-        let start_byte_offset = (word_idx * chunk_size + chunk_size) % 16;
-        let end_byte_offset = (word_idx * chunk_size) % 16;
+    fn extract_word_from_bytes_le_mock(bytes: &[u32], word_idx: u32, window_size: u32) -> u32 {
+        let start_byte_idx = 15 - ((word_idx * window_size + window_size) / 16);
+        let end_byte_idx = 15 - ((word_idx * window_size) / 16);
+        let start_byte_offset = (word_idx * window_size + window_size) % 16;
+        let end_byte_offset = (word_idx * window_size) % 16;
 
         let mut mask = 0u32;
         if start_byte_offset > 0 {
@@ -201,10 +206,11 @@ fn test_scalar_decomposition() {
     // Calculate expected chunks
     let mut cpu_chunks = vec![0u32; num_subtasks];
     for i in 0..(num_subtasks - 1) {
-        cpu_chunks[i] = extract_word_from_bytes_le_mock(&scalar_bytes, i as u32, chunk_size as u32);
+        cpu_chunks[i] =
+            extract_word_from_bytes_le_mock(&scalar_bytes, i as u32, window_size as u32);
     }
 
-    let shift_256 = ((num_subtasks as u32 * chunk_size as u32 - 256) + 16) - chunk_size as u32;
+    let shift_256 = ((num_subtasks as u32 * window_size as u32 - 256) + 16) - window_size as u32;
     cpu_chunks[num_subtasks - 1] = scalar_bytes[0] >> shift_256;
 
     // Sign logic

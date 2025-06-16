@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::BigUint;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 #[test]
 #[serial_test::serial]
@@ -18,7 +18,7 @@ pub fn test_jacobian_dbl_2009_l() {
         log_limb_size,
         num_limbs,
         shader_file: "curve/jacobian_dbl_2009_l.metal".to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_jacobian_dbl_2009_l".to_string(),
     };
 
     let mut helper = MetalHelper::new();
@@ -52,12 +52,12 @@ pub fn test_jacobian_dbl_2009_l() {
         .to_limbs(num_limbs, log_limb_size);
 
     // Create buffers
-    let axr_buf = helper.create_input_buffer(&axr_limbs);
-    let ayr_buf = helper.create_input_buffer(&ayr_limbs);
-    let azr_buf = helper.create_input_buffer(&azr_limbs);
-    let result_xr_buf = helper.create_output_buffer(num_limbs);
-    let result_yr_buf = helper.create_output_buffer(num_limbs);
-    let result_zr_buf = helper.create_output_buffer(num_limbs);
+    let axr_buf = helper.create_buffer(&axr_limbs);
+    let ayr_buf = helper.create_buffer(&ayr_limbs);
+    let azr_buf = helper.create_buffer(&azr_limbs);
+    let result_xr_buf = helper.create_empty_buffer(num_limbs);
+    let result_yr_buf = helper.create_empty_buffer(num_limbs);
+    let result_zr_buf = helper.create_empty_buffer(num_limbs);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -65,8 +65,14 @@ pub fn test_jacobian_dbl_2009_l() {
 
     helper.execute_shader(
         &config,
-        &[&axr_buf, &ayr_buf, &azr_buf],
-        &[&result_xr_buf, &result_yr_buf, &result_zr_buf],
+        &[
+            &axr_buf,
+            &ayr_buf,
+            &azr_buf,
+            &result_xr_buf,
+            &result_yr_buf,
+            &result_zr_buf,
+        ],
         &thread_group_count,
         &thread_group_size,
     );

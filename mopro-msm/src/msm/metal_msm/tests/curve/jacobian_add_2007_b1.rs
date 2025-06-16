@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::{rand::thread_rng, UniformRand, Zero};
 use num_bigint::BigUint;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 fn jacobian_add_2007_bl_kernel(a: G, b: G, shader_name: &str) -> G {
     let log_limb_size = 16;
@@ -16,7 +16,7 @@ fn jacobian_add_2007_bl_kernel(a: G, b: G, shader_name: &str) -> G {
         log_limb_size,
         num_limbs,
         shader_file: format!("curve/{}.metal", shader_name),
-        kernel_name: "run".to_string(),
+        kernel_name: "test_jacobian_add_2007_bl".to_string(),
     };
 
     let mut helper = MetalHelper::new();
@@ -61,15 +61,15 @@ fn jacobian_add_2007_bl_kernel(a: G, b: G, shader_name: &str) -> G {
         .to_limbs(num_limbs, log_limb_size);
 
     // Create buffers
-    let axr_buf = helper.create_input_buffer(&axr_limbs);
-    let ayr_buf = helper.create_input_buffer(&ayr_limbs);
-    let azr_buf = helper.create_input_buffer(&azr_limbs);
-    let bxr_buf = helper.create_input_buffer(&bxr_limbs);
-    let byr_buf = helper.create_input_buffer(&byr_limbs);
-    let bzr_buf = helper.create_input_buffer(&bzr_limbs);
-    let result_xr_buf = helper.create_output_buffer(num_limbs);
-    let result_yr_buf = helper.create_output_buffer(num_limbs);
-    let result_zr_buf = helper.create_output_buffer(num_limbs);
+    let axr_buf = helper.create_buffer(&axr_limbs);
+    let ayr_buf = helper.create_buffer(&ayr_limbs);
+    let azr_buf = helper.create_buffer(&azr_limbs);
+    let bxr_buf = helper.create_buffer(&bxr_limbs);
+    let byr_buf = helper.create_buffer(&byr_limbs);
+    let bzr_buf = helper.create_buffer(&bzr_limbs);
+    let result_xr_buf = helper.create_empty_buffer(num_limbs);
+    let result_yr_buf = helper.create_empty_buffer(num_limbs);
+    let result_zr_buf = helper.create_empty_buffer(num_limbs);
 
     // Setup thread group sizes
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
@@ -77,8 +77,17 @@ fn jacobian_add_2007_bl_kernel(a: G, b: G, shader_name: &str) -> G {
 
     helper.execute_shader(
         &config,
-        &[&axr_buf, &ayr_buf, &azr_buf, &bxr_buf, &byr_buf, &bzr_buf],
-        &[&result_xr_buf, &result_yr_buf, &result_zr_buf],
+        &[
+            &axr_buf,
+            &ayr_buf,
+            &azr_buf,
+            &bxr_buf,
+            &byr_buf,
+            &bzr_buf,
+            &result_xr_buf,
+            &result_yr_buf,
+            &result_zr_buf,
+        ],
         &thread_group_count,
         &thread_group_size,
     );

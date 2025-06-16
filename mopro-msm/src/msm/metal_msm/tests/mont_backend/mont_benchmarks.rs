@@ -1,5 +1,5 @@
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 use ark_bn254::Fq as BaseField;
 use ark_ff::{BigInt, PrimeField};
@@ -63,7 +63,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
         log_limb_size,
         num_limbs,
         shader_file: shader_file.to_string(),
-        kernel_name: "run".to_string(),
+        kernel_name: format!("test_{}_benchmarks", shader_file),
     };
 
     // Get constants for this configuration
@@ -98,12 +98,10 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
     let mut helper = MetalHelper::new();
 
     // Create buffers
-    let a_buf =
-        helper.create_input_buffer(&a_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
-    let b_buf =
-        helper.create_input_buffer(&b_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
-    let cost_buf = helper.create_input_buffer(&vec![cost as u32]);
-    let result_buf = helper.create_output_buffer(num_limbs);
+    let a_buf = helper.create_buffer(&a_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
+    let b_buf = helper.create_buffer(&b_r_in_ark.into_bigint().to_limbs(num_limbs, log_limb_size));
+    let cost_buf = helper.create_buffer(&vec![cost as u32]);
+    let result_buf = helper.create_empty_buffer(num_limbs);
 
     let thread_group_count = helper.create_thread_group_size(1, 1, 1);
     let thread_group_size = helper.create_thread_group_size(1, 1, 1);
@@ -113,8 +111,7 @@ pub fn benchmark(log_limb_size: u32, shader_file: &str) -> Result<i64, String> {
 
     helper.execute_shader(
         &config,
-        &[&a_buf, &b_buf, &cost_buf],
-        &[&result_buf],
+        &[&a_buf, &b_buf, &cost_buf, &result_buf],
         &thread_group_count,
         &thread_group_size,
     );

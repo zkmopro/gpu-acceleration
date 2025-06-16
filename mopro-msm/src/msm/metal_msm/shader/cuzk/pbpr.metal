@@ -5,8 +5,8 @@ using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
     #include <metal_logging>
-    constant os_log logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
-    #define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
+    constant os_log pbpr_logger_kernel(/*subsystem=*/"pbpr", /*category=*/"metal");
+    #define LOG_DEBUG(...) pbpr_logger_kernel.log_debug(__VA_ARGS__)
 #else
     #define LOG_DEBUG(...) ((void)0)
 #endif
@@ -30,24 +30,25 @@ static Jacobian double_and_add(Jacobian point, uint scalar) {
 }
 
 kernel void bpr_stage_1(
-    device BigInt* bucket_sum_x         [[ buffer(0) ]],
-    device BigInt* bucket_sum_y         [[ buffer(1) ]],
-    device BigInt* bucket_sum_z         [[ buffer(2) ]],
-    device BigInt* g_points_x           [[ buffer(3) ]],
-    device BigInt* g_points_y           [[ buffer(4) ]],
-    device BigInt* g_points_z           [[ buffer(5) ]],
-    constant uint3& params              [[ buffer(6) ]],
-    constant uint& workgroup_size       [[ buffer(7) ]],
-    uint tid                            [[ thread_position_in_grid ]])
-{
+    device BigInt* bucket_sum_x         [[ buffer(0), access(read_write) ]],
+    device BigInt* bucket_sum_y         [[ buffer(1), access(read_write) ]],
+    device BigInt* bucket_sum_z         [[ buffer(2), access(read_write) ]],
+    device BigInt* g_points_x           [[ buffer(3), access(write) ]],
+    device BigInt* g_points_y           [[ buffer(4), access(write) ]],
+    device BigInt* g_points_z           [[ buffer(5), access(write) ]],
+    constant uint3& params              [[ buffer(6), access(read) ]],
+    uint tid                            [[ thread_position_in_grid ]],
+    uint workgroup_size                 [[ dispatch_threads_per_threadgroup ]]
+) {
     const uint thread_id = tid;
     const uint num_threads_per_subtask = workgroup_size;
 
     const uint subtask_idx = params[0];
     const uint num_columns = params[1];
-    const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation (must be power of 2).
+    const uint num_subtasks_per_bpr = params[2];    // Number of subtasks per shader invocation
 
     const uint num_buckets_per_subtask = num_columns / 2u;
+    const uint total_buckets = num_buckets_per_subtask * num_subtasks_per_bpr;
 
     // Number of buckets to reduce per thread.
     const uint buckets_per_thread = num_buckets_per_subtask / num_threads_per_subtask;
@@ -59,6 +60,8 @@ kernel void bpr_stage_1(
     if (thread_id % num_threads_per_subtask != 0u) {
         idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread + offset;
     }
+    // guard bucket bounds
+    if (idx >= total_buckets) { return; }
 
     Jacobian m = {
         .x = bucket_sum_x[idx],
@@ -68,8 +71,6 @@ kernel void bpr_stage_1(
     Jacobian g = m;
 
     for (uint i = 0; i < buckets_per_thread - 1u; i++) {
-        LOG_DEBUG("[bpr_stage_1] i: %u, thread_id: %u, num_threads_per_subtask: %u, buckets_per_thread: %u, offset: %u", i, thread_id, num_threads_per_subtask, buckets_per_thread, offset);
-
         uint idx = (num_threads_per_subtask - (thread_id % num_threads_per_subtask)) * buckets_per_thread - 1u - i;
         uint bi = offset + idx;
         Jacobian b = {
@@ -93,16 +94,16 @@ kernel void bpr_stage_1(
 
 
 kernel void bpr_stage_2(
-    device BigInt* bucket_sum_x         [[ buffer(0) ]],
-    device BigInt* bucket_sum_y         [[ buffer(1) ]],
-    device BigInt* bucket_sum_z         [[ buffer(2) ]],
-    device BigInt* g_points_x           [[ buffer(3) ]],
-    device BigInt* g_points_y           [[ buffer(4) ]],
-    device BigInt* g_points_z           [[ buffer(5) ]],
-    constant uint3& params              [[ buffer(6) ]],
-    constant uint& workgroup_size       [[ buffer(7) ]],
-    uint tid                            [[ thread_position_in_grid ]])
-{
+    device BigInt* bucket_sum_x         [[ buffer(0), access(read) ]],
+    device BigInt* bucket_sum_y         [[ buffer(1), access(read) ]],
+    device BigInt* bucket_sum_z         [[ buffer(2), access(read) ]],
+    device BigInt* g_points_x           [[ buffer(3), access(read_write) ]],
+    device BigInt* g_points_y           [[ buffer(4), access(read_write) ]],
+    device BigInt* g_points_z           [[ buffer(5), access(read_write) ]],
+    constant uint3& params              [[ buffer(6), access(read) ]],
+    uint tid                            [[ thread_position_in_grid ]],
+    uint workgroup_size                 [[ dispatch_threads_per_threadgroup ]]
+) {
     const uint thread_id = tid;
     const uint num_threads_per_subtask = workgroup_size;
 
