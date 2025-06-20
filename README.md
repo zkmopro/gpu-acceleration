@@ -60,7 +60,81 @@ mod tests {
 ```
 
 ## Benchmark
-// TODO
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2" style="text-align:center">Scheme</th>
+      <th colspan="7" style="text-align:center">Input Size (ms)</th>
+    </tr>
+    <tr>
+      <th style="text-align:center">2<sup>12</sup></th>
+      <th style="text-align:center">2<sup>14</sup></th>
+      <th style="text-align:center">2<sup>16</sup></th>
+      <th style="text-align:center">2<sup>18</sup></th>
+      <th style="text-align:center">2<sup>20</sup></th>
+      <th style="text-align:center">2<sup>22</sup></th>
+      <th style="text-align:center">2<sup>24</sup></th>
+    </tr>
+  </thead>
+  <tbody style="text-align:center">
+    <tr>
+      <th style="text-align:center"><a href="https://github.com/arkworks-rs">Arkworks v0.4.x</a><br>(CPU, Baseline)</br></th>
+      <td>6</td>
+      <td>19</td>
+      <td>69</td>
+      <td>245</td>
+      <td>942</td>
+      <td>3,319</td>
+      <td>14,061</td>
+    </tr>
+    <tr>
+      <th style="text-align:center"><a href="https://github.com/zkmopro/gpu-acceleration/tree/v0.1.0">Metal MSM v0.1.0</a><br>(GPU)</br></th>
+      <td>143<br>(~23.8x slower)</br></td>
+      <td>273<br>(~14.4x slower)</br></td>
+      <td>1,730<br>(~25.1x slower)</br></td>
+      <td>10,277<br>(~41.9x slower)</br></td>
+      <td>41,019<br>(~43.5x slower)</br></td>
+      <td>555,877<br>(~167.5x slower)</br></td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <th style="text-align:center"><a href="https://github.com/zkmopro/gpu-acceleration/tree/v0.2.0">Metal MSM v0.2.0</a><br>(GPU)</br></th>
+      <td>134<br>(~22.3x slower)</br></td>
+      <td>124<br>(~6.5x slower)</br></td>
+      <td>253<br>(~3.7x slower)</br></td>
+      <td>678<br>(~2.8x slower)</br></td>
+      <td>1,702<br>(~1.8x slower)</br></td>
+      <td>5,390<br>(~1.6x slower)</br></td>
+      <td>22,241<br>(~1.6x slower)</br></td>
+    </tr>
+    <tr>
+      <th style="text-align:center"><a href="https://github.com/ICME-Lab/msm-webgpu">ICME WebGPU MSM</a><br>(GPU)</br></th>
+      <td>N/A</td>
+      <td>N/A</td>
+      <td>2,719<br>(~39.4x slower)</br></td>
+      <td>5,418<br>(~22.1x slower)</br></td>
+      <td>17,475<br>(~18.6x slower)</br></td>
+      <td>N/A</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <th style="text-align:center"><a href="https://github.com/moven0831/icicle/tree/bn254-metal-benchmark">ICICLE-Metal v3.8.0</a><br>(GPU)</br></th>
+      <td>59<br>(~9.8x slower)</br></td>
+      <td>54<br>(~2.8x slower)</br></td>
+      <td>89<br>(~1.3x slower)</br></td>
+      <td>149<br>(~1.6x faster)</br></td>
+      <td>421<br>(~2.2x faster)</br></td>
+      <td>1,288<br>(~2.6x faster)</br></td>
+      <td>4,945<br>(~2.8x faster)</br></td>
+    </tr>
+  </tbody>
+</table>
+
+
+> side note:
+> - for ICME WebGPU MSM, input size 2^12 causes M3 chip machines to crash; any sizes not listed on the project’s GitHub page are shown as "N/A"
+> - for Metal MSM v0.1.0, the 2^24 benchmark was abandoned because it exceeded practical runtime
 
 ## Community
 
