@@ -6,6 +6,25 @@ By adopting sparse matrices, it improves the Pippenger algorithm [Pip76](https:/
 
 One thing to highlight is that our implementation runs most computations on the GPU, but it’s still slower than the CPU-only solution like [Arkworks](https://github.com/arkworks-rs). However, because we target client-side devices with limited resources, applying a hybrid approach, leveraging both CPU and GPU for MSM tasks and combining the results at the end, can yield an implementation slightly faster than a pure-CPU one. Check the write-up below for estimated speedups with this hybrid method.
 
+## Profiling summary (v1 vs v2)
+
+Environment: M1 Pro, macOS 15.2, curve `ark_bn254`, dataset 2^20 unless stated. Medians of 5 runs.
+
+### v2 → v1
+
+| metric | v1[^1] | v2[^2] | gain |
+|---|---|---|---|
+| end-to-end latency | 10.3 s | **0.42 s** | **×24** |
+| GPU occupancy | 32 % | 76 % | +44 pp |
+| CPU share | 19 % | **<3 %** | –16 pp |
+| peak VRAM | 1.6 GB | **220 MB** | –7.3× |
+
+Key changes:
+
+* single sparse-matrix kernel eliminates most launches and memory thrash  
+* CSR buckets keep data on-device → near-zero host↔GPU traffic  
+* on-GPU radix sort makes preprocessing parallel
+
 ## How to use
 
 Metal MSM v2 works with `arkworks v0.4.x`; just include the crate in your `Cargo.toml`.
@@ -144,3 +163,6 @@ mod tests {
 ## Acknowledgements
 
 This work was initially sponsored by a joint grant from [PSE](https://pse.dev/) and [0xPARC](https://0xparc.org/). It is currently incubated by PSE.
+
+[^1]: https://hackmd.io/@yaroslav-ya/rJkpqc_Nke
+[^2]: https://hackmd.io/@yaroslav-ya/HyFA7XAQll
