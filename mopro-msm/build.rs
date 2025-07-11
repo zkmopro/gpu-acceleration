@@ -84,26 +84,46 @@ fn compile_shaders() -> std::io::Result<()> {
     }
     fs::write(&combined, &combined_src)?;
 
-    // Compile combined source to AIR
+    // Determine SDK target
     let target = env::var("TARGET").unwrap_or_default();
     let sdk = if target.contains("apple-ios") {
         "iphoneos"
     } else {
         "macosx"
     };
+
+    // Only detect Metal version if we're not in CI
+    let (metal_std, enable_logging) = if env::var("CI").is_err() {
+        let (metal_version, metal_std, enable_logging) = detect_metal_version(sdk)?;
+        println!("cargo:warning=Detected Metal version: {}", metal_version);
+        (metal_std, enable_logging)
+    } else {
+        println!("cargo:warning=Running in CI - using safe Metal 3.0 standard without logging");
+        ("metal3.0".to_string(), false)
+    };
+
+    // Compile combined source to AIR
     let air = shader_out_dir.join("msm.air");
+    let metal_std_arg = format!("-std={}", metal_std);
+    let mut metal_args = vec![
+        "-sdk",
+        sdk,
+        "metal",
+        &metal_std_arg,
+        "-c",
+        combined.to_str().unwrap(),
+        "-o",
+        air.to_str().unwrap(),
+    ];
+
+    // Add logging flag only if enabled (which only happens when not in CI and Metal >= 3.2)
+    if enable_logging {
+        metal_args.insert(metal_args.len() - 3, "-fmetal-enable-logging");
+        println!("cargo:warning=Enabling Metal logging");
+    }
+
     let status = Command::new("xcrun")
-        .args(&[
-            "-sdk",
-            sdk,
-            "metal",
-            "-std=metal3.2",
-            "-fmetal-enable-logging",
-            "-c",
-            combined.to_str().unwrap(),
-            "-o",
-            air.to_str().unwrap(),
-        ])
+        .args(&metal_args)
         .status()
         .expect("Failed to invoke metal");
     if !status.success() {
@@ -135,6 +155,92 @@ fn compile_shaders() -> std::io::Result<()> {
         "pub const MSM_METALLIB: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/shaders/msm.metallib\"));"
     )?;
     Ok(())
+}
+
+fn detect_metal_version(sdk: &str) -> std::io::Result<(String, String, bool)> {
+    // Use OS version to determine Metal version support
+    let os_version = get_os_version();
+    let (major, minor) = determine_metal_version_from_os(&os_version);
+
+    // Determine Metal standard and whether to enable logging
+    let (metal_std, enable_logging) = if major > 3 || (major == 3 && minor >= 2) {
+        ("metal3.2".to_string(), true)
+    } else if major == 3 && minor >= 1 {
+        ("metal3.1".to_string(), false)
+    } else if major == 3 {
+        ("metal3.0".to_string(), false)
+    } else if major == 2 && minor >= 4 {
+        // For Metal 2.x, we need platform-specific prefixes
+        let platform_prefix = if sdk == "iphoneos" { "ios" } else { "macos" };
+        (format!("{}-metal2.4", platform_prefix), false)
+    } else {
+        // For Metal 2.x, we need platform-specific prefixes
+        let platform_prefix = if sdk == "iphoneos" { "ios" } else { "macos" };
+        (format!("{}-metal2.3", platform_prefix), false)
+    };
+
+    let version_str = format!("{}.{}", major, minor);
+    println!(
+        "cargo:warning=Detected OS version: {} -> Metal version: {}",
+        os_version, version_str
+    );
+    Ok((version_str, metal_std, enable_logging))
+}
+
+fn get_os_version() -> String {
+    // Get OS version using system APIs
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("sw_vers").arg("-productVersion").output() {
+            if output.status.success() {
+                return String::from_utf8_lossy(&output.stdout).trim().to_string();
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        // For iOS, we can assume modern Metal support
+        return "16.0".to_string();
+    }
+
+    // Fallback
+    "10.15".to_string()
+}
+
+fn determine_metal_version_from_os(os_version: &str) -> (u32, u32) {
+    let parts: Vec<&str> = os_version.split('.').collect();
+    if parts.len() >= 2 {
+        if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+            // macOS to Metal version mapping
+            #[cfg(target_os = "macos")]
+            {
+                if major >= 14 || (major == 13) {
+                    return (3, 2); // macOS 13.0+ supports Metal 3.2
+                } else if major >= 12 || (major == 11) {
+                    return (3, 0); // macOS 11.0+ supports Metal 3.0
+                } else if major >= 11 || (major == 10 && minor >= 15) {
+                    return (2, 4); // macOS 10.15+ supports Metal 2.4
+                }
+            }
+
+            // iOS to Metal version mapping
+            #[cfg(target_os = "ios")]
+            {
+                if major >= 16 {
+                    return (3, 2); // iOS 16+ supports Metal 3.2
+                } else if major >= 14 {
+                    return (3, 0); // iOS 14+ supports Metal 3.0
+                } else if major >= 13 {
+                    return (2, 4); // iOS 13+ supports Metal 2.4
+                }
+            }
+        }
+    }
+
+    // Default fallback
+    (2, 3)
 }
 
 fn visit_dirs(dir: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
