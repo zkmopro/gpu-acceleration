@@ -274,7 +274,7 @@ fn test_smvp() {
         }
 
         // j = 1 (negative bucket counterpart)
-        let mut row_idx2 = half_columns as usize - id_mod;
+        let row_idx2 = half_columns as usize - id_mod;
         let mut sum2 = accumulate_row(row_idx2, &row_to_indices, &points);
         let bucket_idx2 = if half_columns as usize > row_idx2 {
             sum2 = sum2.neg();
