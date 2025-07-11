@@ -4,8 +4,8 @@ use ark_ff::{BigInt, PrimeField};
 use num_bigint::BigUint;
 use rand::{self, Rng};
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 fn jacobian_scalar_mul_kernel(point: G, scalar: u32) -> G {
     let log_limb_size = 16;

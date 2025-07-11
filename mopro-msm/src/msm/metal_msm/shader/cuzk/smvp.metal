@@ -1,40 +1,38 @@
-#include <metal_stdlib>
-#include "barrett_reduction.metal"
 #include "../curve/jacobian.metal"
+#include "barrett_reduction.metal"
+#include <metal_stdlib>
 using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
-    #include <metal_logging>
-    constant os_log smvp_logger_kernel(/*subsystem=*/"smvp", /*category=*/"metal");
-    #define LOG_DEBUG(...) smvp_logger_kernel.log_debug(__VA_ARGS__)
+#include <metal_logging>
+constant os_log smvp_logger_kernel(/*subsystem=*/"smvp", /*category=*/"metal");
+#define LOG_DEBUG(...) smvp_logger_kernel.log_debug(__VA_ARGS__)
 #else
-    #define LOG_DEBUG(...) ((void)0)
+#define LOG_DEBUG(...) ((void)0)
 #endif
 
 kernel void smvp(
-    device const uint*          row_ptr         [[ buffer(0) ]],
-    device const uint*          val_idx         [[ buffer(1) ]],
-    device const BigInt*        new_point_x     [[ buffer(2) ]],
-    device const BigInt*        new_point_y     [[ buffer(3) ]],
-    device BigInt*              bucket_x        [[ buffer(4) ]],
-    device BigInt*              bucket_y        [[ buffer(5) ]],
-    device BigInt*              bucket_z        [[ buffer(6) ]],
-    constant uint4&             params          [[ buffer(7) ]],
-    uint3                       gid             [[thread_position_in_grid]],
-    uint3                       tid             [[thread_position_in_threadgroup]]
-) {
-    const uint input_size        = params[0];
-    const uint num_y_workgroups  = params[1];
-    const uint num_z_workgroups  = params[2];
-    const uint subtask_offset    = params[3];
+    device const uint* row_ptr [[buffer(0), access(read)]],
+    device const uint* val_idx [[buffer(1), access(read)]],
+    device const BigInt* new_point_x [[buffer(2), access(read)]],
+    device const BigInt* new_point_y [[buffer(3), access(read)]],
+    device BigInt* bucket_x [[buffer(4), access(read_write)]],
+    device BigInt* bucket_y [[buffer(5), access(read_write)]],
+    device BigInt* bucket_z [[buffer(6), access(read_write)]],
+    constant uint4& params [[buffer(7), access(read)]],
+    uint3 tgid [[threadgroup_position_in_grid]],
+    uint3 tid [[thread_position_in_threadgroup]],
+    uint3 workgroup_size [[dispatch_threads_per_threadgroup]],
+    uint3 threadgroup_size [[threadgroups_per_grid]])
+{
+    const uint group_id = (tgid.x * threadgroup_size.y + tgid.y) * threadgroup_size.z + tgid.z;
+    const uint id = group_id * workgroup_size.x + tid.x;
 
-    const uint gidx = gid.x;
-    const uint gidy = gid.y;
-    const uint gidz = gid.z;
+    const uint input_size = params[0];
+    const uint num_columns = params[1];
+    const uint num_subtasks = params[2];
+    const uint subtask_offset = params[3];
 
-    const uint id = (gidx * num_y_workgroups + gidy) * num_z_workgroups + gidz;
-    
-    const uint num_columns = NUM_COLUMNS;
     const uint half_columns = num_columns / 2;
 
     const uint subtask_idx = id / half_columns;
@@ -59,8 +57,11 @@ kernel void smvp(
 
         // Accumulate all the points for that bucket
         Jacobian sum = inf;
+
         for (uint k = row_begin; k < row_end; k++) {
-            const uint idx = val_idx[ (subtask_idx + subtask_offset) * input_size + k ];
+            const uint val_idx_offset = (subtask_idx + subtask_offset) * input_size + k;
+            const uint idx = val_idx[val_idx_offset];
+
             Jacobian b = {
                 .x = new_point_x[idx],
                 .y = new_point_y[idx],
@@ -84,6 +85,9 @@ kernel void smvp(
         // Store the result in bucket arrays only if bucket_idx > 0
         // The final 1D index for the bucket is id + subtask_offset * half_columns
         const uint bi = id + subtask_offset * half_columns;
+
+        // Add bounds checking for bucket array access
+        const uint bucket_size = half_columns * NUM_LIMBS * num_subtasks;
         if (bucket_idx > 0) {
             // If j == 1, add to the existing bucket at index `bi`.
             if (j == 1) {

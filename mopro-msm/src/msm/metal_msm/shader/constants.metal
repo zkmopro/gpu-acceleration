@@ -9,9 +9,6 @@
 #define N0 25481
 #define NSAFE 1
 #define SLACK 2
-#define CHUNK_SIZE 16
-#define NUM_COLUMNS 65536
-#define NUM_SUBTASKS 16
 constant uint32_t BARRETT_MU[NUM_LIMBS] = {
     37093,
     6591,

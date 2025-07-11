@@ -5,8 +5,8 @@ use ark_std::{rand, UniformRand, Zero};
 use rand::Rng;
 use std::ops::Neg;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 use crate::msm::metal_msm::utils::mont_params::calc_mont_radix;
 use crate::msm::metal_msm::utils::mont_reduction::raw_reduction;
 use num_bigint::BigUint;
@@ -59,11 +59,11 @@ fn smvp_gpu(
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-        // params => [input_size, num_y_workgroups, num_z_workgroups, offset]
+        // params => [input_size, num_columns, num_subtasks, offset]
         let params = vec![
             input_size as u32,
-            s_num_y_workgroups,
-            s_num_z_workgroups,
+            num_columns as u32,
+            num_subtasks as u32,
             offset,
         ];
         let params_buf = helper.create_buffer(&params);
@@ -274,7 +274,7 @@ fn test_smvp() {
         }
 
         // j = 1 (negative bucket counterpart)
-        let mut row_idx2 = half_columns as usize - id_mod;
+        let row_idx2 = half_columns as usize - id_mod;
         let mut sum2 = accumulate_row(row_idx2, &row_to_indices, &points);
         let bucket_idx2 = if half_columns as usize > row_idx2 {
             sum2 = sum2.neg();

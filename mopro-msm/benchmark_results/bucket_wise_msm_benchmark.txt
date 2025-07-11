@@ -1,4 +1,0 @@
-msm_size,num_msm,avg_processing_time(ms)
-16,5,563.822834
-18,5,1615.4173584
-20,5,9367.2433832

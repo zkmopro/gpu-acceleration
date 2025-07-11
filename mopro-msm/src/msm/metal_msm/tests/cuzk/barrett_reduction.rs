@@ -3,8 +3,8 @@ use ark_ff::{BigInt, PrimeField};
 use num_bigint::RandBigInt;
 use rand::thread_rng;
 
+use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
-use crate::msm::metal_msm::utils::metal_wrapper::*;
 
 #[test]
 #[serial_test::serial]
