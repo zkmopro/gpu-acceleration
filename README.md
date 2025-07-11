@@ -1,6 +1,6 @@
 # Metal MSM
 
-Metal-MSM v2 executes MSM on [BN254](https://hackmd.io/@jpw/bn254) curve on Apple GPUs using Metal Shading Language (MSL). Unlike v1, which naively split the work into smaller tasks, v2 takes [Tal and Koh’s WebGPU MSM](https://github.com/z-prize/2023-entries/tree/main/prize-2-msm-wasm/webgpu-only/tal-derei-koh-wei-jie) in ZPrize2023 and the [LWY+23](https://eprint.iacr.org/2022/1321) (cuZK) approach as reference.
+Metal-MSM v2 executes MSM on [BN254](https://hackmd.io/@jpw/bn254) curve on Apple GPUs using Metal Shading Language (MSL). Unlike v1, which naively split the work into smaller tasks, v2 takes [Tal and Koh’s WebGPU MSM](https://github.com/z-prize/2023-entries/tree/main/prize-2-msm-wasm/webgpu-only/tal-derei-koh-wei-jie) in ZPrize2023 and the cuZK [[LWY+23](https://eprint.iacr.org/2022/1321)] approach as reference.
 
 By adopting sparse matrices, it improves the Pippenger algorithm [Pip76](https://dl.acm.org/doi/10.1109/SFCS.1976.21) with a more memory-efficient storage format and uses well-studied sparse matrix algorithms, such as sparse matrix–vector multiplication and sparse matrix transposition, in both the preprocessing phase (e.g., radix sort via sparse matrix transpose) and the bucket-accumulation phase to achieve high parallelism.
 
@@ -157,6 +157,28 @@ Key changes:
 * single sparse-matrix kernel eliminates most launches and memory thrash  
 * CSR buckets keep data on-device → near-zero host↔GPU traffic  
 * on-GPU radix sort makes preprocessing parallel
+
+## Future
+
+### Technical Improvements
+- **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2))
+- **Metal 4**: Adopt latest [Metal 4](https://developer.apple.com/metal/whats-new/) features
+- **Refactor with SIMD in mind**:
+  - Instruction-level parallelism using vector types for faster FMA within SIMD groups
+  - Memory coalescing to increase locality (e.g., structure of array instead of array of structure)
+  - Optimized input reading patterns (e.g. `[X_i || Y_i]_0^{n-1}` instead of separate arrays)
+  - Latency hiding and occupancy fine-tuning
+  - Minimize thread divergence
+
+### Algorithm & Integration
+- **CPU-GPU Hybrid**: Research interleaving with CPU MSM crate and update to `arkworks 0.5`
+- **Advanced Algorithms**:
+  - Elastic MSM [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)] implementation
+  - Faster modular reduction with LogJump ([article by Wei Jie](https://kohweijie.com/articles/25/logjumps.html), [Barret-Montgomery](https://hackmd.io/@Ingonyama/Barret-Montgomery))
+
+### Platform Expansion
+- **Cross-platform**: WGSL support with native execution environment
+- **Crypto Math Library**: Maintain a Metal/WebGPU crypto math library
 
 ## Community
 
