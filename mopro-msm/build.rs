@@ -82,6 +82,21 @@ fn compile_shaders() -> std::io::Result<()> {
         combined_src.push_str(&format!("#include \"{}\"\n", inc));
         println!("cargo:rerun-if-changed={}", inc);
     }
+
+    // Ensure the build script reruns if ANY shader file in the `shader/` tree is
+    // touched – even if that shader is currently not selected for inclusion in
+    // the combined library.  This makes the `metallib` always stay in sync with
+    // the full shader source tree.
+    {
+        let mut all_shader_paths = Vec::new();
+        visit_dirs(&shader_root, &mut all_shader_paths)?;
+        for p in all_shader_paths
+            .into_iter()
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("metal"))
+        {
+            println!("cargo:rerun-if-changed={}", p.to_string_lossy());
+        }
+    }
     fs::write(&combined, &combined_src)?;
 
     // Determine SDK target
