@@ -1,6 +1,7 @@
 #include "../curve/jacobian.metal"
 #include "barrett_reduction.metal"
 #include <metal_stdlib>
+#include "Common.h"
 using namespace metal;
 
 #if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
@@ -36,6 +37,8 @@ kernel void smvp(
     const uint half_columns = num_columns / 2;
 
     const uint subtask_idx = id / half_columns;
+
+    BufferIndices some = BufferIndices::ParamsBuffer;
 
     Jacobian inf = get_bn254_zero_mont();
 

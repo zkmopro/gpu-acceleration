@@ -40,11 +40,14 @@ rayon = "1.5.1"
 itertools = "0.13.0"
 rand = "0.8.5"
 
+bytemuck = { version = "1.15", features = ["derive"] }
+
 [build-dependencies]
 enumset = "1.0.8"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
+bindgen = "0.71"
 
 [dev-dependencies]
 serial_test = "3.0.0"

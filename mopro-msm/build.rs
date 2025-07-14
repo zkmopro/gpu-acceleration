@@ -15,6 +15,8 @@ fn compile_shaders() -> std::io::Result<()> {
     let shader_out_dir = out_dir.join("shaders");
     fs::create_dir_all(&shader_out_dir)?;
 
+    build_cpp_header(manifest_dir.clone());
+
     // Check if we should compile all shaders for testing
     // Check environment variable first, then check if this is a test build
     let compile_all_shaders = env::var("MSM_COMPILE_ALL_SHADERS")
@@ -170,6 +172,38 @@ fn compile_shaders() -> std::io::Result<()> {
         "pub const MSM_METALLIB: &[u8] = include_bytes!(concat!(env!(\"OUT_DIR\"), \"/shaders/msm.metallib\"));"
     )?;
     Ok(())
+}
+
+fn build_cpp_header(root_dir: PathBuf) {
+    println!("cargo:rerun-if-changed=src/msm/metal_msm/shader/cuzk/Common.h");
+
+    // macOS SDK root for clang
+    let sdk_root = String::from_utf8(
+        std::process::Command::new("xcrun")
+            .args(["--sdk", "macosx", "--show-sdk-path"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+
+    let bindings = bindgen::Builder::default()
+        .header(format!(
+            "{}/src/msm/metal_msm/shader/cuzk/Common.h",
+            root_dir.to_str().unwrap()
+        ))
+        .clang_arg(format!("-isysroot{}", sdk_root))
+        // .clang_arg("-x") // Objective-C dialect so #import works
+        // .clang_arg("objective-c")
+        .allowlist_type("Uniforms|Params")
+        .allowlist_type("BufferIndices|Attributes|TextureIndices")
+        .generate()
+        .expect("bindgen failed");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    bindings.write_to_file(out_dir.join("common.rs")).unwrap();
 }
 
 fn detect_metal_version(sdk: &str) -> std::io::Result<(String, String, bool)> {

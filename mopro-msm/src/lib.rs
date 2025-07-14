@@ -1,4 +1,5 @@
 pub mod msm;
+pub mod types;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
