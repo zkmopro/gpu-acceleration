@@ -165,8 +165,7 @@ Metal-MSM v0.2.0 ships two Criterion benches:
 | Command | What it measures |
 |---------|------------------|
 | `cargo bench -p mopro-msm --bench shaders -- --sample-size 100 --warm-up-time 3 --measurement-time 10` | Pure GPU time of each individual Metal shader (decompose, transpose, SMVP, PBPR …) across several input sizes.  Host work is minimal so numbers reflect kernel performance. |
-| `cargo bench -p mopro-msm --bench e2e -- --sample-size 100 --warm-up-time 3 --measurement-time 10` | Full `
-metal_variable_base_msm` pipeline – includes host-side preprocessing and postprocessing.  Good for an overall sanity check, less ideal for micro-optimisation. |
+| `cargo bench -p mopro-msm --bench e2e -- --sample-size 100 --warm-up-time 3 --measurement-time 10` | Full `metal_variable_base_msm` pipeline – includes host-side preprocessing and postprocessing.  Good for an overall sanity check, less ideal for micro-optimisation. |
 
 Flags after the double dash (`--`) are passed straight to Criterion, letting you tweak sample count or timing budget.  Typical knobs:
 
