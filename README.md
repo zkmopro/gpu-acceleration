@@ -158,6 +158,26 @@ Key changes:
 * CSR buckets keep data on-device → near-zero host↔GPU traffic  
 * on-GPU radix sort makes preprocessing parallel
 
+## Benchmarking (how-to)
+
+Metal-MSM v0.2.0 ships two Criterion benches:
+
+| Command | What it measures |
+|---------|------------------|
+| `cargo bench -p mopro-msm --bench shaders -- --sample-size 100 --warm-up-time 3 --measurement-time 10` | Pure GPU time of each individual Metal shader (decompose, transpose, SMVP, PBPR …) across several input sizes.  Host work is minimal so numbers reflect kernel performance. |
+| `cargo bench -p mopro-msm --bench e2e -- --sample-size 100 --warm-up-time 3 --measurement-time 10` | Full `
+metal_variable_base_msm` pipeline – includes host-side preprocessing and postprocessing.  Good for an overall sanity check, less ideal for micro-optimisation. |
+
+Flags after the double dash (`--`) are passed straight to Criterion, letting you tweak sample count or timing budget.  Typical knobs:
+
+* `--sample-size <n>` – how many timed iterations to record (default 50).
+* `--warm-up-time <seconds>` – CPU/GPU warm-up before sampling starts.
+* `--measurement-time <seconds>` – total timed run per benchmark case.
+
+> The *shaders* bench uses the same logarithmic dataset sizes as the `e2e` bench (`2^10`, `2^12`, `2^16`).  Modify `LOG_SIZES` inside `benches/shaders.rs` if you need different scales.
+
+When tuning kernels focus on the **shaders** bench first; improvements there should propagate to the end-to-end numbers automatically.
+
 ## Future
 
 ### Technical Improvements
