@@ -1,4 +1,5 @@
 use crate::msm::metal_msm::metal_msm::metal_variable_base_msm;
+use crate::types::raw::*;
 use ark_bn254::{Fr as ScalarField, G1Projective as G};
 use ark_ec::CurveGroup;
 use ark_ec::VariableBaseMSM;
@@ -22,6 +23,13 @@ mod tests {
             input_size, num_threads
         );
         let start = std::time::Instant::now();
+
+        let _ = BufferIndices_ParamsBuffer;
+
+        let _params = Params {
+            width: 1920,
+            height: 1080,
+        };
 
         // Generate bases and scalars in parallel
         let (bases, scalars): (Vec<_>, Vec<_>) = (0..num_threads)
