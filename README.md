@@ -177,69 +177,23 @@ Flags after the double dash (`--`) are passed straight to Criterion, letting you
 
 When tuning kernels focus on the **shaders** bench first; improvements there should propagate to the end-to-end numbers automatically.
 
-## Optimization notes (2026-08)
-
-The following optimizations were applied on top of v0.2.0 (measured on an
-M-series MacBook, medians of 5 runs; cumulative speedup vs v0.2.0 on the same
-machine: **~4.4x at 2^12, ~9.5x at 2^16, ~8x at 2^20-2^22**, making the GPU
-~2.5-4.7x faster than Arkworks CPU MSM from 2^16 up):
-
-| Change | Effect |
-|---|---|
-| Single-sync GPU pipeline: all stages encoded up-front, buffers stay on device, one host wait; pipeline-state cache across calls | ~12-14% e2e |
-| 32-bit limbs (8x32 instead of 16x16) with `ulong` fused multiply-add CIOS | ~1.4-1.7x e2e |
-| Mixed addition (`madd-2007-bl` with edge cases) in SMVP bucket accumulation | ~16% e2e |
-| Parallel sparse-matrix transpose (histogram → prefix sum → atomic scatter) instead of ~20 serial threads | up to 2.1x at 2^20 |
-| Zero-copy Montgomery: pass arkworks' internal Montgomery representation (same R = 2^256) straight to the GPU; deletes host-side reductions, the GPU to-Montgomery conversion and the Barrett reduction path entirely | less host work + memory |
-| Window-size and workgroup-scale retuning (window 13 down to 2^12; smaller workgroups) | ~4-13% e2e |
-| Single SMVP dispatch for all subtasks (drop WebGPU-era 4-subtask chunking) | ~5-11% e2e |
-| XYZZ (extended Jacobian) bucket accumulation: mixed add 8M+2S vs 7M+4S and ~5 vs ~13 field add/subs; general add 12M+2S vs 11M+5S | ~7-11% e2e |
-| GPU tree reduction of per-subtask partial sums (bpr_reduce) + 256-thread PBPR workgroups; host only Horner-combines num_subtasks points | ~4-18% e2e |
-| Segmented load-balanced SMVP: threads own fixed-size slices of the sorted point stream, spill at most 2 partial buckets each to a merge pass; subtasks processed in chunks of 4 reusing the row-sum/spill buffers | 25-46% e2e; pathological windows (12/14) fixed (~27x); buffer overhead capped at ~25-50 MB |
-
-Findings on the previously-listed future items:
-
-- **Batched-affine accumulation**: designed and rejected on paper for this
-  architecture. Affine chain addition costs 2M+1S plus a shared inversion;
-  Montgomery batch inversion amortizes the ~380-mul Fermat inverse to
-  380/k muls at batch size k. With XYZZ mixed addition already at 10
-  mult-ops, batched affine must land under ~7 to matter, which requires
-  k >= 128. Assembling k >= 128 on Apple GPUs costs more than it saves:
-  threadgroup-wide batches need two Blelloch scans plus ~30 barriers per
-  round (~11+ effective mult-ops), SIMD-group (32-wide) batches leave the
-  inversion at ~12 muls/element, and Yrrid-style per-thread multi-bucket
-  batching cannot keep k*64B of affine accumulators in registers. CUDA
-  implementations win with warp-synchronous k = 1024 batches and a 16-mul
-  Jacobian baseline; neither condition holds here.
-- **LogJumps** ([Wei Jie's article](https://kohweijie.com/articles/25/logjumps.html)):
-  implemented, benchmarked and **removed**: for BN254, rho = 2^-32 mod p
-  ≈ 0.89p, so the pre-reduction value reaches ~2.9p and needs a second
-  conditional subtraction, which cancels the n-1 saved multiplications.
-  Measured ~8-10% slower than CIOS end-to-end on Apple GPUs (the
-  implementation lives in git history if rho-friendly parameters ever
-  make it worth revisiting).
-- **Elastic MSM** [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)]: a
-  fixed-base preprocessing technique (stores w-1 shifted copies of each base,
-  runs the same pipeline on a (wn, ks)-instance with k windows). It only pays
-  off when the same bases are reused across many MSMs (e.g. a proving key);
-  for the one-shot `metal_variable_base_msm` API the precompute cost exceeds
-  the savings. Worth adding later as an opt-in fixed-base API; expected
-  benefit is largest at 2^12-2^18.
-- **Metal 4**: unreachable from the deprecated `metal-rs` crate; requires
-  migrating to `objc2-metal` >= 0.3. Its wins (argument tables, command
-  allocators, untracked resources) mostly reduce CPU encoding overhead, which
-  is now a small fraction of runtime after the single-sync pipeline rework —
-  worthwhile mainly as part of the general `objc2` migration.
-
 ## Future
 
 ### Technical Improvements
-- **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2)), then adopt [Metal 4](https://developer.apple.com/metal/whats-new/) command encoding
-- **Base-precompute (Elastic MSM) opt-in API** for fixed-base workloads
+- **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2))
+- **Metal 4**: Adopt latest [Metal 4](https://developer.apple.com/metal/whats-new/) features
+- **Refactor with SIMD in mind**:
+  - Instruction-level parallelism using vector types for faster FMA within SIMD groups
+  - Memory coalescing to increase locality (e.g., structure of array instead of array of structure)
+  - Optimized input reading patterns (e.g. `[X_i || Y_i]_0^{n-1}` instead of separate arrays)
+  - Latency hiding and occupancy fine-tuning
+  - Minimize thread divergence
 
 ### Algorithm & Integration
 - **CPU-GPU Hybrid**: Research interleaving with CPU MSM crate and update to `arkworks 0.5`
-- **Elastic MSM** [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)] as an opt-in fixed-base API (see notes above)
+- **Advanced Algorithms**:
+  - Elastic MSM [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)] implementation
+  - Faster modular reduction with LogJump ([article by Wei Jie](https://kohweijie.com/articles/25/logjumps.html), [Barret-Montgomery](https://hackmd.io/@Ingonyama/Barret-Montgomery))
 
 ### Platform Expansion
 - **Cross-platform**: WGSL support with native execution environment
