@@ -145,6 +145,14 @@ impl ShaderManager {
             let ps = manager
                 .device
                 .new_compute_pipeline_state_with_function(&kernel)?;
+            if std::env::var("MSM_PROFILE").map_or(false, |v| v == "1") {
+                println!(
+                    "pipeline {}: max_threads/tg={} simd_width={}",
+                    conf.kernel_name,
+                    ps.max_total_threads_per_threadgroup(),
+                    ps.thread_execution_width()
+                );
+            }
             manager.shaders.insert(
                 shader_type,
                 PrecompiledShader {

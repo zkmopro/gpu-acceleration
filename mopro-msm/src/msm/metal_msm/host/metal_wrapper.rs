@@ -204,6 +204,20 @@ impl MetalHelper {
     /// back-to-back and only block on the last one. The queue executes them
     /// serially on the GPU with no CPU round-trip between stages.
     pub fn execute_shaders_pipelined(&self, operations: Vec<ShaderOperation>) {
+        // With MSM_PROFILE=1, run each dispatch synchronously and print its time.
+        if std::env::var("MSM_PROFILE").map_or(false, |v| v == "1") {
+            for (i, operation) in operations.into_iter().enumerate() {
+                let start = std::time::Instant::now();
+                self.execute_shader_with_pipeline(
+                    &operation.pipeline_state,
+                    &operation.buffers.iter().copied().collect::<Vec<_>>(),
+                    &operation.thread_group_count,
+                    &operation.threads_per_threadgroup,
+                );
+                println!("  op[{}]: {:.2?}", i, start.elapsed());
+            }
+            return;
+        }
         let mut command_buffers = Vec::with_capacity(operations.len());
         for operation in operations {
             let command_buffer = self.command_queue.new_command_buffer().to_owned();

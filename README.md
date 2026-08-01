@@ -177,23 +177,53 @@ Flags after the double dash (`--`) are passed straight to Criterion, letting you
 
 When tuning kernels focus on the **shaders** bench first; improvements there should propagate to the end-to-end numbers automatically.
 
+## Optimization notes (2026-08)
+
+The following optimizations were applied on top of v0.2.0 (measured on an
+M-series MacBook, medians of 5 runs; cumulative speedup vs v0.2.0 on the same
+machine: **~2.5x at 2^12, ~3.4x at 2^16, ~4.3x at 2^20**, making the GPU
+~2-3x faster than Arkworks CPU MSM at 2^20-2^22):
+
+| Change | Effect |
+|---|---|
+| Single-sync GPU pipeline: all stages encoded up-front, buffers stay on device, one host wait; pipeline-state cache across calls | ~12-14% e2e |
+| 32-bit limbs (8x32 instead of 16x16) with `ulong` fused multiply-add CIOS | ~1.4-1.7x e2e |
+| Mixed addition (`madd-2007-bl` with edge cases) in SMVP bucket accumulation | ~16% e2e |
+| Parallel sparse-matrix transpose (histogram → prefix sum → atomic scatter) instead of ~20 serial threads | up to 2.1x at 2^20 |
+| Zero-copy Montgomery: pass arkworks' internal Montgomery representation (same R = 2^256) straight to the GPU; deletes host-side reductions, the GPU to-Montgomery conversion and the Barrett reduction path entirely | less host work + memory |
+| Window-size and workgroup-scale retuning (window 13 down to 2^12; smaller workgroups) | ~4-13% e2e |
+
+Findings on the previously-listed future items:
+
+- **LogJumps** ([Wei Jie's article](https://kohweijie.com/articles/25/logjumps.html)):
+  implemented, benchmarked and **removed**: for BN254, rho = 2^-32 mod p
+  ≈ 0.89p, so the pre-reduction value reaches ~2.9p and needs a second
+  conditional subtraction, which cancels the n-1 saved multiplications.
+  Measured ~8-10% slower than CIOS end-to-end on Apple GPUs (the
+  implementation lives in git history if rho-friendly parameters ever
+  make it worth revisiting).
+- **Elastic MSM** [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)]: a
+  fixed-base preprocessing technique (stores w-1 shifted copies of each base,
+  runs the same pipeline on a (wn, ks)-instance with k windows). It only pays
+  off when the same bases are reused across many MSMs (e.g. a proving key);
+  for the one-shot `metal_variable_base_msm` API the precompute cost exceeds
+  the savings. Worth adding later as an opt-in fixed-base API; expected
+  benefit is largest at 2^12-2^18.
+- **Metal 4**: unreachable from the deprecated `metal-rs` crate; requires
+  migrating to `objc2-metal` >= 0.3. Its wins (argument tables, command
+  allocators, untracked resources) mostly reduce CPU encoding overhead, which
+  is now a small fraction of runtime after the single-sync pipeline rework —
+  worthwhile mainly as part of the general `objc2` migration.
+
 ## Future
 
 ### Technical Improvements
-- **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2))
-- **Metal 4**: Adopt latest [Metal 4](https://developer.apple.com/metal/whats-new/) features
-- **Refactor with SIMD in mind**:
-  - Instruction-level parallelism using vector types for faster FMA within SIMD groups
-  - Memory coalescing to increase locality (e.g., structure of array instead of array of structure)
-  - Optimized input reading patterns (e.g. `[X_i || Y_i]_0^{n-1}` instead of separate arrays)
-  - Latency hiding and occupancy fine-tuning
-  - Minimize thread divergence
+- **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2)), then adopt [Metal 4](https://developer.apple.com/metal/whats-new/) command encoding
+- **SMVP occupancy**: bucket accumulation is an ILP-1 dependency chain and now ~75% of GPU time; register-pressure reduction or XYZZ coordinates (10 vs 11 muls per mixed add) are the next levers
 
 ### Algorithm & Integration
 - **CPU-GPU Hybrid**: Research interleaving with CPU MSM crate and update to `arkworks 0.5`
-- **Advanced Algorithms**:
-  - Elastic MSM [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)] implementation
-  - Faster modular reduction with LogJump ([article by Wei Jie](https://kohweijie.com/articles/25/logjumps.html), [Barret-Montgomery](https://hackmd.io/@Ingonyama/Barret-Montgomery))
+- **Elastic MSM** [[ZHY+24](https://eprint.iacr.org/2024/057.pdf)] as an opt-in fixed-base API (see notes above)
 
 ### Platform Expansion
 - **Cross-platform**: WGSL support with native execution environment
