@@ -11,8 +11,8 @@ use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 #[serial_test::serial]
 fn test_point_coords_conversion() {
     // Setup test config
-    let log_limb_size = 16;
-    let num_limbs = 16;
+    let log_limb_size = 32;
+    let num_limbs = 8;
 
     let config = MetalConfig {
         log_limb_size,
@@ -103,8 +103,8 @@ fn test_point_coords_conversion() {
 #[serial_test::serial]
 fn test_scalar_decomposition() {
     // Setup test config
-    let log_limb_size = 16;
-    let num_limbs = 16;
+    let log_limb_size = 32;
+    let num_limbs = 8;
     let window_size = 16;
     let num_subtasks = (256f32 / window_size as f32).ceil() as usize;
     let num_columns = 1 << window_size; // 2^window_size
@@ -244,10 +244,8 @@ fn test_scalar_decomposition() {
     );
 }
 
-/// Helper function to pack every pair of 16-bit limbs into one 32-bit word
+/// With 32-bit limbs the GPU buffer layout is simply the little-endian
+/// 32-bit words of the value, so packing is the identity.
 fn pack_limbs(limbs: &[u32]) -> Vec<u32> {
-    limbs
-        .chunks(2)
-        .map(|chunk| (chunk[1] << 16) | chunk[0])
-        .collect()
+    limbs.to_vec()
 }

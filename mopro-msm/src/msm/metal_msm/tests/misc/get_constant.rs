@@ -6,9 +6,9 @@ use ark_ec::Group;
 use ark_ff::{BigInt, PrimeField, Zero};
 use num_bigint::BigUint;
 
-const NUM_LIMBS: usize = 16;
+const NUM_LIMBS: usize = 8;
 const NUM_LIMBS_WIDE: usize = 17;
-const LOG_LIMB_SIZE: u32 = 16;
+const LOG_LIMB_SIZE: u32 = 32;
 const SHADER_FILE: &str = "misc/test_get_constant.metal";
 
 #[test]

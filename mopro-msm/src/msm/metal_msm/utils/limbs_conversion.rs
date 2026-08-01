@@ -50,8 +50,21 @@ impl GenericLimbConversion for BigInt<4> {
 
     fn to_limbs(&self, num_limbs: usize, log_limb_size: u32) -> Vec<u32> {
         let mut result = vec![0u32; num_limbs];
-        let limb_size = 1u32 << log_limb_size;
-        let mask = limb_size - 1;
+        if log_limb_size == 32 {
+            // limbs are plain little-endian 32-bit words
+            let bytes = self.to_bytes_le();
+            for (i, chunk) in bytes.chunks(4).enumerate() {
+                if i >= num_limbs {
+                    break;
+                }
+                let mut w = [0u8; 4];
+                w[..chunk.len()].copy_from_slice(chunk);
+                result[i] = u32::from_le_bytes(w);
+            }
+            return result;
+        }
+        let limb_size = 1u64 << log_limb_size;
+        let mask = (limb_size - 1) as u32;
 
         // Convert to LE
         let bytes = self.to_bytes_le();
@@ -103,6 +116,17 @@ impl GenericLimbConversion for BigInt<4> {
 
     fn from_limbs(limbs: &[u32], log_limb_size: u32) -> Self {
         let mut result = [0u64; 4];
+        if log_limb_size == 32 {
+            for (i, chunk) in limbs.chunks(2).enumerate() {
+                if i >= 4 {
+                    break;
+                }
+                let lo = chunk[0] as u64;
+                let hi = if chunk.len() > 1 { chunk[1] as u64 } else { 0 };
+                result[i] = lo | (hi << 32);
+            }
+            return BigInt::<4>::new(result);
+        }
         let limb_bits = log_limb_size as usize;
         let mut accumulated_bits = 0;
         let mut current_u64 = 0u64;
@@ -143,8 +167,21 @@ impl GenericLimbConversion for BigInt<6> {
 
     fn to_limbs(&self, num_limbs: usize, log_limb_size: u32) -> Vec<u32> {
         let mut result = vec![0u32; num_limbs];
-        let limb_size = 1u32 << log_limb_size;
-        let mask = limb_size - 1;
+        if log_limb_size == 32 {
+            // limbs are plain little-endian 32-bit words
+            let bytes = self.to_bytes_le();
+            for (i, chunk) in bytes.chunks(4).enumerate() {
+                if i >= num_limbs {
+                    break;
+                }
+                let mut w = [0u8; 4];
+                w[..chunk.len()].copy_from_slice(chunk);
+                result[i] = u32::from_le_bytes(w);
+            }
+            return result;
+        }
+        let limb_size = 1u64 << log_limb_size;
+        let mask = (limb_size - 1) as u32;
 
         let bytes = self.to_bytes_le();
         let mut val = 0u32;
@@ -194,6 +231,17 @@ impl GenericLimbConversion for BigInt<6> {
 
     fn from_limbs(limbs: &[u32], log_limb_size: u32) -> Self {
         let mut result = [0u64; 6];
+        if log_limb_size == 32 {
+            for (i, chunk) in limbs.chunks(2).enumerate() {
+                if i >= 6 {
+                    break;
+                }
+                let lo = chunk[0] as u64;
+                let hi = if chunk.len() > 1 { chunk[1] as u64 } else { 0 };
+                result[i] = lo | (hi << 32);
+            }
+            return BigInt::<6>::new(result);
+        }
         let limb_bits = log_limb_size as usize;
         let mut accumulated_bits = 0;
         let mut current_u64 = 0u64;
@@ -233,8 +281,21 @@ impl GenericLimbConversion for BigInt<8> {
 
     fn to_limbs(&self, num_limbs: usize, log_limb_size: u32) -> Vec<u32> {
         let mut result = vec![0u32; num_limbs];
-        let limb_size = 1u32 << log_limb_size;
-        let mask = limb_size - 1;
+        if log_limb_size == 32 {
+            // limbs are plain little-endian 32-bit words
+            let bytes = self.to_bytes_le();
+            for (i, chunk) in bytes.chunks(4).enumerate() {
+                if i >= num_limbs {
+                    break;
+                }
+                let mut w = [0u8; 4];
+                w[..chunk.len()].copy_from_slice(chunk);
+                result[i] = u32::from_le_bytes(w);
+            }
+            return result;
+        }
+        let limb_size = 1u64 << log_limb_size;
+        let mask = (limb_size - 1) as u32;
 
         let bytes = self.to_bytes_le();
         let mut val = 0u32;
@@ -283,6 +344,17 @@ impl GenericLimbConversion for BigInt<8> {
 
     fn from_limbs(limbs: &[u32], log_limb_size: u32) -> Self {
         let mut result = [0u64; 8];
+        if log_limb_size == 32 {
+            for (i, chunk) in limbs.chunks(2).enumerate() {
+                if i >= 8 {
+                    break;
+                }
+                let lo = chunk[0] as u64;
+                let hi = if chunk.len() > 1 { chunk[1] as u64 } else { 0 };
+                result[i] = lo | (hi << 32);
+            }
+            return BigInt::<8>::new(result);
+        }
         let limb_bits = log_limb_size as usize;
         let mut accumulated_bits = 0;
         let mut current_u64 = 0u64;
@@ -314,6 +386,52 @@ pub fn pack_affine_and_scalars(
     msm_config: &MetalConfig,
 ) -> (Vec<u32>, Vec<u32>) {
     let num_elements = bases.len();
+
+    if msm_config.log_limb_size == 32 {
+        // Limbs are plain little-endian 32-bit words: copy them out directly.
+        let words_per_coord = msm_config.num_limbs;
+        let coords_per_point = words_per_coord * 2;
+        let mut coords = vec![0u32; num_elements * coords_per_point];
+        let mut scalars_u32 = vec![0u32; num_elements * words_per_coord];
+
+        let write_words = |v: &ark_ff::BigInt<4>, out: &mut [u32]| {
+            for (i, w) in v.0.iter().enumerate() {
+                out[2 * i] = *w as u32;
+                out[2 * i + 1] = (*w >> 32) as u32;
+            }
+        };
+
+        const CHUNK_SIZE: usize = 1024;
+        bases
+            .par_chunks(CHUNK_SIZE)
+            .zip(scalars.par_chunks(CHUNK_SIZE))
+            .zip(coords.par_chunks_mut(CHUNK_SIZE * coords_per_point))
+            .zip(scalars_u32.par_chunks_mut(CHUNK_SIZE * words_per_coord))
+            .for_each(
+                |(((base_chunk, scalar_chunk), coord_chunk), scalar_u32_chunk)| {
+                    for (i, (pt, sc)) in base_chunk.iter().zip(scalar_chunk.iter()).enumerate() {
+                        let coord_start = i * coords_per_point;
+                        write_words(
+                            &pt.x.into_bigint(),
+                            &mut coord_chunk[coord_start..coord_start + words_per_coord],
+                        );
+                        write_words(
+                            &pt.y.into_bigint(),
+                            &mut coord_chunk
+                                [coord_start + words_per_coord..coord_start + coords_per_point],
+                        );
+                        let scalar_start = i * words_per_coord;
+                        write_words(
+                            &sc.into_bigint(),
+                            &mut scalar_u32_chunk[scalar_start..scalar_start + words_per_coord],
+                        );
+                    }
+                },
+            );
+
+        return (coords, scalars_u32);
+    }
+
     let packed_limbs_per_coord = msm_config.num_limbs / 2;
     let coords_per_point = packed_limbs_per_coord * 2; // x + y
 

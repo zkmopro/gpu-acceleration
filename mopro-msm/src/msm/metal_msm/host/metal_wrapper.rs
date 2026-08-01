@@ -43,8 +43,8 @@ pub struct MSMConstants {
 impl Default for MetalConfig {
     fn default() -> Self {
         Self {
-            log_limb_size: 16,
-            num_limbs: 16,
+            log_limb_size: 32,
+            num_limbs: 8,
             shader_file: "".to_string(),
             kernel_name: "".to_string(),
         }

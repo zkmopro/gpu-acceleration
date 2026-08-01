@@ -5,8 +5,8 @@ use rand::Rng;
 #[serial_test::serial]
 fn test_sparse_matrix_transposition() {
     let config = MetalConfig {
-        log_limb_size: 16,
-        num_limbs: 16,
+        log_limb_size: 32,
+        num_limbs: 8,
         shader_file: "cuzk/transpose.metal".to_string(),
         kernel_name: "transpose".to_string(),
     };

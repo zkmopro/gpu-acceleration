@@ -17,6 +17,11 @@
 use num_bigint::{BigInt, BigUint, Sign};
 
 pub fn calc_nsafe(log_limb_size: u32) -> usize {
+    // With full-width (32-bit) limbs there is no headroom for lazy carries;
+    // NSAFE is meaningless there, so return 1.
+    if log_limb_size >= 32 {
+        return 1;
+    }
     let max_int_width = 32;
     let rhs = 2u64.pow(max_int_width);
     let mut k = 1usize;
@@ -81,7 +86,7 @@ pub fn calc_rinv_and_n0(p: &BigUint, r: &BigUint, log_limb_size: u32) -> (BigUin
     let pprime = BigInt::from_biguint(Sign::Plus, pprime);
 
     let neg_n_inv = BigInt::from_biguint(Sign::Plus, r.clone()) - pprime;
-    let n0 = neg_n_inv % BigInt::from(2u32.pow(log_limb_size as u32));
+    let n0 = neg_n_inv % BigInt::from(2u64.pow(log_limb_size as u32));
     let n0 = n0.to_biguint().unwrap().to_u32_digits()[0];
 
     (rinv, n0)

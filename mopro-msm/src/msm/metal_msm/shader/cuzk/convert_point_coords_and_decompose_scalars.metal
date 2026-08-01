@@ -1,17 +1,8 @@
-#include "../misc/get_constant.metal"
-#include "barrett_reduction.metal"
+#include "../mont_backend/mont.metal"
 #include "extract_word_from_bytes_le.metal"
 #include <metal_math>
 #include <metal_stdlib>
 using namespace metal;
-
-#if defined(__METAL_VERSION__) && (__METAL_VERSION__ >= 320)
-#include <metal_logging>
-constant os_log logger_kernel(/*subsystem=*/"pt_conversion", /*category=*/"metal");
-#define LOG_DEBUG(...) logger_kernel.log_debug(__VA_ARGS__)
-#else
-#define LOG_DEBUG(...) ((void)0)
-#endif
 
 kernel void convert_point_coords_and_decompose_scalars(
     device const uint* coords [[buffer(0), access(read)]],
@@ -32,54 +23,27 @@ kernel void convert_point_coords_and_decompose_scalars(
     uint gidy = gid.y;
     uint id = gidx * threadgroup_size.y + gidy;
 
-    // 1) Convert coords to BigInt in Montgomery form
-    // We read 16 halfwords for x and 16 halfwords for y.
-    uint x_bytes[16];
-    uint y_bytes[16];
+    // 1) Load coordinates. The coords buffer holds the little-endian 32-bit
+    //    words of x then y for each point, which is exactly our limb layout.
+    //    coords layout: [x0_32, ..., x7_32, y0_32, ..., y7_32] per point.
+    const uint base_offset = id * (2u * NUM_LIMBS);
 
-    // offset within coords array for this point:
-    //  coords layout: [x0_32, x1_32, ..., x7_32, y0_32, y1_32, ..., y7_32]
-    //  so each point uses 16 x 32-bit = 16 indices.
-    uint base_offset = id * 16u;
+    BigInt x_bigint;
+    BigInt y_bigint;
 
 #pragma unroll(8)
-    for (uint i = 0u; i < 8u; i++) {
-        // coords[base_offset + i] is the i-th 32-bit chunk of x
-        // coords[base_offset + 8 + i] is the i-th 32-bit chunk of y
-        uint x_val = coords[base_offset + i];
-        uint y_val = coords[base_offset + 8u + i];
-
-        x_bytes[15 - (i * 2)] = x_val & 0xFFFFu;
-        x_bytes[15 - (i * 2) - 1] = x_val >> 16u;
-
-        y_bytes[15 - (i * 2)] = y_val & 0xFFFFu;
-        y_bytes[15 - (i * 2) - 1] = y_val >> 16u;
+    for (uint i = 0; i < NUM_LIMBS; i++) {
+        x_bigint.limbs[i] = coords[base_offset + i];
+        y_bigint.limbs[i] = coords[base_offset + NUM_LIMBS + i];
     }
 
-    BigInt x_bigint = bigint_zero();
-    BigInt y_bigint = bigint_zero();
+    // Convert x,y to Montgomery form: mont_mul(a, R^2) = a * R mod p.
+    BigInt r2 = get_r2();
+    point_x[id] = mont_mul_cios(x_bigint, r2);
+    point_y[id] = mont_mul_cios(y_bigint, r2);
 
-#pragma unroll(15)
-    for (uint i = 0; i < NUM_LIMBS - 1u; i++) {
-        x_bigint.limbs[i] = extract_word_from_bytes_le(x_bytes, i, LOG_LIMB_SIZE);
-        y_bigint.limbs[i] = extract_word_from_bytes_le(y_bytes, i, LOG_LIMB_SIZE);
-    }
-
-    uint shift = (((NUM_LIMBS * LOG_LIMB_SIZE) - 256u) + 16u) - LOG_LIMB_SIZE;
-
-    x_bigint.limbs[NUM_LIMBS - 1] = x_bytes[0] >> shift;
-    y_bigint.limbs[NUM_LIMBS - 1] = y_bytes[0] >> shift;
-
-    // Convert x,y to Montgomery form: X = x * R mod p, Y = y * R mod p.
-    BigIntWide r = get_r();
-    BigInt x_mont = field_mul(bigint_to_wide(x_bigint), r);
-    BigInt y_mont = field_mul(bigint_to_wide(y_bigint), r);
-
-    // Store them in point_x, point_y
-    point_x[id] = x_mont;
-    point_y[id] = y_mont;
-
-    // 2) Decompose scalars: read 8 32-bit values => 16 halfwords in `scalar_bytes`.
+    // 2) Decompose scalars: read 8 32-bit words => 16 halfwords (big-endian
+    //    halfword order) in `scalar_bytes` for windowed extraction.
     uint scalar_bytes[16];
 
 #pragma unroll(8)

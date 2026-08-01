@@ -27,8 +27,8 @@ fn test_pbpr_stage1_and_stage2() {
     // ----------------------------------------------
     // Parameters (kept small for fast unit testing)
     // ----------------------------------------------
-    let log_limb_size = 16;
-    let num_limbs = 16;
+    let log_limb_size = 32;
+    let num_limbs = 8;
 
     let num_columns: u32 = 8; // Must be even
     let num_buckets_per_subtask = (num_columns / 2) as usize; // 4

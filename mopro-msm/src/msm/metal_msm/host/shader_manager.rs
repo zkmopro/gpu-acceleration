@@ -72,8 +72,8 @@ pub struct ShaderManagerConfig {
 impl Default for ShaderManagerConfig {
     fn default() -> Self {
         Self {
-            num_limbs: 16,
-            log_limb_size: 16,
+            num_limbs: 8,
+            log_limb_size: 32,
         }
     }
 }
@@ -198,8 +198,8 @@ impl ShaderManagerBuilder {
 
     pub fn build(self) -> Result<ShaderManager, Box<dyn std::error::Error>> {
         let config = ShaderManagerConfig {
-            num_limbs: self.num_limbs.unwrap_or(16),
-            log_limb_size: self.log_limb_size.unwrap_or(16),
+            num_limbs: self.num_limbs.unwrap_or(8),
+            log_limb_size: self.log_limb_size.unwrap_or(32),
         };
         ShaderManager::new(config)
     }
@@ -213,21 +213,21 @@ mod tests {
     #[serial_test::serial]
     fn test_shader_manager_creation() {
         let manager = ShaderManager::with_default_config().unwrap();
-        assert_eq!(manager.config().num_limbs, 16);
-        assert_eq!(manager.config().log_limb_size, 16);
+        assert_eq!(manager.config().num_limbs, 8);
+        assert_eq!(manager.config().log_limb_size, 32);
     }
 
     #[test]
     #[serial_test::serial]
     fn test_shader_manager_builder() {
         let manager = ShaderManagerBuilder::new()
-            .num_limbs(16)
-            .log_limb_size(16)
+            .num_limbs(8)
+            .log_limb_size(32)
             .build()
             .unwrap();
 
-        assert_eq!(manager.config().num_limbs, 16);
-        assert_eq!(manager.config().log_limb_size, 16);
+        assert_eq!(manager.config().num_limbs, 8);
+        assert_eq!(manager.config().log_limb_size, 32);
     }
 
     #[test]

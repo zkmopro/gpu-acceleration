@@ -21,8 +21,8 @@ pub struct MetalMSMConfig {
 impl Default for MetalMSMConfig {
     fn default() -> Self {
         Self {
-            num_limbs: 16,
-            log_limb_size: 16,
+            num_limbs: 8,
+            log_limb_size: 32,
         }
     }
 }

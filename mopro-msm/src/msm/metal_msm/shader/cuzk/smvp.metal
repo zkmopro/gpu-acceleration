@@ -1,5 +1,4 @@
 #include "../curve/jacobian.metal"
-#include "barrett_reduction.metal"
 #include <metal_stdlib>
 using namespace metal;
 

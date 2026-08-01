@@ -117,8 +117,8 @@ fn smvp_gpu(
 #[test]
 #[serial_test::serial]
 fn test_smvp() {
-    let log_limb_size: u32 = 16;
-    let num_limbs: usize = 16;
+    let log_limb_size: u32 = 32;
+    let num_limbs: usize = 8;
 
     // Constants that must match the shader build-time constants
     let num_columns: u32 = 1u32 << 16; // CHUNK_SIZE = 16 -> 65536 columns
