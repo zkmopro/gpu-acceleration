@@ -216,55 +216,156 @@ impl MetalMSMPipeline {
             threads_per_threadgroup: helper.create_thread_group_size(t_threadgroup as u64, 1, 1),
         });
 
-        // Stage 3: SMVP (one dispatch per subtask chunk)
-        let smvp_shader = self
-            .shader_manager
-            .get_shader(&ShaderType::SMVP)
-            .ok_or("SMVP shader not found")?;
-
-        let s_workgroup_size = self.simd_width * scale_factor;
-        let num_subtask_chunk_size = num_subtasks as u32; // single dispatch: subtask tails overlap
+        // Stage 3: SMVP.
+        //
+        // Default: segmented, load-balanced accumulation. Threads own
+        // fixed-size slices of the bucket-sorted point stream (uniform work),
+        // write complete buckets exclusively and spill at most two partial
+        // runs each; a merge kernel combines spills and mirror rows into
+        // signed buckets. MSM_LEGACY_SMVP=1 selects the classic
+        // one-thread-per-bucket kernel; MSM_SMVP_L overrides the slice length.
+        let legacy_smvp = std::env::var("MSM_LEGACY_SMVP").map_or(false, |v| v == "1");
+        // buffers referenced by ops must outlive the branch
         let mut smvp_params_bufs = Vec::new();
-        let mut smvp_dims = Vec::new();
-        for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-            let remaining_subtasks = (num_subtasks as u32 - offset).min(num_subtask_chunk_size);
-            let valid_threads = half_columns as u64 * remaining_subtasks as u64;
+        let mut smvp_dims: Vec<(u64, u64, u64)> = Vec::new();
+        let mut seg_buffers: Vec<metal::Buffer> = Vec::new();
+        if legacy_smvp {
+            let smvp_shader = self
+                .shader_manager
+                .get_shader(&ShaderType::SMVP)
+                .ok_or("SMVP shader not found")?;
 
-            let max_y = ((valid_threads as usize)
-                / (s_workgroup_size * remaining_subtasks as usize))
-                .max(1);
-            let s_num_y_workgroups = self.simd_width.min(max_y) as u64;
-            let s_num_z_workgroups = remaining_subtasks as u64;
+            let s_workgroup_size = self.simd_width * scale_factor;
+            let num_subtask_chunk_size = num_subtasks as u32; // single dispatch: subtask tails overlap
+            for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
+                let remaining_subtasks = (num_subtasks as u32 - offset).min(num_subtask_chunk_size);
+                let valid_threads = half_columns as u64 * remaining_subtasks as u64;
 
-            let threads_per_grid =
-                (s_workgroup_size as u64) * s_num_y_workgroups * s_num_z_workgroups;
-            let s_num_x_workgroups = (valid_threads + threads_per_grid - 1) / threads_per_grid; // ceil div
+                let max_y = ((valid_threads as usize)
+                    / (s_workgroup_size * remaining_subtasks as usize))
+                    .max(1);
+                let s_num_y_workgroups = self.simd_width.min(max_y) as u64;
+                let s_num_z_workgroups = remaining_subtasks as u64;
 
-            let params_buf = helper.create_buffer(&vec![
+                let threads_per_grid =
+                    (s_workgroup_size as u64) * s_num_y_workgroups * s_num_z_workgroups;
+                let s_num_x_workgroups = (valid_threads + threads_per_grid - 1) / threads_per_grid; // ceil div
+
+                let params_buf = helper.create_buffer(&vec![
+                    input_size as u32,
+                    num_columns as u32,
+                    num_subtasks as u32,
+                    offset,
+                ]);
+                smvp_params_bufs.push(params_buf);
+                smvp_dims.push((s_num_x_workgroups, s_num_y_workgroups, s_num_z_workgroups));
+            }
+            for (params_buf, &(x, y, z)) in smvp_params_bufs.iter().zip(smvp_dims.iter()) {
+                ops.push(ShaderOperation {
+                    pipeline_state: smvp_shader.pipeline_state.clone(),
+                    buffers: vec![
+                        &csc_col_ptr_buf,
+                        &csc_val_idxs_buf,
+                        &coords_buf,
+                        &bucket_x_buf,
+                        &bucket_y_buf,
+                        &bucket_zz_buf,
+                        &bucket_zzz_buf,
+                        params_buf,
+                    ],
+                    thread_group_count: helper.create_thread_group_size(x, y, z),
+                    threads_per_threadgroup: helper
+                        .create_thread_group_size(s_workgroup_size as u64, 1, 1),
+                });
+            }
+        } else {
+            let accumulate_shader = self
+                .shader_manager
+                .get_shader(&ShaderType::SMVPAccumulate)
+                .ok_or("SMVPAccumulate shader not found")?;
+            let merge_shader = self
+                .shader_manager
+                .get_shader(&ShaderType::SMVPMerge)
+                .ok_or("SMVPMerge shader not found")?;
+
+            let seg_len: usize = std::env::var("MSM_SMVP_L")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(128);
+            let num_segments = (input_size + seg_len - 1) / seg_len;
+
+            let row_sums_size = num_subtasks * num_columns * num_limbs;
+            let spill_size = num_subtasks * num_segments * 2 * num_limbs;
+            // 0..=3 row sums, 4..=7 spills, 8 spill rows, 9 params
+            for _ in 0..4 {
+                let b = helper.create_zeroed_buffer(row_sums_size);
+                seg_buffers.push(b);
+            }
+            for _ in 0..4 {
+                let b = helper.create_zeroed_buffer(spill_size);
+                seg_buffers.push(b);
+            }
+            let b = helper.create_zeroed_buffer(num_subtasks * num_segments * 2);
+            seg_buffers.push(b);
+            let b = helper.create_buffer(&vec![
                 input_size as u32,
                 num_columns as u32,
-                num_subtasks as u32,
-                offset,
+                seg_len as u32,
+                num_segments as u32,
             ]);
-            smvp_params_bufs.push(params_buf);
-            smvp_dims.push((s_num_x_workgroups, s_num_y_workgroups, s_num_z_workgroups));
-        }
-        for (params_buf, &(x, y, z)) in smvp_params_bufs.iter().zip(smvp_dims.iter()) {
+            seg_buffers.push(b);
+
+            let a_tg = 64usize;
             ops.push(ShaderOperation {
-                pipeline_state: smvp_shader.pipeline_state.clone(),
+                pipeline_state: accumulate_shader.pipeline_state.clone(),
                 buffers: vec![
                     &csc_col_ptr_buf,
                     &csc_val_idxs_buf,
+                    &scalar_chunks_buf,
                     &coords_buf,
+                    &seg_buffers[0],
+                    &seg_buffers[1],
+                    &seg_buffers[2],
+                    &seg_buffers[3],
+                    &seg_buffers[4],
+                    &seg_buffers[5],
+                    &seg_buffers[6],
+                    &seg_buffers[7],
+                    &seg_buffers[8],
+                    &seg_buffers[9],
+                ],
+                thread_group_count: helper.create_thread_group_size(
+                    ((num_segments + a_tg - 1) / a_tg) as u64,
+                    num_subtasks as u64,
+                    1,
+                ),
+                threads_per_threadgroup: helper.create_thread_group_size(a_tg as u64, 1, 1),
+            });
+            ops.push(ShaderOperation {
+                pipeline_state: merge_shader.pipeline_state.clone(),
+                buffers: vec![
+                    &csc_col_ptr_buf,
+                    &seg_buffers[0],
+                    &seg_buffers[1],
+                    &seg_buffers[2],
+                    &seg_buffers[3],
+                    &seg_buffers[4],
+                    &seg_buffers[5],
+                    &seg_buffers[6],
+                    &seg_buffers[7],
+                    &seg_buffers[8],
                     &bucket_x_buf,
                     &bucket_y_buf,
                     &bucket_zz_buf,
                     &bucket_zzz_buf,
-                    params_buf,
+                    &seg_buffers[9],
                 ],
-                thread_group_count: helper.create_thread_group_size(x, y, z),
-                threads_per_threadgroup: helper
-                    .create_thread_group_size(s_workgroup_size as u64, 1, 1),
+                thread_group_count: helper.create_thread_group_size(
+                    ((half_columns + a_tg - 1) / a_tg) as u64,
+                    num_subtasks as u64,
+                    1,
+                ),
+                threads_per_threadgroup: helper.create_thread_group_size(a_tg as u64, 1, 1),
             });
         }
 
