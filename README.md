@@ -181,8 +181,8 @@ When tuning kernels focus on the **shaders** bench first; improvements there sho
 
 The following optimizations were applied on top of v0.2.0 (measured on an
 M-series MacBook, medians of 5 runs; cumulative speedup vs v0.2.0 on the same
-machine: **~2.9x at 2^12, ~4.4x at 2^16, ~5x at 2^20-2^22**, making the GPU
-~2.3-3.2x faster than Arkworks CPU MSM at 2^20-2^22):
+machine: **~3.2x at 2^12, ~5.3x at 2^16, ~5.4x at 2^20-2^22**, making the GPU
+~2.4-3.6x faster than Arkworks CPU MSM at 2^20-2^22):
 
 | Change | Effect |
 |---|---|
@@ -194,6 +194,7 @@ machine: **~2.9x at 2^12, ~4.4x at 2^16, ~5x at 2^20-2^22**, making the GPU
 | Window-size and workgroup-scale retuning (window 13 down to 2^12; smaller workgroups) | ~4-13% e2e |
 | Single SMVP dispatch for all subtasks (drop WebGPU-era 4-subtask chunking) | ~5-11% e2e |
 | XYZZ (extended Jacobian) bucket accumulation: mixed add 8M+2S vs 7M+4S and ~5 vs ~13 field add/subs; general add 12M+2S vs 11M+5S | ~7-11% e2e |
+| GPU tree reduction of per-subtask partial sums (bpr_reduce) + 256-thread PBPR workgroups; host only Horner-combines num_subtasks points | ~4-18% e2e |
 
 Findings on the previously-listed future items:
 
