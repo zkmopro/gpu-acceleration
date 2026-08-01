@@ -39,8 +39,8 @@ kernel void convert_point_coords_and_decompose_scalars(
 
     // Convert x,y to Montgomery form: mont_mul(a, R^2) = a * R mod p.
     BigInt r2 = get_r2();
-    point_x[id] = mont_mul_cios(x_bigint, r2);
-    point_y[id] = mont_mul_cios(y_bigint, r2);
+    point_x[id] = mont_mul(x_bigint, r2);
+    point_y[id] = mont_mul(y_bigint, r2);
 
     // 2) Decompose scalars: read 8 32-bit words => 16 halfwords (big-endian
     //    halfword order) in `scalar_bytes` for windowed extraction.

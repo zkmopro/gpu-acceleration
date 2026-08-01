@@ -87,6 +87,16 @@ pub fn write_constants(filepath: &str, num_limbs: usize, log_limb_size: u32) {
     write_constant_array!(data, "MONT_RADIX", mont_radix_limbs, "NUM_LIMBS_WIDE");
     write_constant_array!(data, "BN254_R2", r2_limbs, "NUM_LIMBS");
 
+    // rho = 2^(-log_limb_size) mod p, used by the LogJumps reduction
+    let rho_limbs: Vec<u32> = {
+        let limb_radix = BigUint::from(2u64.pow(log_limb_size));
+        let (limb_radix_inv, _) =
+            crate::msm::metal_msm::utils::mont_params::calc_inv_and_pprime(&p, &limb_radix);
+        BigInt::<4>::try_from(limb_radix_inv)
+            .unwrap()
+            .to_limbs(num_limbs, log_limb_size)
+    };
+    write_constant_array!(data, "BN254_RHO", rho_limbs, "NUM_LIMBS");
 
     let bn254_zero_limbs = |c: &ark_ff::BigInt<4>| c.to_limbs(num_limbs, log_limb_size);
     write_constant_array!(

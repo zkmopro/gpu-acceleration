@@ -49,6 +49,16 @@ constant uint32_t BN254_R2[NUM_LIMBS] = {
     3401069855,
     114859889
 };
+constant uint32_t BN254_RHO[NUM_LIMBS] = {
+    1885106418,
+    3048503715,
+    1771718442,
+    4015066196,
+    3066683175,
+    2994524341,
+    280394543,
+    724745520
+};
 constant uint32_t BN254_ZERO_X[NUM_LIMBS] = {
     1,
     0,
