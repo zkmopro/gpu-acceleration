@@ -34,8 +34,8 @@ impl ShaderType {
             ShaderType::ConvertPointAndDecompose => MetalConfig {
                 log_limb_size,
                 num_limbs,
-                shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-                kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
+                shader_file: "cuzk/decompose_scalars.metal".to_string(),
+                kernel_name: "decompose_scalars".to_string(),
             },
             ShaderType::Transpose => MetalConfig {
                 log_limb_size,

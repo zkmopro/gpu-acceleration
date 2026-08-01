@@ -108,8 +108,6 @@ impl MetalMSMPipeline {
         let scalars_buf = helper.create_buffer(&scals);
 
         // Intermediate buffers (device-resident, never read back)
-        let point_x_buf = helper.create_zeroed_buffer(input_size * num_limbs);
-        let point_y_buf = helper.create_zeroed_buffer(input_size * num_limbs);
         let scalar_chunks_buf = helper.create_zeroed_buffer(input_size * num_subtasks);
         let csc_col_ptr_buf = helper.create_zeroed_buffer(num_subtasks * (num_columns + 1));
         let csc_val_idxs_buf = helper.create_zeroed_buffer(input_size * num_subtasks);
@@ -128,7 +126,7 @@ impl MetalMSMPipeline {
 
         let mut ops: Vec<ShaderOperation> = Vec::new();
 
-        // Stage 1: Convert Point & Scalar Decomposition
+        // Stage 1: Scalar decomposition (coords pass through to SMVP untouched)
         let convert_shader = self
             .shader_manager
             .get_shader(&ShaderType::ConvertPointAndDecompose)
@@ -147,14 +145,7 @@ impl MetalMSMPipeline {
 
         ops.push(ShaderOperation {
             pipeline_state: convert_shader.pipeline_state.clone(),
-            buffers: vec![
-                &coords_buf,
-                &scalars_buf,
-                &point_x_buf,
-                &point_y_buf,
-                &scalar_chunks_buf,
-                &convert_params_buf,
-            ],
+            buffers: vec![&scalars_buf, &scalar_chunks_buf, &convert_params_buf],
             thread_group_count: helper.create_thread_group_size(
                 c_num_x_workgroups as u64,
                 c_num_y_workgroups.max(1) as u64,
@@ -255,8 +246,7 @@ impl MetalMSMPipeline {
                 buffers: vec![
                     &csc_col_ptr_buf,
                     &csc_val_idxs_buf,
-                    &point_x_buf,
-                    &point_y_buf,
+                    &coords_buf,
                     &bucket_x_buf,
                     &bucket_y_buf,
                     &bucket_z_buf,

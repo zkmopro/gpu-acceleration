@@ -16,8 +16,7 @@ fn smvp_gpu(
     config: &MetalConfig,
     gpu_csc_col_ptr: &Vec<u32>,
     gpu_csc_val_idxs: &Vec<u32>,
-    gpu_point_x: &Vec<u32>,
-    gpu_point_y: &Vec<u32>,
+    gpu_points: &Vec<u32>, // interleaved x||y limbs per point
     input_size: usize,
     num_subtasks: usize,
     num_columns: u32,
@@ -51,8 +50,7 @@ fn smvp_gpu(
 
     let row_ptr_buf = helper.create_buffer(gpu_csc_col_ptr);
     let val_idx_buf = helper.create_buffer(gpu_csc_val_idxs);
-    let point_x_buf = helper.create_buffer(gpu_point_x);
-    let point_y_buf = helper.create_buffer(gpu_point_y);
+    let points_buf = helper.create_buffer(gpu_points);
     let bucket_x_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
     let bucket_y_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
     let bucket_z_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
@@ -91,8 +89,7 @@ fn smvp_gpu(
             &[
                 &row_ptr_buf,
                 &val_idx_buf,
-                &point_x_buf,
-                &point_y_buf,
+                &points_buf,
                 &bucket_x_buf,
                 &bucket_y_buf,
                 &bucket_z_buf,
@@ -134,8 +131,7 @@ fn test_smvp() {
     let mut rng = rand::thread_rng();
 
     let mut points: Vec<G> = Vec::with_capacity(input_size);
-    let mut point_x_limbs: Vec<u32> = Vec::with_capacity(input_size * num_limbs);
-    let mut point_y_limbs: Vec<u32> = Vec::with_capacity(input_size * num_limbs);
+    let mut point_limbs: Vec<u32> = Vec::with_capacity(input_size * num_limbs * 2);
 
     // Calculate Montgomery radix for conversion
     let r = calc_mont_radix(num_limbs, log_limb_size);
@@ -160,8 +156,8 @@ fn test_smvp() {
         let x_limbs = x_mont_bigint.to_limbs(num_limbs, log_limb_size);
         let y_limbs = y_mont_bigint.to_limbs(num_limbs, log_limb_size);
 
-        point_x_limbs.extend(x_limbs);
-        point_y_limbs.extend(y_limbs);
+        point_limbs.extend(x_limbs);
+        point_limbs.extend(y_limbs);
     }
 
     // ---------------------------------------------------------------------------
@@ -202,8 +198,7 @@ fn test_smvp() {
         &smvp_config,
         &row_ptr,
         &val_idx,
-        &point_x_limbs,
-        &point_y_limbs,
+        &point_limbs,
         input_size,
         num_subtasks,
         num_columns,

@@ -54,7 +54,7 @@ fn compile_shaders() -> std::io::Result<()> {
             path.file_name()
                 .and_then(|n| n.to_str())
                 .map(|name| {
-                    name.starts_with("convert_point")
+                    name.starts_with("decompose_scalars")
                         || name.starts_with("barrett_reduction")
                         || name.starts_with("pbpr")
                         || name.starts_with("smvp")

@@ -1,16 +1,19 @@
-#include "../mont_backend/mont.metal"
+// Scalar decomposition into signed window digits.
+//
+// Point coordinates need no GPU-side processing at all: the host passes
+// arkworks' internal Montgomery representation (R = 2^256, identical to the
+// GPU Montgomery radix) straight through in the coords buffer, which SMVP
+// reads directly as interleaved affine points.
+#include "../misc/get_constant.metal"
 #include "extract_word_from_bytes_le.metal"
 #include <metal_math>
 #include <metal_stdlib>
 using namespace metal;
 
-kernel void convert_point_coords_and_decompose_scalars(
-    device const uint* coords [[buffer(0), access(read)]],
-    device const uint* scalars [[buffer(1), access(read)]],
-    device BigInt* point_x [[buffer(2), access(write)]],
-    device BigInt* point_y [[buffer(3), access(write)]],
-    device uint* chunks [[buffer(4), access(write)]],
-    constant uint4& params [[buffer(5), access(read)]],
+kernel void decompose_scalars(
+    device const uint* scalars [[buffer(0), access(read)]],
+    device uint* chunks [[buffer(1), access(write)]],
+    constant uint4& params [[buffer(2), access(read)]],
     uint3 gid [[thread_position_in_grid]],
     uint3 threadgroup_size [[threadgroups_per_grid]])
 {
@@ -23,27 +26,8 @@ kernel void convert_point_coords_and_decompose_scalars(
     uint gidy = gid.y;
     uint id = gidx * threadgroup_size.y + gidy;
 
-    // 1) Load coordinates. The coords buffer holds the little-endian 32-bit
-    //    words of x then y for each point, which is exactly our limb layout.
-    //    coords layout: [x0_32, ..., x7_32, y0_32, ..., y7_32] per point.
-    const uint base_offset = id * (2u * NUM_LIMBS);
-
-    BigInt x_bigint;
-    BigInt y_bigint;
-
-#pragma unroll(8)
-    for (uint i = 0; i < NUM_LIMBS; i++) {
-        x_bigint.limbs[i] = coords[base_offset + i];
-        y_bigint.limbs[i] = coords[base_offset + NUM_LIMBS + i];
-    }
-
-    // Convert x,y to Montgomery form: mont_mul(a, R^2) = a * R mod p.
-    BigInt r2 = get_r2();
-    point_x[id] = mont_mul(x_bigint, r2);
-    point_y[id] = mont_mul(y_bigint, r2);
-
-    // 2) Decompose scalars: read 8 32-bit words => 16 halfwords (big-endian
-    //    halfword order) in `scalar_bytes` for windowed extraction.
+    // Read 8 32-bit words => 16 halfwords (big-endian halfword order) in
+    // `scalar_bytes` for windowed extraction.
     uint scalar_bytes[16];
 
 #pragma unroll(8)

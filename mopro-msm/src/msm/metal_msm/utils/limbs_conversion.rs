@@ -388,14 +388,20 @@ pub fn pack_affine_and_scalars(
     let num_elements = bases.len();
 
     if msm_config.log_limb_size == 32 {
-        // Limbs are plain little-endian 32-bit words: copy them out directly.
+        // Limbs are plain little-endian 32-bit words.
+        //
+        // Coordinates are copied in arkworks' internal Montgomery representation
+        // (R = 2^256, identical to the GPU's Montgomery radix), so no
+        // Montgomery reduction happens on the host and no to-Montgomery
+        // conversion is needed on the GPU. Scalars go through into_bigint()
+        // because window decomposition needs the standard representation.
         let words_per_coord = msm_config.num_limbs;
         let coords_per_point = words_per_coord * 2;
         let mut coords = vec![0u32; num_elements * coords_per_point];
         let mut scalars_u32 = vec![0u32; num_elements * words_per_coord];
 
-        let write_words = |v: &ark_ff::BigInt<4>, out: &mut [u32]| {
-            for (i, w) in v.0.iter().enumerate() {
+        let write_words = |v: &[u64; 4], out: &mut [u32]| {
+            for (i, w) in v.iter().enumerate() {
                 out[2 * i] = *w as u32;
                 out[2 * i + 1] = (*w >> 32) as u32;
             }
@@ -412,17 +418,17 @@ pub fn pack_affine_and_scalars(
                     for (i, (pt, sc)) in base_chunk.iter().zip(scalar_chunk.iter()).enumerate() {
                         let coord_start = i * coords_per_point;
                         write_words(
-                            &pt.x.into_bigint(),
+                            &pt.x.0 .0,
                             &mut coord_chunk[coord_start..coord_start + words_per_coord],
                         );
                         write_words(
-                            &pt.y.into_bigint(),
+                            &pt.y.0 .0,
                             &mut coord_chunk
                                 [coord_start + words_per_coord..coord_start + coords_per_point],
                         );
                         let scalar_start = i * words_per_coord;
                         write_words(
-                            &sc.into_bigint(),
+                            &sc.into_bigint().0,
                             &mut scalar_u32_chunk[scalar_start..scalar_start + words_per_coord],
                         );
                     }
