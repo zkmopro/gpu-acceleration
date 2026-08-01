@@ -61,12 +61,12 @@ kernel void smvp(
             const uint val_idx_offset = (subtask_idx + subtask_offset) * input_size + k;
             const uint idx = val_idx[val_idx_offset];
 
-            Jacobian b = {
+            // Input points are affine (z = 1): use mixed addition
+            Affine b = {
                 .x = new_point_x[idx],
-                .y = new_point_y[idx],
-                .z = get_bn254_one_mont().z
+                .y = new_point_y[idx]
             };
-            sum = sum + b;
+            sum = jacobian_madd_safe(sum, b);
         }
 
         // In short Weierstrass, negation = flip sign of Y mod p: jacobian_neg.

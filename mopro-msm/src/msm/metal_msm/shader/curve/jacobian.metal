@@ -165,6 +165,72 @@ inline Jacobian jacobian_madd_2007_bl(Jacobian a, Affine b)
     return result;
 }
 
+/// Mixed addition (madd-2007-bl) with full edge-case handling: `b` is an
+/// affine point (implicit z = 1, i.e. Montgomery R). Handles a == infinity,
+/// a == b (doubling) and a == -b (infinity). ~11 field muls vs 16 for the
+/// general Jacobian addition.
+inline Jacobian jacobian_madd_safe(Jacobian a, Affine b)
+{
+    if (is_jacobian_zero(a)) {
+        Jacobian r;
+        r.x = b.x;
+        r.y = b.y;
+        r.z = get_bn254_one_mont().z;
+        return r;
+    }
+
+    // Z1Z1 = Z1^2, U2 = X2*Z1Z1, S2 = Y2*Z1*Z1Z1
+    BigInt z1z1 = mont_mul_cios(a.z, a.z);
+    BigInt u2 = mont_mul_cios(b.x, z1z1);
+    BigInt z1z1z1 = mont_mul_cios(a.z, z1z1);
+    BigInt s2 = mont_mul_cios(b.y, z1z1z1);
+
+    if (bigint_eq(u2, a.x)) {
+        if (bigint_eq(s2, a.y)) {
+            // Same point: fall back to doubling
+            return jacobian_dbl_2009_l(a);
+        }
+        // Opposite points: result is the point at infinity
+        return get_bn254_zero_mont();
+    }
+
+    // H = U2-X1, HH = H^2, I = 4*HH, J = H*I
+    BigInt h = ff_sub(u2, a.x);
+    BigInt hh = mont_mul_cios(h, h);
+    BigInt i = ff_add(hh, hh);
+    i = ff_add(i, i);
+    BigInt j = mont_mul_cios(h, i);
+
+    // r = 2*(S2-Y1), V = X1*I
+    BigInt s2y1 = ff_sub(s2, a.y);
+    BigInt r = ff_add(s2y1, s2y1);
+    BigInt v = mont_mul_cios(a.x, i);
+
+    // X3 = r^2-J-2*V
+    BigInt r2 = mont_mul_cios(r, r);
+    BigInt v2 = ff_add(v, v);
+    BigInt jv2 = ff_add(j, v2);
+    BigInt x3 = ff_sub(r2, jv2);
+
+    // Y3 = r*(V-X3)-2*Y1*J
+    BigInt vx3 = ff_sub(v, x3);
+    BigInt rvx3 = mont_mul_cios(r, vx3);
+    BigInt y1j = mont_mul_cios(a.y, j);
+    BigInt y1j2 = ff_add(y1j, y1j);
+    BigInt y3 = ff_sub(rvx3, y1j2);
+
+    // Z3 = (Z1+H)^2-Z1Z1-HH
+    BigInt z1h = ff_add(a.z, h);
+    BigInt z1h2 = mont_mul_cios(z1h, z1h);
+    BigInt z3 = ff_sub(ff_sub(z1h2, z1z1), hh);
+
+    Jacobian result;
+    result.x = x3;
+    result.y = y3;
+    result.z = z3;
+    return result;
+}
+
 inline Jacobian jacobian_scalar_mul(
     Jacobian pt,
     uint scalar)
