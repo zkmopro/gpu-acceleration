@@ -20,6 +20,9 @@ static PIPELINE_CACHE: Lazy<Mutex<HashMap<String, ComputePipelineState>>> =
 pub enum ShaderType {
     ConvertPointAndDecompose,
     Transpose,
+    TransposeHistogram,
+    TransposePrefixSum,
+    TransposeScatter,
     SMVP,
     BPRStage1,
     BPRStage2,
@@ -39,6 +42,24 @@ impl ShaderType {
                 num_limbs,
                 shader_file: "cuzk/transpose.metal".to_string(),
                 kernel_name: "transpose".to_string(),
+            },
+            ShaderType::TransposeHistogram => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/transpose.metal".to_string(),
+                kernel_name: "transpose_histogram".to_string(),
+            },
+            ShaderType::TransposePrefixSum => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/transpose.metal".to_string(),
+                kernel_name: "transpose_prefix_sum".to_string(),
+            },
+            ShaderType::TransposeScatter => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/transpose.metal".to_string(),
+                kernel_name: "transpose_scatter".to_string(),
             },
             ShaderType::SMVP => MetalConfig {
                 log_limb_size,
@@ -111,6 +132,9 @@ impl ShaderManager {
         for shader_type in [
             ShaderType::ConvertPointAndDecompose,
             ShaderType::Transpose,
+            ShaderType::TransposeHistogram,
+            ShaderType::TransposePrefixSum,
+            ShaderType::TransposeScatter,
             ShaderType::SMVP,
             ShaderType::BPRStage1,
             ShaderType::BPRStage2,

@@ -163,17 +163,44 @@ impl MetalMSMPipeline {
             threads_per_threadgroup: helper.create_thread_group_size(c_workgroup_size as u64, 1, 1),
         });
 
-        // Stage 2: Transpose
-        let transpose_shader = self
+        // Stage 2: Transpose (parallel histogram -> prefix sum -> scatter)
+        let histogram_shader = self
             .shader_manager
-            .get_shader(&ShaderType::Transpose)
-            .ok_or("Transpose shader not found")?;
+            .get_shader(&ShaderType::TransposeHistogram)
+            .ok_or("TransposeHistogram shader not found")?;
+        let prefix_sum_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::TransposePrefixSum)
+            .ok_or("TransposePrefixSum shader not found")?;
+        let scatter_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::TransposeScatter)
+            .ok_or("TransposeScatter shader not found")?;
 
         let transpose_params_buf =
             helper.create_buffer(&vec![num_columns as u32, input_size as u32]);
 
+        let t_threadgroup = 256usize.min(input_size);
+        let t_groups_x = (input_size + t_threadgroup - 1) / t_threadgroup;
+
         ops.push(ShaderOperation {
-            pipeline_state: transpose_shader.pipeline_state.clone(),
+            pipeline_state: histogram_shader.pipeline_state.clone(),
+            buffers: vec![&scalar_chunks_buf, &csc_col_ptr_buf, &transpose_params_buf],
+            thread_group_count: helper.create_thread_group_size(
+                t_groups_x as u64,
+                num_subtasks as u64,
+                1,
+            ),
+            threads_per_threadgroup: helper.create_thread_group_size(t_threadgroup as u64, 1, 1),
+        });
+        ops.push(ShaderOperation {
+            pipeline_state: prefix_sum_shader.pipeline_state.clone(),
+            buffers: vec![&csc_col_ptr_buf, &transpose_params_buf],
+            thread_group_count: helper.create_thread_group_size(1, 1, 1),
+            threads_per_threadgroup: helper.create_thread_group_size(num_subtasks as u64, 1, 1),
+        });
+        ops.push(ShaderOperation {
+            pipeline_state: scatter_shader.pipeline_state.clone(),
             buffers: vec![
                 &scalar_chunks_buf,
                 &csc_col_ptr_buf,
@@ -181,8 +208,12 @@ impl MetalMSMPipeline {
                 &curr_buf,
                 &transpose_params_buf,
             ],
-            thread_group_count: helper.create_thread_group_size(1, 1, 1),
-            threads_per_threadgroup: helper.create_thread_group_size(num_subtasks as u64, 1, 1),
+            thread_group_count: helper.create_thread_group_size(
+                t_groups_x as u64,
+                num_subtasks as u64,
+                1,
+            ),
+            threads_per_threadgroup: helper.create_thread_group_size(t_threadgroup as u64, 1, 1),
         });
 
         // Stage 3: SMVP (one dispatch per subtask chunk)
