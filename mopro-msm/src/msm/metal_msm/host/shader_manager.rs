@@ -26,6 +26,7 @@ pub enum ShaderType {
     SMVP,
     BPRStage1,
     BPRStage2,
+    BPRReduce,
 }
 
 impl ShaderType {
@@ -78,6 +79,12 @@ impl ShaderType {
                 num_limbs,
                 shader_file: "cuzk/pbpr.metal".to_string(),
                 kernel_name: "bpr_stage_2".to_string(),
+            },
+            ShaderType::BPRReduce => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/pbpr.metal".to_string(),
+                kernel_name: "bpr_reduce".to_string(),
             },
         }
     }
@@ -138,6 +145,7 @@ impl ShaderManager {
             ShaderType::SMVP,
             ShaderType::BPRStage1,
             ShaderType::BPRStage2,
+            ShaderType::BPRReduce,
         ] {
             let conf =
                 shader_type.get_config(manager.config.num_limbs, manager.config.log_limb_size);

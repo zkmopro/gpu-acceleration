@@ -119,15 +119,19 @@ impl MetalMSMPipeline {
         let bucket_zzz_buf = helper.create_zeroed_buffer(bucket_size);
 
         // Output buffers
-        // Note: b_workgroup_size also sets how many partial sums the host
-        // must reduce (num_subtasks * b_workgroup_size points on the CPU), so
-        // larger PBPR workgroups trade cheap GPU time for expensive host time.
-        let b_workgroup_size = self.simd_width * scale_factor;
+        // g_points are reduced to one point per subtask on the GPU
+        // (bpr_reduce), so b_workgroup_size no longer adds host-side work.
+        let b_workgroup_size = 256usize.min(half_columns);
         let g_points_size = num_subtasks * b_workgroup_size * num_limbs;
         let g_points_x_buf = helper.create_zeroed_buffer(g_points_size);
         let g_points_y_buf = helper.create_zeroed_buffer(g_points_size);
         let g_points_zz_buf = helper.create_zeroed_buffer(g_points_size);
         let g_points_zzz_buf = helper.create_zeroed_buffer(g_points_size);
+        let subtask_sum_size = num_subtasks * num_limbs;
+        let subtask_x_buf = helper.create_zeroed_buffer(subtask_sum_size);
+        let subtask_y_buf = helper.create_zeroed_buffer(subtask_sum_size);
+        let subtask_zz_buf = helper.create_zeroed_buffer(subtask_sum_size);
+        let subtask_zzz_buf = helper.create_zeroed_buffer(subtask_sum_size);
 
         let mut ops: Vec<ShaderOperation> = Vec::new();
 
@@ -311,79 +315,93 @@ impl MetalMSMPipeline {
             }
         }
 
+        // Stage 4b: tree-reduce each subtask's partial sums to a single point
+        let reduce_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRReduce)
+            .ok_or("BPRReduce shader not found")?;
+        let reduce_params_buf =
+            helper.create_buffer(&vec![b_workgroup_size as u32, 0u32]);
+        ops.push(ShaderOperation {
+            pipeline_state: reduce_shader.pipeline_state.clone(),
+            buffers: vec![
+                &g_points_x_buf,
+                &g_points_y_buf,
+                &g_points_zz_buf,
+                &g_points_zzz_buf,
+                &subtask_x_buf,
+                &subtask_y_buf,
+                &subtask_zz_buf,
+                &subtask_zzz_buf,
+                &reduce_params_buf,
+            ],
+            thread_group_count: helper.create_thread_group_size(num_subtasks as u64, 1, 1),
+            threads_per_threadgroup: helper.create_thread_group_size(128, 1, 1),
+        });
+
         // Run everything with a single host sync at the end
         helper.execute_shaders_pipelined(ops);
 
-        let g_points_x = helper.read_results(&g_points_x_buf, g_points_size);
-        let g_points_y = helper.read_results(&g_points_y_buf, g_points_size);
-        let g_points_zz = helper.read_results(&g_points_zz_buf, g_points_size);
-        let g_points_zzz = helper.read_results(&g_points_zzz_buf, g_points_size);
+        let subtask_x = helper.read_results(&subtask_x_buf, subtask_sum_size);
+        let subtask_y = helper.read_results(&subtask_y_buf, subtask_sum_size);
+        let subtask_zz = helper.read_results(&subtask_zz_buf, subtask_sum_size);
+        let subtask_zzz = helper.read_results(&subtask_zzz_buf, subtask_sum_size);
 
         helper.drop_all_buffers();
 
-        // Stage 5 (on CPU): read buckets and perform final reduction with Horner's method
+        // Stage 5 (on CPU): Horner over one point per subtask
         let result = self.final_reduction(
-            &g_points_x,
-            &g_points_y,
-            &g_points_zz,
-            &g_points_zzz,
+            &subtask_x,
+            &subtask_y,
+            &subtask_zz,
+            &subtask_zzz,
             num_subtasks,
             window_size,
-            b_workgroup_size,
         )?;
 
         Ok(result)
     }
 
-    /// Final reduction on CPU with Horner's method.
+    /// Final reduction on CPU with Horner's method over one point per
+    /// subtask (already tree-reduced on the GPU).
     ///
-    /// GPU partial sums arrive in XYZZ coordinates (X, Y, ZZ = z^2,
-    /// ZZZ = z^3, Montgomery form). Rather than inverting ZZ/ZZZ, scale to an
+    /// GPU points arrive in XYZZ coordinates (X, Y, ZZ = z^2, ZZZ = z^3,
+    /// Montgomery form). Rather than inverting ZZ/ZZZ, scale to an
     /// equivalent Jacobian representative:
     /// (X*ZZ*ZZZ^2, Y*ZZ^3*ZZZ^2, ZZ*ZZZ).
     fn final_reduction(
         &self,
-        g_points_x: &[u32],
-        g_points_y: &[u32],
-        g_points_zz: &[u32],
-        g_points_zzz: &[u32],
+        subtask_x: &[u32],
+        subtask_y: &[u32],
+        subtask_zz: &[u32],
+        subtask_zzz: &[u32],
         num_subtasks: usize,
         window_size: usize,
-        pbpr_workgroup_size: usize,
     ) -> Result<G, Box<dyn Error>> {
         let field_from_limbs = |limbs: &[u32]| {
             let reduced = raw_reduction(BigInt::<4>::from_limbs(limbs, self.config.log_limb_size));
             BaseField::from_bigint(reduced).unwrap_or_else(BaseField::zero)
         };
 
-        // Parallel processing of subtasks
         let gpu_points: Vec<G> = (0..num_subtasks)
-            .into_par_iter()
             .map(|i| {
-                let mut accumulated_point = G::zero();
+                let limb_start_idx = i * self.config.num_limbs;
+                let limb_end_idx = (i + 1) * self.config.num_limbs;
 
-                for j in 0..pbpr_workgroup_size {
-                    let flat_idx = i * pbpr_workgroup_size + j;
-                    let limb_start_idx = flat_idx * self.config.num_limbs;
-                    let limb_end_idx = (flat_idx + 1) * self.config.num_limbs;
-
-                    let zz = field_from_limbs(&g_points_zz[limb_start_idx..limb_end_idx]);
-                    if zz.is_zero() {
-                        continue; // point at infinity
-                    }
-                    let x = field_from_limbs(&g_points_x[limb_start_idx..limb_end_idx]);
-                    let y = field_from_limbs(&g_points_y[limb_start_idx..limb_end_idx]);
-                    let zzz = field_from_limbs(&g_points_zzz[limb_start_idx..limb_end_idx]);
-
-                    let zzz2 = zzz * zzz;
-                    let xj = x * zz * zzz2;
-                    let yj = y * zz * zz * zz * zzz2;
-                    let zj = zz * zzz;
-
-                    accumulated_point += G::new(xj, yj, zj);
+                let zz = field_from_limbs(&subtask_zz[limb_start_idx..limb_end_idx]);
+                if zz.is_zero() {
+                    return G::zero();
                 }
+                let x = field_from_limbs(&subtask_x[limb_start_idx..limb_end_idx]);
+                let y = field_from_limbs(&subtask_y[limb_start_idx..limb_end_idx]);
+                let zzz = field_from_limbs(&subtask_zzz[limb_start_idx..limb_end_idx]);
 
-                accumulated_point
+                let zzz2 = zzz * zzz;
+                let xj = x * zz * zzz2;
+                let yj = y * zz * zz * zz * zzz2;
+                let zj = zz * zzz;
+
+                G::new(xj, yj, zj)
             })
             .collect();
 

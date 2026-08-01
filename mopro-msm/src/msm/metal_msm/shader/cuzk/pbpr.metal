@@ -157,3 +157,56 @@ kernel void bpr_stage_2(
     g_points_zz[g_rw_idx] = g.zz;
     g_points_zzz[g_rw_idx] = g.zzz;
 }
+
+// Stage 3: collapse each subtask's g_points into a single point so the host
+// only Horner-combines num_subtasks points. One threadgroup per subtask;
+// tree reduction in threadgroup memory (128 * sizeof(XYZZ) = 16 KB).
+#define BPR_REDUCE_THREADS 128u
+
+kernel void bpr_reduce(
+    device const BigInt* g_points_x [[buffer(0), access(read)]],
+    device const BigInt* g_points_y [[buffer(1), access(read)]],
+    device const BigInt* g_points_zz [[buffer(2), access(read)]],
+    device const BigInt* g_points_zzz [[buffer(3), access(read)]],
+    device BigInt* subtask_x [[buffer(4), access(write)]],
+    device BigInt* subtask_y [[buffer(5), access(write)]],
+    device BigInt* subtask_zz [[buffer(6), access(write)]],
+    device BigInt* subtask_zzz [[buffer(7), access(write)]],
+    constant uint2& params [[buffer(8), access(read)]],
+    uint tgid [[threadgroup_position_in_grid]],
+    uint tid [[thread_position_in_threadgroup]])
+{
+    const uint points_per_subtask = params[0];
+
+    threadgroup XYZZ shared_pts[BPR_REDUCE_THREADS];
+
+    // Grid-stride accumulate this thread's share of the subtask's points
+    XYZZ acc = get_xyzz_zero();
+    for (uint k = tid; k < points_per_subtask; k += BPR_REDUCE_THREADS) {
+        const uint gi = tgid * points_per_subtask + k;
+        XYZZ p = {
+            .x = g_points_x[gi],
+            .y = g_points_y[gi],
+            .zz = g_points_zz[gi],
+            .zzz = g_points_zzz[gi]
+        };
+        acc = xyzz_add_safe(acc, p);
+    }
+    shared_pts[tid] = acc;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    // Tree reduction
+    for (uint stride = BPR_REDUCE_THREADS / 2u; stride > 0u; stride >>= 1u) {
+        if (tid < stride) {
+            shared_pts[tid] = xyzz_add_safe(shared_pts[tid], shared_pts[tid + stride]);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    if (tid == 0u) {
+        subtask_x[tgid] = shared_pts[0].x;
+        subtask_y[tgid] = shared_pts[0].y;
+        subtask_zz[tgid] = shared_pts[0].zz;
+        subtask_zzz[tgid] = shared_pts[0].zzz;
+    }
+}
