@@ -214,7 +214,7 @@ impl MetalMSMPipeline {
             .ok_or("SMVP shader not found")?;
 
         let s_workgroup_size = self.simd_width * scale_factor;
-        let num_subtask_chunk_size = 4u32;
+        let num_subtask_chunk_size = num_subtasks as u32; // single dispatch: subtask tails overlap
         let mut smvp_params_bufs = Vec::new();
         let mut smvp_dims = Vec::new();
         for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
