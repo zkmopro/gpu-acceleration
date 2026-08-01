@@ -181,8 +181,8 @@ When tuning kernels focus on the **shaders** bench first; improvements there sho
 
 The following optimizations were applied on top of v0.2.0 (measured on an
 M-series MacBook, medians of 5 runs; cumulative speedup vs v0.2.0 on the same
-machine: **~2.5x at 2^12, ~3.4x at 2^16, ~4.3x at 2^20**, making the GPU
-~2-3x faster than Arkworks CPU MSM at 2^20-2^22):
+machine: **~2.9x at 2^12, ~4.4x at 2^16, ~5x at 2^20-2^22**, making the GPU
+~2.3-3.2x faster than Arkworks CPU MSM at 2^20-2^22):
 
 | Change | Effect |
 |---|---|
@@ -192,6 +192,8 @@ machine: **~2.5x at 2^12, ~3.4x at 2^16, ~4.3x at 2^20**, making the GPU
 | Parallel sparse-matrix transpose (histogram → prefix sum → atomic scatter) instead of ~20 serial threads | up to 2.1x at 2^20 |
 | Zero-copy Montgomery: pass arkworks' internal Montgomery representation (same R = 2^256) straight to the GPU; deletes host-side reductions, the GPU to-Montgomery conversion and the Barrett reduction path entirely | less host work + memory |
 | Window-size and workgroup-scale retuning (window 13 down to 2^12; smaller workgroups) | ~4-13% e2e |
+| Single SMVP dispatch for all subtasks (drop WebGPU-era 4-subtask chunking) | ~5-11% e2e |
+| XYZZ (extended Jacobian) bucket accumulation: mixed add 8M+2S vs 7M+4S and ~5 vs ~13 field add/subs; general add 12M+2S vs 11M+5S | ~7-11% e2e |
 
 Findings on the previously-listed future items:
 
@@ -219,7 +221,8 @@ Findings on the previously-listed future items:
 
 ### Technical Improvements
 - **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2)), then adopt [Metal 4](https://developer.apple.com/metal/whats-new/) command encoding
-- **SMVP occupancy**: bucket accumulation is an ILP-1 dependency chain and now ~75% of GPU time; register-pressure reduction or XYZZ coordinates (10 vs 11 muls per mixed add) are the next levers
+- **SMVP load balancing**: bucket accumulation is still one-thread-per-bucket; sorting into fixed-size segments with a segmented reduction (ICICLE/Yrrid-style) would remove the slowest-bucket tail and make every window size safe
+- **Batched-affine accumulation**: amortized ~6-7 muls per bucket addition via Montgomery batch inversion, plus smaller per-thread state
 
 ### Algorithm & Integration
 - **CPU-GPU Hybrid**: Research interleaving with CPU MSM crate and update to `arkworks 0.5`

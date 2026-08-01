@@ -20,7 +20,7 @@ fn smvp_gpu(
     input_size: usize,
     num_subtasks: usize,
     num_columns: u32,
-) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
+) -> (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>) {
     let half_columns = num_columns / 2;
 
     // Work-group configuration heuristics (same as e2e.rs)
@@ -53,7 +53,8 @@ fn smvp_gpu(
     let points_buf = helper.create_buffer(gpu_points);
     let bucket_x_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
     let bucket_y_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
-    let bucket_z_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_zz_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_zzz_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
@@ -92,7 +93,8 @@ fn smvp_gpu(
                 &points_buf,
                 &bucket_x_buf,
                 &bucket_y_buf,
-                &bucket_z_buf,
+                &bucket_zz_buf,
+                &bucket_zzz_buf,
                 &params_buf,
             ],
             &thread_group_count,
@@ -103,9 +105,10 @@ fn smvp_gpu(
     // Read back results
     let out_x = helper.read_results(&bucket_x_buf, bucket_sum_coord_bytelength);
     let out_y = helper.read_results(&bucket_y_buf, bucket_sum_coord_bytelength);
-    let out_z = helper.read_results(&bucket_z_buf, bucket_sum_coord_bytelength);
+    let out_zz = helper.read_results(&bucket_zz_buf, bucket_sum_coord_bytelength);
+    let out_zzz = helper.read_results(&bucket_zzz_buf, bucket_sum_coord_bytelength);
 
-    (out_x, out_y, out_z)
+    (out_x, out_y, out_zz, out_zzz)
 }
 
 // ----------------------------------------------------------------------------------
@@ -193,7 +196,7 @@ fn test_smvp() {
         kernel_name: "smvp".to_string(),
     };
 
-    let (gpu_bucket_x, gpu_bucket_y, gpu_bucket_z) = smvp_gpu(
+    let (gpu_bucket_x, gpu_bucket_y, gpu_bucket_zz, gpu_bucket_zzz) = smvp_gpu(
         &mut helper,
         &smvp_config,
         &row_ptr,
@@ -214,24 +217,22 @@ fn test_smvp() {
         let limb_start = id * num_limbs;
         let limb_end = (id + 1) * num_limbs;
 
-        let xr_limbs = &gpu_bucket_x[limb_start..limb_end];
-        let yr_limbs = &gpu_bucket_y[limb_start..limb_end];
-        let zr_limbs = &gpu_bucket_z[limb_start..limb_end];
+        let field_from = |limbs: &[u32]| {
+            let std = raw_reduction(BigInt::<4>::from_limbs(limbs, log_limb_size));
+            BaseField::from_bigint(std).unwrap_or_else(|| BaseField::zero())
+        };
+        let x = field_from(&gpu_bucket_x[limb_start..limb_end]);
+        let y = field_from(&gpu_bucket_y[limb_start..limb_end]);
+        let zz = field_from(&gpu_bucket_zz[limb_start..limb_end]);
+        let zzz = field_from(&gpu_bucket_zzz[limb_start..limb_end]);
 
-        let xr_mont = BigInt::<4>::from_limbs(xr_limbs, log_limb_size);
-        let yr_mont = BigInt::<4>::from_limbs(yr_limbs, log_limb_size);
-        let zr_mont = BigInt::<4>::from_limbs(zr_limbs, log_limb_size);
-
-        // Convert from Montgomery form to standard form
-        let xr_std = raw_reduction(xr_mont);
-        let yr_std = raw_reduction(yr_mont);
-        let zr_std = raw_reduction(zr_mont);
-
-        let x = BaseField::from_bigint(xr_std).unwrap_or_else(|| BaseField::zero());
-        let y = BaseField::from_bigint(yr_std).unwrap_or_else(|| BaseField::zero());
-        let z = BaseField::from_bigint(zr_std).unwrap_or_else(|| BaseField::zero());
-
-        gpu_buckets.push(G::new(x, y, z));
+        // XYZZ -> Jacobian: (X*ZZ*ZZZ^2, Y*ZZ^3*ZZZ^2, ZZ*ZZZ)
+        if zz.is_zero() {
+            gpu_buckets.push(G::zero());
+        } else {
+            let zzz2 = zzz * zzz;
+            gpu_buckets.push(G::new(x * zz * zzz2, y * zz * zz * zz * zzz2, zz * zzz));
+        }
     }
 
     // ---------------------------------------------------------------------------

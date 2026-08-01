@@ -115,14 +115,16 @@ impl MetalMSMPipeline {
         let bucket_size = half_columns * num_limbs * num_subtasks;
         let bucket_x_buf = helper.create_zeroed_buffer(bucket_size);
         let bucket_y_buf = helper.create_zeroed_buffer(bucket_size);
-        let bucket_z_buf = helper.create_zeroed_buffer(bucket_size);
+        let bucket_zz_buf = helper.create_zeroed_buffer(bucket_size);
+        let bucket_zzz_buf = helper.create_zeroed_buffer(bucket_size);
 
         // Output buffers
         let b_workgroup_size = self.simd_width * scale_factor;
         let g_points_size = num_subtasks * b_workgroup_size * num_limbs;
         let g_points_x_buf = helper.create_zeroed_buffer(g_points_size);
         let g_points_y_buf = helper.create_zeroed_buffer(g_points_size);
-        let g_points_z_buf = helper.create_zeroed_buffer(g_points_size);
+        let g_points_zz_buf = helper.create_zeroed_buffer(g_points_size);
+        let g_points_zzz_buf = helper.create_zeroed_buffer(g_points_size);
 
         let mut ops: Vec<ShaderOperation> = Vec::new();
 
@@ -249,7 +251,8 @@ impl MetalMSMPipeline {
                     &coords_buf,
                     &bucket_x_buf,
                     &bucket_y_buf,
-                    &bucket_z_buf,
+                    &bucket_zz_buf,
+                    &bucket_zzz_buf,
                     params_buf,
                 ],
                 thread_group_count: helper.create_thread_group_size(x, y, z),
@@ -286,10 +289,12 @@ impl MetalMSMPipeline {
                     buffers: vec![
                         &bucket_x_buf,
                         &bucket_y_buf,
-                        &bucket_z_buf,
+                        &bucket_zz_buf,
+                        &bucket_zzz_buf,
                         &g_points_x_buf,
                         &g_points_y_buf,
-                        &g_points_z_buf,
+                        &g_points_zz_buf,
+                        &g_points_zzz_buf,
                         params_buf,
                     ],
                     thread_group_count: helper.create_thread_group_size(
@@ -308,7 +313,8 @@ impl MetalMSMPipeline {
 
         let g_points_x = helper.read_results(&g_points_x_buf, g_points_size);
         let g_points_y = helper.read_results(&g_points_y_buf, g_points_size);
-        let g_points_z = helper.read_results(&g_points_z_buf, g_points_size);
+        let g_points_zz = helper.read_results(&g_points_zz_buf, g_points_size);
+        let g_points_zzz = helper.read_results(&g_points_zzz_buf, g_points_size);
 
         helper.drop_all_buffers();
 
@@ -316,7 +322,8 @@ impl MetalMSMPipeline {
         let result = self.final_reduction(
             &g_points_x,
             &g_points_y,
-            &g_points_z,
+            &g_points_zz,
+            &g_points_zzz,
             num_subtasks,
             window_size,
             b_workgroup_size,
@@ -325,16 +332,27 @@ impl MetalMSMPipeline {
         Ok(result)
     }
 
-    /// Final reduction on CPU with Horner's method
+    /// Final reduction on CPU with Horner's method.
+    ///
+    /// GPU partial sums arrive in XYZZ coordinates (X, Y, ZZ = z^2,
+    /// ZZZ = z^3, Montgomery form). Rather than inverting ZZ/ZZZ, scale to an
+    /// equivalent Jacobian representative:
+    /// (X*ZZ*ZZZ^2, Y*ZZ^3*ZZZ^2, ZZ*ZZZ).
     fn final_reduction(
         &self,
         g_points_x: &[u32],
         g_points_y: &[u32],
-        g_points_z: &[u32],
+        g_points_zz: &[u32],
+        g_points_zzz: &[u32],
         num_subtasks: usize,
         window_size: usize,
         pbpr_workgroup_size: usize,
     ) -> Result<G, Box<dyn Error>> {
+        let field_from_limbs = |limbs: &[u32]| {
+            let reduced = raw_reduction(BigInt::<4>::from_limbs(limbs, self.config.log_limb_size));
+            BaseField::from_bigint(reduced).unwrap_or_else(BaseField::zero)
+        };
+
         // Parallel processing of subtasks
         let gpu_points: Vec<G> = (0..num_subtasks)
             .into_par_iter()
@@ -346,25 +364,20 @@ impl MetalMSMPipeline {
                     let limb_start_idx = flat_idx * self.config.num_limbs;
                     let limb_end_idx = (flat_idx + 1) * self.config.num_limbs;
 
-                    let xr_limbs = &g_points_x[limb_start_idx..limb_end_idx];
-                    let yr_limbs = &g_points_y[limb_start_idx..limb_end_idx];
-                    let zr_limbs = &g_points_z[limb_start_idx..limb_end_idx];
+                    let zz = field_from_limbs(&g_points_zz[limb_start_idx..limb_end_idx]);
+                    if zz.is_zero() {
+                        continue; // point at infinity
+                    }
+                    let x = field_from_limbs(&g_points_x[limb_start_idx..limb_end_idx]);
+                    let y = field_from_limbs(&g_points_y[limb_start_idx..limb_end_idx]);
+                    let zzz = field_from_limbs(&g_points_zzz[limb_start_idx..limb_end_idx]);
 
-                    let xr_bigint = BigInt::<4>::from_limbs(xr_limbs, self.config.log_limb_size);
-                    let yr_bigint = BigInt::<4>::from_limbs(yr_limbs, self.config.log_limb_size);
-                    let zr_bigint = BigInt::<4>::from_limbs(zr_limbs, self.config.log_limb_size);
+                    let zzz2 = zzz * zzz;
+                    let xj = x * zz * zzz2;
+                    let yj = y * zz * zz * zz * zzz2;
+                    let zj = zz * zzz;
 
-                    // decoded points from Montgomery form to standard form
-                    let xr_reduced = raw_reduction(xr_bigint);
-                    let yr_reduced = raw_reduction(yr_bigint);
-                    let zr_reduced = raw_reduction(zr_bigint);
-
-                    let x = BaseField::from_bigint(xr_reduced).unwrap_or_else(|| BaseField::zero());
-                    let y = BaseField::from_bigint(yr_reduced).unwrap_or_else(|| BaseField::zero());
-                    let z = BaseField::from_bigint(zr_reduced).unwrap_or_else(|| BaseField::zero());
-
-                    let point = G::new(x, y, z);
-                    accumulated_point += point;
+                    accumulated_point += G::new(xj, yj, zj);
                 }
 
                 accumulated_point
