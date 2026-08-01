@@ -70,7 +70,11 @@ impl MetalMSMPipeline {
         self.gpu_cores
     }
 
-    /// Execute the complete MSM pipeline on GPU
+    /// Execute the complete MSM pipeline on GPU.
+    ///
+    /// All stages are encoded up front and committed back-to-back; intermediate
+    /// results stay in GPU buffers (unified memory) and only the final
+    /// per-subtask partial sums are read back to the host.
     fn execute_pipeline(
         &self,
         bases: &[Affine],
@@ -79,113 +83,213 @@ impl MetalMSMPipeline {
         window_size: usize,
         scale_factor: usize,
     ) -> Result<G, Box<dyn Error>> {
+        use crate::msm::metal_msm::host::metal_wrapper::ShaderOperation;
+
         // these params are set based on the Alogorithm 3 in the cuZK paper (https://eprint.iacr.org/2022/1321.pdf)
         let num_columns = 1 << window_size;
         let num_subtasks =
             (ScalarField::MODULUS_BIT_SIZE as f32 / window_size as f32).ceil() as usize;
+        let num_limbs = self.config.num_limbs;
+        let half_columns = num_columns / 2;
 
         // Stage 0: Pack inputs
         let metal_config = MetalConfig {
             log_limb_size: self.config.log_limb_size,
-            num_limbs: self.config.num_limbs,
+            num_limbs,
             shader_file: String::new(),
             kernel_name: String::new(),
         };
         let (coords, scals) = pack_affine_and_scalars(bases, scalars, &metal_config);
 
+        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
+
+        // Input buffers
+        let coords_buf = helper.create_buffer(&coords);
+        let scalars_buf = helper.create_buffer(&scals);
+
+        // Intermediate buffers (device-resident, never read back)
+        let point_x_buf = helper.create_zeroed_buffer(input_size * num_limbs);
+        let point_y_buf = helper.create_zeroed_buffer(input_size * num_limbs);
+        let scalar_chunks_buf = helper.create_zeroed_buffer(input_size * num_subtasks);
+        let csc_col_ptr_buf = helper.create_zeroed_buffer(num_subtasks * (num_columns + 1));
+        let csc_val_idxs_buf = helper.create_zeroed_buffer(input_size * num_subtasks);
+        let curr_buf = helper.create_zeroed_buffer(num_subtasks * num_columns);
+        let bucket_size = half_columns * num_limbs * num_subtasks;
+        let bucket_x_buf = helper.create_zeroed_buffer(bucket_size);
+        let bucket_y_buf = helper.create_zeroed_buffer(bucket_size);
+        let bucket_z_buf = helper.create_zeroed_buffer(bucket_size);
+
+        // Output buffers
+        let b_workgroup_size = self.simd_width * scale_factor;
+        let g_points_size = num_subtasks * b_workgroup_size * num_limbs;
+        let g_points_x_buf = helper.create_zeroed_buffer(g_points_size);
+        let g_points_y_buf = helper.create_zeroed_buffer(g_points_size);
+        let g_points_z_buf = helper.create_zeroed_buffer(g_points_size);
+
+        let mut ops: Vec<ShaderOperation> = Vec::new();
+
         // Stage 1: Convert Point & Scalar Decomposition
-        let stage1 = ConvertPointAndScalarDecompose::new(&self.shader_manager);
+        let convert_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::ConvertPointAndDecompose)
+            .ok_or("ConvertPointAndDecompose shader not found")?;
 
         let c_workgroup_size = self.simd_width * scale_factor;
         let c_num_x_workgroups = c_workgroup_size;
         let c_num_y_workgroups = input_size / c_workgroup_size / c_num_x_workgroups;
-        let c_num_z_workgroups = 1;
 
-        let (point_x, point_y, scalar_chunks) = stage1.execute(
-            &coords,
-            &scals,
-            input_size,
-            window_size,
-            num_columns,
-            num_subtasks,
-            c_num_x_workgroups,
-            c_num_y_workgroups,
-            c_num_z_workgroups,
-            c_workgroup_size,
-        )?;
+        let convert_params_buf = helper.create_buffer(&vec![
+            input_size as u32,
+            window_size as u32,
+            num_columns as u32,
+            num_subtasks as u32,
+        ]);
+
+        ops.push(ShaderOperation {
+            pipeline_state: convert_shader.pipeline_state.clone(),
+            buffers: vec![
+                &coords_buf,
+                &scalars_buf,
+                &point_x_buf,
+                &point_y_buf,
+                &scalar_chunks_buf,
+                &convert_params_buf,
+            ],
+            thread_group_count: helper.create_thread_group_size(
+                c_num_x_workgroups as u64,
+                c_num_y_workgroups.max(1) as u64,
+                1,
+            ),
+            threads_per_threadgroup: helper.create_thread_group_size(c_workgroup_size as u64, 1, 1),
+        });
 
         // Stage 2: Transpose
-        let stage2 = Transpose::new(&self.shader_manager);
+        let transpose_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::Transpose)
+            .ok_or("Transpose shader not found")?;
 
-        let t_num_x_workgroups = 1;
-        let t_num_y_workgroups = 1;
-        let t_num_z_workgroups = 1;
-        let t_workgroup_size = num_subtasks;
+        let transpose_params_buf =
+            helper.create_buffer(&vec![num_columns as u32, input_size as u32]);
 
-        let (csc_col_ptr, csc_val_idxs) = stage2.execute(
-            &scalar_chunks,
-            num_subtasks,
-            input_size,
-            num_columns,
-            t_num_x_workgroups,
-            t_num_y_workgroups,
-            t_num_z_workgroups,
-            t_workgroup_size,
-        )?;
+        ops.push(ShaderOperation {
+            pipeline_state: transpose_shader.pipeline_state.clone(),
+            buffers: vec![
+                &scalar_chunks_buf,
+                &csc_col_ptr_buf,
+                &csc_val_idxs_buf,
+                &curr_buf,
+                &transpose_params_buf,
+            ],
+            thread_group_count: helper.create_thread_group_size(1, 1, 1),
+            threads_per_threadgroup: helper.create_thread_group_size(num_subtasks as u64, 1, 1),
+        });
 
-        // Stage 3: Sparse Matrix-Vector Multiplication
-        // according to the write-up (https://github.com/z-prize/2023-entries/tree/main/prize-2-msm-wasm/webgpu-only/tal-derei-koh-wei-jie#thread-count)
-        // the threads is (input size / 2) * num_subtasks
-        // after testing, 1D dim config is better than 3D dim config
-        let stage3 = SMVP::new(&self.shader_manager);
+        // Stage 3: SMVP (one dispatch per subtask chunk)
+        let smvp_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::SMVP)
+            .ok_or("SMVP shader not found")?;
 
         let s_workgroup_size = self.simd_width * scale_factor;
+        let num_subtask_chunk_size = 4u32;
+        let mut smvp_params_bufs = Vec::new();
+        let mut smvp_dims = Vec::new();
+        for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
+            let remaining_subtasks = (num_subtasks as u32 - offset).min(num_subtask_chunk_size);
+            let valid_threads = half_columns as u64 * remaining_subtasks as u64;
 
-        let (bucket_x, bucket_y, bucket_z) = stage3.execute(
-            &csc_col_ptr,
-            &csc_val_idxs,
-            &point_x,
-            &point_y,
-            input_size,
-            num_subtasks,
-            num_columns,
-            self.simd_width,
-            s_workgroup_size,
-        )?;
+            let max_y = ((valid_threads as usize)
+                / (s_workgroup_size * remaining_subtasks as usize))
+                .max(1);
+            let s_num_y_workgroups = self.simd_width.min(max_y) as u64;
+            let s_num_z_workgroups = remaining_subtasks as u64;
 
-        // Stage 4: Parallel Bucket Reduction
-        // according to the write-up (https://github.com/z-prize/2023-entries/tree/main/prize-2-msm-wasm/webgpu-only/tal-derei-koh-wei-jie#thread-count)
-        // the threads is 2^k * num_subtasks
-        let stage4 = PBPR::new(&self.shader_manager);
+            let threads_per_grid =
+                (s_workgroup_size as u64) * s_num_y_workgroups * s_num_z_workgroups;
+            let s_num_x_workgroups = (valid_threads + threads_per_grid - 1) / threads_per_grid; // ceil div
 
-        let b_workgroup_size = self.simd_width * scale_factor;
-        let num_subtasks_per_bpr_1 = num_subtasks;
-        let num_subtasks_per_bpr_2 = num_subtasks;
+            let params_buf = helper.create_buffer(&vec![
+                input_size as u32,
+                num_columns as u32,
+                num_subtasks as u32,
+                offset,
+            ]);
+            smvp_params_bufs.push(params_buf);
+            smvp_dims.push((s_num_x_workgroups, s_num_y_workgroups, s_num_z_workgroups));
+        }
+        for (params_buf, &(x, y, z)) in smvp_params_bufs.iter().zip(smvp_dims.iter()) {
+            ops.push(ShaderOperation {
+                pipeline_state: smvp_shader.pipeline_state.clone(),
+                buffers: vec![
+                    &csc_col_ptr_buf,
+                    &csc_val_idxs_buf,
+                    &point_x_buf,
+                    &point_y_buf,
+                    &bucket_x_buf,
+                    &bucket_y_buf,
+                    &bucket_z_buf,
+                    params_buf,
+                ],
+                thread_group_count: helper.create_thread_group_size(x, y, z),
+                threads_per_threadgroup: helper
+                    .create_thread_group_size(s_workgroup_size as u64, 1, 1),
+            });
+        }
 
-        let b_num_x_workgroups = num_subtasks_per_bpr_1;
-        let b_num_y_workgroups = 1;
-        let b_num_z_workgroups = 1;
+        // Stage 4: Parallel Bucket Reduction (stage 1 then stage 2)
+        let bpr1_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRStage1)
+            .ok_or("BPRStage1 shader not found")?;
+        let bpr2_shader = self
+            .shader_manager
+            .get_shader(&ShaderType::BPRStage2)
+            .ok_or("BPRStage2 shader not found")?;
 
-        let b_2_num_x_workgroups = num_subtasks_per_bpr_2;
-        let b_2_num_y_workgroups = 1;
-        let b_2_num_z_workgroups = 1;
+        let num_subtasks_per_bpr = num_subtasks;
+        let mut bpr_params_bufs = Vec::new();
+        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr) {
+            let params_buf = helper.create_buffer(&vec![
+                subtask_chunk_idx as u32,
+                num_columns as u32,
+                num_subtasks_per_bpr as u32,
+                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
+            ]);
+            bpr_params_bufs.push(params_buf);
+        }
+        for stage_shader in [bpr1_shader, bpr2_shader] {
+            for params_buf in bpr_params_bufs.iter() {
+                ops.push(ShaderOperation {
+                    pipeline_state: stage_shader.pipeline_state.clone(),
+                    buffers: vec![
+                        &bucket_x_buf,
+                        &bucket_y_buf,
+                        &bucket_z_buf,
+                        &g_points_x_buf,
+                        &g_points_y_buf,
+                        &g_points_z_buf,
+                        params_buf,
+                    ],
+                    thread_group_count: helper.create_thread_group_size(
+                        num_subtasks_per_bpr as u64,
+                        1,
+                        1,
+                    ),
+                    threads_per_threadgroup: helper
+                        .create_thread_group_size(b_workgroup_size as u64, 1, 1),
+                });
+            }
+        }
 
-        let (g_points_x, g_points_y, g_points_z) = stage4.execute(
-            &bucket_x,
-            &bucket_y,
-            &bucket_z,
-            num_subtasks,
-            num_columns,
-            num_subtasks_per_bpr_1,
-            num_subtasks_per_bpr_2,
-            b_num_x_workgroups,
-            b_num_y_workgroups,
-            b_num_z_workgroups,
-            b_2_num_x_workgroups,
-            b_2_num_y_workgroups,
-            b_2_num_z_workgroups,
-            b_workgroup_size,
-        )?;
+        // Run everything with a single host sync at the end
+        helper.execute_shaders_pipelined(ops);
+
+        let g_points_x = helper.read_results(&g_points_x_buf, g_points_size);
+        let g_points_y = helper.read_results(&g_points_y_buf, g_points_size);
+        let g_points_z = helper.read_results(&g_points_z_buf, g_points_size);
+
+        helper.drop_all_buffers();
 
         // Stage 5 (on CPU): read buckets and perform final reduction with Horner's method
         let result = self.final_reduction(
@@ -261,380 +365,10 @@ impl MetalMSMPipeline {
     }
 }
 
-/// Stage 1: Convert & Decompose
-struct ConvertPointAndScalarDecompose<'a> {
-    shader_manager: &'a ShaderManager,
-}
-
-impl<'a> ConvertPointAndScalarDecompose<'a> {
-    fn new(shader_manager: &'a ShaderManager) -> Self {
-        Self { shader_manager }
-    }
-
-    fn execute(
-        &self,
-        coords: &[u32],
-        scalars: &[u32],
-        input_size: usize,
-        window_size: usize,
-        num_columns: usize,
-        num_subtasks: usize,
-        c_num_x_workgroups: usize,
-        c_num_y_workgroups: usize,
-        c_num_z_workgroups: usize,
-        c_workgroup_size: usize,
-    ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
-        let shader = self
-            .shader_manager
-            .get_shader(&ShaderType::ConvertPointAndDecompose)
-            .ok_or("ConvertPointAndDecompose shader not found")?;
-
-        let coords_buf = helper.create_buffer(&coords.to_vec());
-        let scalars_buf = helper.create_buffer(&scalars.to_vec());
-
-        let out_point_x =
-            helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
-        let out_point_y =
-            helper.create_empty_buffer(input_size * self.shader_manager.config().num_limbs);
-        let out_scalar_chunks = helper.create_empty_buffer(input_size * num_subtasks);
-
-        let params_buf = helper.create_buffer(&vec![
-            input_size as u32,
-            window_size as u32,
-            num_columns as u32,
-            num_subtasks as u32,
-        ]);
-
-        let thread_group_count = helper.create_thread_group_size(
-            c_num_x_workgroups as u64,
-            c_num_y_workgroups as u64,
-            c_num_z_workgroups as u64,
-        );
-        let threads_per_threadgroup =
-            helper.create_thread_group_size(c_workgroup_size as u64, 1, 1);
-
-        helper.execute_shader_with_pipeline(
-            &shader.pipeline_state,
-            &[
-                &coords_buf,
-                &scalars_buf,
-                &out_point_x,
-                &out_point_y,
-                &out_scalar_chunks,
-                &params_buf,
-            ],
-            &thread_group_count,
-            &threads_per_threadgroup,
-        );
-
-        let point_x = helper.read_results(
-            &out_point_x,
-            input_size * self.shader_manager.config().num_limbs,
-        );
-        let point_y = helper.read_results(
-            &out_point_y,
-            input_size * self.shader_manager.config().num_limbs,
-        );
-        let scalar_chunks = helper.read_results(&out_scalar_chunks, input_size * num_subtasks);
-
-        helper.drop_all_buffers();
-
-        Ok((point_x, point_y, scalar_chunks))
-    }
-}
-
-/// Stage 2: Transpose
-struct Transpose<'a> {
-    shader_manager: &'a ShaderManager,
-}
-
-impl<'a> Transpose<'a> {
-    fn new(shader_manager: &'a ShaderManager) -> Self {
-        Self { shader_manager }
-    }
-
-    fn execute(
-        &self,
-        scalar_chunks: &[u32],
-        num_subtasks: usize,
-        input_size: usize,
-        num_columns: usize,
-        t_num_x_workgroups: usize,
-        t_num_y_workgroups: usize,
-        t_num_z_workgroups: usize,
-        t_workgroup_size: usize,
-    ) -> Result<(Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
-        let shader = self
-            .shader_manager
-            .get_shader(&ShaderType::Transpose)
-            .ok_or("Transpose shader not found")?;
-
-        let in_chunks_buf = helper.create_buffer(&scalar_chunks.to_vec());
-        let out_csc_col_ptr =
-            helper.create_empty_buffer(num_subtasks * ((num_columns + 1) as usize) * 4);
-        let out_csc_val_idxs = helper.create_empty_buffer(scalar_chunks.len());
-        let out_curr = helper.create_empty_buffer(num_subtasks * (num_columns as usize) * 4);
-
-        let params_buf = helper.create_buffer(&vec![num_columns as u32, input_size as u32]);
-
-        let thread_group_count = helper.create_thread_group_size(
-            t_num_x_workgroups as u64,
-            t_num_y_workgroups as u64,
-            t_num_z_workgroups as u64,
-        );
-        let threads_per_threadgroup =
-            helper.create_thread_group_size(t_workgroup_size as u64, 1, 1);
-
-        helper.execute_shader_with_pipeline(
-            &shader.pipeline_state,
-            &[
-                &in_chunks_buf,
-                &out_csc_col_ptr,
-                &out_csc_val_idxs,
-                &out_curr,
-                &params_buf,
-            ],
-            &thread_group_count,
-            &threads_per_threadgroup,
-        );
-
-        let csc_col_ptr = helper.read_results(
-            &out_csc_col_ptr,
-            num_subtasks * ((num_columns + 1) as usize) * 4,
-        );
-        let csc_val_idxs = helper.read_results(&out_csc_val_idxs, scalar_chunks.len());
-
-        helper.drop_all_buffers();
-
-        Ok((csc_col_ptr, csc_val_idxs))
-    }
-}
-
-/// Stage 3: SMVP
-struct SMVP<'a> {
-    shader_manager: &'a ShaderManager,
-}
-
-impl<'a> SMVP<'a> {
-    fn new(shader_manager: &'a ShaderManager) -> Self {
-        Self { shader_manager }
-    }
-
-    fn execute(
-        &self,
-        csc_col_ptr: &[u32],
-        csc_val_idxs: &[u32],
-        point_x: &[u32],
-        point_y: &[u32],
-        input_size: usize,
-        num_subtasks: usize,
-        num_columns: usize,
-        simd_width: usize,
-        s_workgroup_size: usize,
-    ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
-        let shader = self
-            .shader_manager
-            .get_shader(&ShaderType::SMVP)
-            .ok_or("SMVP shader not found")?;
-
-        let half_columns = num_columns / 2;
-
-        let bucket_size =
-            half_columns as usize * self.shader_manager.config().num_limbs * 4 * num_subtasks;
-
-        let row_ptr_buf = helper.create_buffer(&csc_col_ptr.to_vec());
-        let val_idx_buf = helper.create_buffer(&csc_val_idxs.to_vec());
-        let point_x_buf = helper.create_buffer(&point_x.to_vec());
-        let point_y_buf = helper.create_buffer(&point_y.to_vec());
-
-        let bucket_x_buf = helper.create_empty_buffer(bucket_size);
-        let bucket_y_buf = helper.create_empty_buffer(bucket_size);
-        let bucket_z_buf = helper.create_empty_buffer(bucket_size);
-
-        // Execute in chunks
-        let num_subtask_chunk_size = 4u32;
-        for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
-            let remaining_subtasks = (num_subtasks as u32 - offset).min(num_subtask_chunk_size);
-            let valid_threads = half_columns as u64 * remaining_subtasks as u64;
-
-            let max_y = ((valid_threads as usize)
-                / (s_workgroup_size * remaining_subtasks as usize))
-                .max(1);
-            let s_num_y_workgroups = simd_width.min(max_y) as u64;
-            let s_num_z_workgroups = remaining_subtasks as u64;
-
-            let threads_per_grid =
-                (s_workgroup_size as u64) * s_num_y_workgroups * s_num_z_workgroups;
-            let s_num_x_workgroups = (valid_threads + threads_per_grid - 1) / threads_per_grid; // ceil div
-
-            let params_buf = helper.create_buffer(&vec![
-                input_size as u32,
-                num_columns as u32,
-                num_subtasks as u32,
-                offset,
-            ]);
-
-            let thread_group_count = helper.create_thread_group_size(
-                s_num_x_workgroups,
-                s_num_y_workgroups,
-                s_num_z_workgroups,
-            );
-            let threads_per_threadgroup =
-                helper.create_thread_group_size(s_workgroup_size as u64, 1, 1);
-
-            helper.execute_shader_with_pipeline(
-                &shader.pipeline_state,
-                &[
-                    &row_ptr_buf,
-                    &val_idx_buf,
-                    &point_x_buf,
-                    &point_y_buf,
-                    &bucket_x_buf,
-                    &bucket_y_buf,
-                    &bucket_z_buf,
-                    &params_buf,
-                ],
-                &thread_group_count,
-                &threads_per_threadgroup,
-            );
-        }
-
-        let bucket_x = helper.read_results(&bucket_x_buf, bucket_size);
-        let bucket_y = helper.read_results(&bucket_y_buf, bucket_size);
-        let bucket_z = helper.read_results(&bucket_z_buf, bucket_size);
-
-        helper.drop_all_buffers();
-
-        Ok((bucket_x, bucket_y, bucket_z))
-    }
-}
-
-/// Stage 4: PBPR
-struct PBPR<'a> {
-    shader_manager: &'a ShaderManager,
-}
-
-impl<'a> PBPR<'a> {
-    fn new(shader_manager: &'a ShaderManager) -> Self {
-        Self { shader_manager }
-    }
-
-    fn execute(
-        &self,
-        bucket_x: &[u32],
-        bucket_y: &[u32],
-        bucket_z: &[u32],
-        num_subtasks: usize,
-        num_columns: usize,
-        num_subtasks_per_bpr_1: usize,
-        num_subtasks_per_bpr_2: usize,
-        b_num_x_workgroups: usize,
-        b_num_y_workgroups: usize,
-        b_num_z_workgroups: usize,
-        b_2_num_x_workgroups: usize,
-        b_2_num_y_workgroups: usize,
-        b_2_num_z_workgroups: usize,
-        b_workgroup_size: usize,
-    ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), Box<dyn Error>> {
-        let mut helper = MetalHelper::with_device(self.shader_manager.device().clone());
-        let stage1_shader = self
-            .shader_manager
-            .get_shader(&ShaderType::BPRStage1)
-            .ok_or("BPRStage1 shader not found")?;
-        let stage2_shader = self
-            .shader_manager
-            .get_shader(&ShaderType::BPRStage2)
-            .ok_or("BPRStage2 shader not found")?;
-
-        let bucket_sum_x_buf = helper.create_buffer(&bucket_x.to_vec());
-        let bucket_sum_y_buf = helper.create_buffer(&bucket_y.to_vec());
-        let bucket_sum_z_buf = helper.create_buffer(&bucket_z.to_vec());
-
-        let g_points_size =
-            num_subtasks * b_workgroup_size * self.shader_manager.config().num_limbs * 4;
-        let g_points_x_buf = helper.create_empty_buffer(g_points_size);
-        let g_points_y_buf = helper.create_empty_buffer(g_points_size);
-        let g_points_z_buf = helper.create_empty_buffer(g_points_size);
-
-        // Stage 1
-        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_1) {
-            let params = vec![
-                subtask_chunk_idx as u32,
-                num_columns as u32,
-                num_subtasks_per_bpr_1 as u32,
-                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
-            ];
-            let params_buf = helper.create_buffer(&params);
-
-            let stage1_thread_group_count = helper.create_thread_group_size(
-                b_num_x_workgroups as u64,
-                b_num_y_workgroups as u64,
-                b_num_z_workgroups as u64,
-            );
-            let stage1_threads_per_threadgroup =
-                helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
-
-            helper.execute_shader_with_pipeline(
-                &stage1_shader.pipeline_state,
-                &[
-                    &bucket_sum_x_buf,
-                    &bucket_sum_y_buf,
-                    &bucket_sum_z_buf,
-                    &g_points_x_buf,
-                    &g_points_y_buf,
-                    &g_points_z_buf,
-                    &params_buf,
-                ],
-                &stage1_thread_group_count,
-                &stage1_threads_per_threadgroup,
-            );
-        }
-
-        // Stage 2
-        for subtask_chunk_idx in (0..num_subtasks).step_by(num_subtasks_per_bpr_2) {
-            let params = vec![
-                subtask_chunk_idx as u32,
-                num_columns as u32,
-                num_subtasks_per_bpr_2 as u32,
-                0u32, // dummy 4 bytes to align the Metal's uint3 16-byte style
-            ];
-            let params_buf = helper.create_buffer(&params);
-
-            let stage2_thread_group_count = helper.create_thread_group_size(
-                b_2_num_x_workgroups as u64,
-                b_2_num_y_workgroups as u64,
-                b_2_num_z_workgroups as u64,
-            );
-            let stage2_threads_per_threadgroup =
-                helper.create_thread_group_size(b_workgroup_size as u64, 1, 1);
-
-            helper.execute_shader_with_pipeline(
-                &stage2_shader.pipeline_state,
-                &[
-                    &bucket_sum_x_buf,
-                    &bucket_sum_y_buf,
-                    &bucket_sum_z_buf,
-                    &g_points_x_buf,
-                    &g_points_y_buf,
-                    &g_points_z_buf,
-                    &params_buf,
-                ],
-                &stage2_thread_group_count,
-                &stage2_threads_per_threadgroup,
-            );
-        }
-
-        let g_points_x = helper.read_results(&g_points_x_buf, g_points_size);
-        let g_points_y = helper.read_results(&g_points_y_buf, g_points_size);
-        let g_points_z = helper.read_results(&g_points_z_buf, g_points_size);
-
-        helper.drop_all_buffers();
-
-        Ok((g_points_x, g_points_y, g_points_z))
-    }
+thread_local! {
+    /// Pipeline (device, compiled pipeline states, GPU info) is expensive to
+    /// build, so cache it per thread and reuse it across MSM calls.
+    static PIPELINE: std::cell::OnceCell<MetalMSMPipeline> = std::cell::OnceCell::new();
 }
 
 /// Convenient wrapper that mimics the Arkworks VariableBaseMSM interface
@@ -690,8 +424,14 @@ pub fn metal_variable_base_msm(
         1 << 4 // 2^4
     };
 
-    let pipeline = MetalMSMPipeline::with_default_config()?;
-    pipeline.execute_pipeline(bases, scalars, input_size, window_size, scale_factor)
+    PIPELINE.with(|cell| {
+        if cell.get().is_none() {
+            let pipeline = MetalMSMPipeline::with_default_config()?;
+            let _ = cell.set(pipeline);
+        }
+        let pipeline = cell.get().expect("pipeline initialized above");
+        pipeline.execute_pipeline(bases, scalars, input_size, window_size, scale_factor)
+    })
 }
 
 /// Test utilities module - available for both unit tests and integration tests
