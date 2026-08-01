@@ -255,23 +255,28 @@ fn bench_shaders(c: &mut Criterion) {
                 Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
             let mut bucket_sum_y_limbs =
                 Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
-            let mut bucket_sum_z_limbs =
+            let mut bucket_sum_zz_limbs =
+                Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
+            let mut bucket_sum_zzz_limbs =
                 Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
 
+            // Buckets are XYZZ points; z = 1 so ZZ = ZZZ = 1 (Montgomery form)
+            let one_limbs = BaseField::one().0.to_limbs(num_limbs, log_limb_size);
             for pt in &bucket_points {
                 let x_limbs = pt.x.0.to_limbs(num_limbs, log_limb_size);
                 let y_limbs = pt.y.0.to_limbs(num_limbs, log_limb_size);
-                let z_limbs = pt.z.0.to_limbs(num_limbs, log_limb_size);
                 bucket_sum_x_limbs.extend_from_slice(&x_limbs);
                 bucket_sum_y_limbs.extend_from_slice(&y_limbs);
-                bucket_sum_z_limbs.extend_from_slice(&z_limbs);
+                bucket_sum_zz_limbs.extend_from_slice(&one_limbs);
+                bucket_sum_zzz_limbs.extend_from_slice(&one_limbs);
             }
 
             // g_points buffers (filled with zeros, will be overwritten by GPU)
             let g_points_size = num_subtasks * workgroup_size as usize * num_limbs;
             let g_points_x_limbs = vec![0u32; g_points_size];
             let g_points_y_limbs = vec![0u32; g_points_size];
-            let g_points_z_limbs = vec![0u32; g_points_size];
+            let g_points_zz_limbs = vec![0u32; g_points_size];
+            let g_points_zzz_limbs = vec![0u32; g_points_size];
 
             //----------------------------------------------
             // Create Metal buffers & run stage 1 and 2 in subtask chunks
@@ -280,11 +285,13 @@ fn bench_shaders(c: &mut Criterion) {
 
             let bucket_sum_x_buf = helper.create_buffer(&bucket_sum_x_limbs);
             let bucket_sum_y_buf = helper.create_buffer(&bucket_sum_y_limbs);
-            let bucket_sum_z_buf = helper.create_buffer(&bucket_sum_z_limbs);
+            let bucket_sum_zz_buf = helper.create_buffer(&bucket_sum_zz_limbs);
+            let bucket_sum_zzz_buf = helper.create_buffer(&bucket_sum_zzz_limbs);
 
             let g_points_x_buf = helper.create_buffer(&g_points_x_limbs);
             let g_points_y_buf = helper.create_buffer(&g_points_y_limbs);
-            let g_points_z_buf = helper.create_buffer(&g_points_z_limbs);
+            let g_points_zz_buf = helper.create_buffer(&g_points_zz_limbs);
+            let g_points_zzz_buf = helper.create_buffer(&g_points_zzz_limbs);
 
             let thread_group_count =
                 helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
@@ -326,10 +333,12 @@ fn bench_shaders(c: &mut Criterion) {
                                 &[
                                     &bucket_sum_x_buf,
                                     &bucket_sum_y_buf,
-                                    &bucket_sum_z_buf,
+                                    &bucket_sum_zz_buf,
+                                    &bucket_sum_zzz_buf,
                                     &g_points_x_buf,
                                     &g_points_y_buf,
-                                    &g_points_z_buf,
+                                    &g_points_zz_buf,
+                                    &g_points_zzz_buf,
                                     &params_buf,
                                 ],
                                 &thread_group_count,
@@ -348,10 +357,12 @@ fn bench_shaders(c: &mut Criterion) {
                                 &[
                                     &bucket_sum_x_buf,
                                     &bucket_sum_y_buf,
-                                    &bucket_sum_z_buf,
+                                    &bucket_sum_zz_buf,
+                                    &bucket_sum_zzz_buf,
                                     &g_points_x_buf,
                                     &g_points_y_buf,
-                                    &g_points_z_buf,
+                                    &g_points_zz_buf,
+                                    &g_points_zzz_buf,
                                     &params_buf,
                                 ],
                                 &thread_group_count,
@@ -364,7 +375,8 @@ fn bench_shaders(c: &mut Criterion) {
                         // ----------------------------------------------
                         let _gpu_gx_limbs = helper.read_results(&g_points_x_buf, g_points_size);
                         let _gpu_gy_limbs = helper.read_results(&g_points_y_buf, g_points_size);
-                        let _gpu_gz_limbs = helper.read_results(&g_points_z_buf, g_points_size);
+                        let _gpu_gzz_limbs = helper.read_results(&g_points_zz_buf, g_points_size);
+                        let _gpu_gzzz_limbs = helper.read_results(&g_points_zzz_buf, g_points_size);
 
                         helper.drop_all_buffers();
                     })
@@ -429,7 +441,8 @@ fn smvp_gpu(
     let points_buf = helper.create_buffer(gpu_points);
     let bucket_x_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
     let bucket_y_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
-    let bucket_z_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_zz_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_zzz_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
@@ -468,7 +481,8 @@ fn smvp_gpu(
                 &points_buf,
                 &bucket_x_buf,
                 &bucket_y_buf,
-                &bucket_z_buf,
+                &bucket_zz_buf,
+                &bucket_zzz_buf,
                 &params_buf,
             ],
             &thread_group_count,
@@ -479,7 +493,7 @@ fn smvp_gpu(
     // Read back results
     let out_x = helper.read_results(&bucket_x_buf, bucket_sum_coord_bytelength);
     let out_y = helper.read_results(&bucket_y_buf, bucket_sum_coord_bytelength);
-    let out_z = helper.read_results(&bucket_z_buf, bucket_sum_coord_bytelength);
+    let out_z = helper.read_results(&bucket_zz_buf, bucket_sum_coord_bytelength);
 
     (out_x, out_y, out_z)
 }
