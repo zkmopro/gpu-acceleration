@@ -413,11 +413,10 @@ pub fn metal_variable_base_msm(
     let input_size = bases.len();
 
     // window_size is determined by experiment results
-    let window_size = if input_size < 16384 {
-        // 2^14
-        8
+    let window_size = if let Ok(w) = std::env::var("MSM_WINDOW_SIZE") {
+        w.parse().unwrap_or(13)
     } else if input_size < 524288 {
-        // 2^19
+        // < 2^19
         13
     } else if input_size <= 16777216 {
         // 2^24
@@ -428,21 +427,21 @@ pub fn metal_variable_base_msm(
     };
 
     // workgroup size will be adjusted based on the scale factor
-    let scale_factor = if input_size <= 4096 {
-        // 2^12
-        1 // 2^0
+    // (measured on M-series: smaller workgroups win up to ~2^16, 2x above)
+    let scale_factor = if let Ok(s) = std::env::var("MSM_SCALE_FACTOR") {
+        s.parse().unwrap_or(1)
     } else if input_size <= 65536 {
-        // 2^16
-        2 // 2^1
+        // <= 2^16
+        1
     } else if input_size <= 1048576 {
         // 2^20
-        1 << 2 // 2^2
+        2
     } else if input_size <= 16777216 {
         // 2^24
-        1 << 3 // 2^3
+        1 << 2
     } else {
         // > 2^24
-        1 << 4 // 2^4
+        1 << 3
     };
 
     PIPELINE.with(|cell| {
