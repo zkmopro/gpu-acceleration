@@ -119,6 +119,9 @@ impl MetalMSMPipeline {
         let bucket_zzz_buf = helper.create_zeroed_buffer(bucket_size);
 
         // Output buffers
+        // Note: b_workgroup_size also sets how many partial sums the host
+        // must reduce (num_subtasks * b_workgroup_size points on the CPU), so
+        // larger PBPR workgroups trade cheap GPU time for expensive host time.
         let b_workgroup_size = self.simd_width * scale_factor;
         let g_points_size = num_subtasks * b_workgroup_size * num_limbs;
         let g_points_x_buf = helper.create_zeroed_buffer(g_points_size);
