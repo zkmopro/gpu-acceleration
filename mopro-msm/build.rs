@@ -17,6 +17,7 @@ fn compile_shaders() -> std::io::Result<()> {
 
     // Check if we should compile all shaders for testing
     // Check environment variable first, then check if this is a test build
+    println!("cargo:rerun-if-env-changed=MSM_COMPILE_ALL_SHADERS");
     let compile_all_shaders = env::var("MSM_COMPILE_ALL_SHADERS")
         .map(|v| v == "1")
         .unwrap_or(false)
