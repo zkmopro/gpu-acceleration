@@ -181,8 +181,8 @@ When tuning kernels focus on the **shaders** bench first; improvements there sho
 
 The following optimizations were applied on top of v0.2.0 (measured on an
 M-series MacBook, medians of 5 runs; cumulative speedup vs v0.2.0 on the same
-machine: **~3.2x at 2^12, ~5.3x at 2^16, ~5.4x at 2^20-2^22**, making the GPU
-~2.4-3.6x faster than Arkworks CPU MSM at 2^20-2^22):
+machine: **~4.4x at 2^12, ~9.5x at 2^16, ~8x at 2^20-2^22**, making the GPU
+~2.5-4.7x faster than Arkworks CPU MSM from 2^16 up):
 
 | Change | Effect |
 |---|---|
@@ -195,9 +195,22 @@ machine: **~3.2x at 2^12, ~5.3x at 2^16, ~5.4x at 2^20-2^22**, making the GPU
 | Single SMVP dispatch for all subtasks (drop WebGPU-era 4-subtask chunking) | ~5-11% e2e |
 | XYZZ (extended Jacobian) bucket accumulation: mixed add 8M+2S vs 7M+4S and ~5 vs ~13 field add/subs; general add 12M+2S vs 11M+5S | ~7-11% e2e |
 | GPU tree reduction of per-subtask partial sums (bpr_reduce) + 256-thread PBPR workgroups; host only Horner-combines num_subtasks points | ~4-18% e2e |
+| Segmented load-balanced SMVP: threads own fixed-size slices of the sorted point stream, spill at most 2 partial buckets each to a merge pass | 25-46% e2e; pathological windows (12/14) fixed (~27x) |
 
 Findings on the previously-listed future items:
 
+- **Batched-affine accumulation**: designed and rejected on paper for this
+  architecture. Affine chain addition costs 2M+1S plus a shared inversion;
+  Montgomery batch inversion amortizes the ~380-mul Fermat inverse to
+  380/k muls at batch size k. With XYZZ mixed addition already at 10
+  mult-ops, batched affine must land under ~7 to matter, which requires
+  k >= 128. Assembling k >= 128 on Apple GPUs costs more than it saves:
+  threadgroup-wide batches need two Blelloch scans plus ~30 barriers per
+  round (~11+ effective mult-ops), SIMD-group (32-wide) batches leave the
+  inversion at ~12 muls/element, and Yrrid-style per-thread multi-bucket
+  batching cannot keep k*64B of affine accumulators in registers. CUDA
+  implementations win with warp-synchronous k = 1024 batches and a 16-mul
+  Jacobian baseline; neither condition holds here.
 - **LogJumps** ([Wei Jie's article](https://kohweijie.com/articles/25/logjumps.html)):
   implemented, benchmarked and **removed**: for BN254, rho = 2^-32 mod p
   ≈ 0.89p, so the pre-reduction value reaches ~2.9p and needs a second
@@ -222,8 +235,8 @@ Findings on the previously-listed future items:
 
 ### Technical Improvements
 - **Modern Dependencies**: Update to `objc2` and `objc2-metal` ([objc2](https://github.com/madsmtm/objc2)), then adopt [Metal 4](https://developer.apple.com/metal/whats-new/) command encoding
-- **SMVP load balancing**: bucket accumulation is still one-thread-per-bucket; sorting into fixed-size segments with a segmented reduction (ICICLE/Yrrid-style) would remove the slowest-bucket tail and make every window size safe
-- **Batched-affine accumulation**: amortized ~6-7 muls per bucket addition via Montgomery batch inversion, plus smaller per-thread state
+- **Memory diet for segmented SMVP**: store row sums in affine form (64 B vs 128 B) to halve the new row-sum/spill buffers at 2^20-2^24
+- **Base-precompute (Elastic MSM) opt-in API** for fixed-base workloads
 
 ### Algorithm & Integration
 - **CPU-GPU Hybrid**: Research interleaving with CPU MSM crate and update to `arkworks 0.5`
