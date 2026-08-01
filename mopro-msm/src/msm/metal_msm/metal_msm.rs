@@ -294,9 +294,18 @@ impl MetalMSMPipeline {
                 .unwrap_or(128);
             let num_segments = (input_size + seg_len - 1) / seg_len;
 
-            let row_sums_size = num_subtasks * num_columns * num_limbs;
-            let spill_size = num_subtasks * num_segments * 2 * num_limbs;
-            // 0..=3 row sums, 4..=7 spills, 8 spill rows, 9 params
+            // Process subtasks in chunks, reusing the row-sum/spill buffers
+            // across chunks: divides their footprint by num_subtasks/chunk at
+            // the cost of a small pipeline bubble (merge of chunk k must
+            // finish before accumulate of chunk k+1 reuses the buffers, which
+            // Metal's hazard tracking enforces). Stale data is safe: row sums
+            // are only read for rows direct-written in the same chunk, and
+            // every spill slot is rewritten (value or sentinel) every chunk.
+            let subtask_chunk = if num_columns >= 32768 { 4 } else { num_subtasks };
+
+            let row_sums_size = subtask_chunk * num_columns * num_limbs;
+            let spill_size = subtask_chunk * num_segments * 2 * num_limbs;
+            // 0..=3 row sums, 4..=7 spills, 8 spill rows
             for _ in 0..4 {
                 let b = helper.create_zeroed_buffer(row_sums_size);
                 seg_buffers.push(b);
@@ -305,68 +314,75 @@ impl MetalMSMPipeline {
                 let b = helper.create_zeroed_buffer(spill_size);
                 seg_buffers.push(b);
             }
-            let b = helper.create_zeroed_buffer(num_subtasks * num_segments * 2);
+            let b = helper.create_zeroed_buffer(subtask_chunk * num_segments * 2);
             seg_buffers.push(b);
-            let b = helper.create_buffer(&vec![
-                input_size as u32,
-                num_columns as u32,
-                seg_len as u32,
-                num_segments as u32,
-            ]);
-            seg_buffers.push(b);
+            // one params buffer per chunk, appended after the fixed 9 slots
+            for offset in (0..num_subtasks).step_by(subtask_chunk) {
+                let b = helper.create_buffer(&vec![
+                    input_size as u32,
+                    num_columns as u32,
+                    seg_len as u32,
+                    offset as u32,
+                ]);
+                seg_buffers.push(b);
+            }
 
             let a_tg = 64usize;
-            ops.push(ShaderOperation {
-                pipeline_state: accumulate_shader.pipeline_state.clone(),
-                buffers: vec![
-                    &csc_col_ptr_buf,
-                    &csc_val_idxs_buf,
-                    &scalar_chunks_buf,
-                    &coords_buf,
-                    &seg_buffers[0],
-                    &seg_buffers[1],
-                    &seg_buffers[2],
-                    &seg_buffers[3],
-                    &seg_buffers[4],
-                    &seg_buffers[5],
-                    &seg_buffers[6],
-                    &seg_buffers[7],
-                    &seg_buffers[8],
-                    &seg_buffers[9],
-                ],
-                thread_group_count: helper.create_thread_group_size(
-                    ((num_segments + a_tg - 1) / a_tg) as u64,
-                    num_subtasks as u64,
-                    1,
-                ),
-                threads_per_threadgroup: helper.create_thread_group_size(a_tg as u64, 1, 1),
-            });
-            ops.push(ShaderOperation {
-                pipeline_state: merge_shader.pipeline_state.clone(),
-                buffers: vec![
-                    &csc_col_ptr_buf,
-                    &seg_buffers[0],
-                    &seg_buffers[1],
-                    &seg_buffers[2],
-                    &seg_buffers[3],
-                    &seg_buffers[4],
-                    &seg_buffers[5],
-                    &seg_buffers[6],
-                    &seg_buffers[7],
-                    &seg_buffers[8],
-                    &bucket_x_buf,
-                    &bucket_y_buf,
-                    &bucket_zz_buf,
-                    &bucket_zzz_buf,
-                    &seg_buffers[9],
-                ],
-                thread_group_count: helper.create_thread_group_size(
-                    ((half_columns + a_tg - 1) / a_tg) as u64,
-                    num_subtasks as u64,
-                    1,
-                ),
-                threads_per_threadgroup: helper.create_thread_group_size(a_tg as u64, 1, 1),
-            });
+            for (chunk_idx, offset) in (0..num_subtasks).step_by(subtask_chunk).enumerate() {
+                let live = subtask_chunk.min(num_subtasks - offset);
+                let params_ref = &seg_buffers[9 + chunk_idx];
+                ops.push(ShaderOperation {
+                    pipeline_state: accumulate_shader.pipeline_state.clone(),
+                    buffers: vec![
+                        &csc_col_ptr_buf,
+                        &csc_val_idxs_buf,
+                        &scalar_chunks_buf,
+                        &coords_buf,
+                        &seg_buffers[0],
+                        &seg_buffers[1],
+                        &seg_buffers[2],
+                        &seg_buffers[3],
+                        &seg_buffers[4],
+                        &seg_buffers[5],
+                        &seg_buffers[6],
+                        &seg_buffers[7],
+                        &seg_buffers[8],
+                        params_ref,
+                    ],
+                    thread_group_count: helper.create_thread_group_size(
+                        ((num_segments + a_tg - 1) / a_tg) as u64,
+                        live as u64,
+                        1,
+                    ),
+                    threads_per_threadgroup: helper.create_thread_group_size(a_tg as u64, 1, 1),
+                });
+                ops.push(ShaderOperation {
+                    pipeline_state: merge_shader.pipeline_state.clone(),
+                    buffers: vec![
+                        &csc_col_ptr_buf,
+                        &seg_buffers[0],
+                        &seg_buffers[1],
+                        &seg_buffers[2],
+                        &seg_buffers[3],
+                        &seg_buffers[4],
+                        &seg_buffers[5],
+                        &seg_buffers[6],
+                        &seg_buffers[7],
+                        &seg_buffers[8],
+                        &bucket_x_buf,
+                        &bucket_y_buf,
+                        &bucket_zz_buf,
+                        &bucket_zzz_buf,
+                        params_ref,
+                    ],
+                    thread_group_count: helper.create_thread_group_size(
+                        ((half_columns + a_tg - 1) / a_tg) as u64,
+                        live as u64,
+                        1,
+                    ),
+                    threads_per_threadgroup: helper.create_thread_group_size(a_tg as u64, 1, 1),
+                });
+            }
         }
 
         // Stage 4: Parallel Bucket Reduction (stage 1 then stage 2)

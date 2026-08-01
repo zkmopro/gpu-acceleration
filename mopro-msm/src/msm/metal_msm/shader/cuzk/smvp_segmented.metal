@@ -44,17 +44,19 @@ kernel void smvp_accumulate(
     const uint input_size = params[0];
     const uint num_columns = params[1];
     const uint seg_len = params[2];
-    const uint num_segments = params[3];
+    const uint subtask_offset = params[3];
+    const uint num_segments = (input_size + seg_len - 1) / seg_len;
 
     const uint seg = gid.x;
-    const uint subtask = gid.y;
+    const uint local_subtask = gid.y; // chunk-local: row/spill buffers are reused per chunk
+    const uint subtask = subtask_offset + local_subtask;
     if (seg >= num_segments) {
         return;
     }
 
     const uint rp_off = subtask * (num_columns + 1);
     const uint stream_off = subtask * input_size;
-    const uint spill_base = (subtask * num_segments + seg) * 2;
+    const uint spill_base = (local_subtask * num_segments + seg) * 2;
 
     const uint seg_start = seg * seg_len;
     const uint seg_end = min(seg_start + seg_len, input_size);
@@ -76,7 +78,7 @@ kernel void smvp_accumulate(
                     const bool exclusive = (run_start == row_ptr[rp_off + run_row])
                         && (k == row_ptr[rp_off + run_row + 1]);
                     if (exclusive) {
-                        const uint ri = subtask * num_columns + run_row;
+                        const uint ri = local_subtask * num_columns + run_row;
                         row_x[ri] = acc.x;
                         row_y[ri] = acc.y;
                         row_zz[ri] = acc.zz;
@@ -103,7 +105,7 @@ kernel void smvp_accumulate(
             const bool exclusive = (run_start == row_ptr[rp_off + run_row])
                 && (seg_end == row_ptr[rp_off + run_row + 1]);
             if (exclusive) {
-                const uint ri = subtask * num_columns + run_row;
+                const uint ri = local_subtask * num_columns + run_row;
                 row_x[ri] = acc.x;
                 row_y[ri] = acc.y;
                 row_zz[ri] = acc.zz;
@@ -144,19 +146,22 @@ kernel void smvp_merge(
     constant uint4& params [[buffer(14), access(read)]],
     uint2 gid [[thread_position_in_grid]])
 {
+    const uint input_size = params[0];
     const uint num_columns = params[1];
     const uint seg_len = params[2];
-    const uint num_segments = params[3];
+    const uint subtask_offset = params[3];
+    const uint num_segments = (input_size + seg_len - 1) / seg_len;
 
     const uint half_columns = num_columns / 2;
     const uint d = gid.x; // bucket-pair index within the subtask
-    const uint subtask = gid.y;
+    const uint local_subtask = gid.y;
+    const uint subtask = subtask_offset + local_subtask;
     if (d >= half_columns) {
         return;
     }
 
     const uint rp_off = subtask * (num_columns + 1);
-    const uint spill_off = subtask * num_segments * 2;
+    const uint spill_off = local_subtask * num_segments * 2;
 
     XYZZ bucket = get_xyzz_zero();
 
@@ -175,7 +180,7 @@ kernel void smvp_merge(
             const uint t1 = (row_end - 1) / seg_len;
             if (t0 == t1) {
                 // row fits inside one slice: written directly by its owner
-                const uint ri = subtask * num_columns + row;
+                const uint ri = local_subtask * num_columns + row;
                 sum.x = row_x[ri];
                 sum.y = row_y[ri];
                 sum.zz = row_zz[ri];
