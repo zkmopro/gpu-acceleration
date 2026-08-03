@@ -497,4 +497,3 @@ fn smvp_gpu(
 
     (out_x, out_y, out_z)
 }
-

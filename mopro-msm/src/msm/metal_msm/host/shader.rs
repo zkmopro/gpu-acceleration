@@ -44,7 +44,8 @@ pub fn write_constants(filepath: &str, num_limbs: usize, log_limb_size: u32) {
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
-    let (_, n0) = crate::msm::metal_msm::utils::mont_params::calc_rinv_and_n0(&p, &r, log_limb_size);
+    let (_, n0) =
+        crate::msm::metal_msm::utils::mont_params::calc_rinv_and_n0(&p, &r, log_limb_size);
     let nsafe = crate::msm::metal_msm::utils::mont_params::calc_nsafe(log_limb_size);
     let mu_in_ark: BigInt<4> = calc_barrett_mu(&p).try_into().unwrap();
     let mont_radix_limbs: Vec<u32> = {
@@ -86,7 +87,6 @@ pub fn write_constants(filepath: &str, num_limbs: usize, log_limb_size: u32) {
     );
     write_constant_array!(data, "MONT_RADIX", mont_radix_limbs, "NUM_LIMBS_WIDE");
     write_constant_array!(data, "BN254_R2", r2_limbs, "NUM_LIMBS");
-
 
     let bn254_zero_limbs = |c: &ark_ff::BigInt<4>| c.to_limbs(num_limbs, log_limb_size);
     write_constant_array!(

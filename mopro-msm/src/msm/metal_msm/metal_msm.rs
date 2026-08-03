@@ -274,8 +274,11 @@ impl MetalMSMPipeline {
                         params_buf,
                     ],
                     thread_group_count: helper.create_thread_group_size(x, y, z),
-                    threads_per_threadgroup: helper
-                        .create_thread_group_size(s_workgroup_size as u64, 1, 1),
+                    threads_per_threadgroup: helper.create_thread_group_size(
+                        s_workgroup_size as u64,
+                        1,
+                        1,
+                    ),
                 });
             }
         } else {
@@ -301,7 +304,11 @@ impl MetalMSMPipeline {
             // Metal's hazard tracking enforces). Stale data is safe: row sums
             // are only read for rows direct-written in the same chunk, and
             // every spill slot is rewritten (value or sentinel) every chunk.
-            let subtask_chunk = if num_columns >= 32768 { 4 } else { num_subtasks };
+            let subtask_chunk = if num_columns >= 32768 {
+                4
+            } else {
+                num_subtasks
+            };
 
             let row_sums_size = subtask_chunk * num_columns * num_limbs;
             let spill_size = subtask_chunk * num_segments * 2 * num_limbs;
@@ -426,8 +433,11 @@ impl MetalMSMPipeline {
                         1,
                         1,
                     ),
-                    threads_per_threadgroup: helper
-                        .create_thread_group_size(b_workgroup_size as u64, 1, 1),
+                    threads_per_threadgroup: helper.create_thread_group_size(
+                        b_workgroup_size as u64,
+                        1,
+                        1,
+                    ),
                 });
             }
         }
@@ -437,8 +447,7 @@ impl MetalMSMPipeline {
             .shader_manager
             .get_shader(&ShaderType::BPRReduce)
             .ok_or("BPRReduce shader not found")?;
-        let reduce_params_buf =
-            helper.create_buffer(&vec![b_workgroup_size as u32, 0u32]);
+        let reduce_params_buf = helper.create_buffer(&vec![b_workgroup_size as u32, 0u32]);
         ops.push(ShaderOperation {
             pipeline_state: reduce_shader.pipeline_state.clone(),
             buffers: vec![
