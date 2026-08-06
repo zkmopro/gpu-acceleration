@@ -27,8 +27,8 @@ fn test_pbpr_stage1_and_stage2() {
     // ----------------------------------------------
     // Parameters (kept small for fast unit testing)
     // ----------------------------------------------
-    let log_limb_size = 16;
-    let num_limbs = 16;
+    let log_limb_size = 32;
+    let num_limbs = 8;
 
     let num_columns: u32 = 8; // Must be even
     let num_buckets_per_subtask = (num_columns / 2) as usize; // 4
@@ -51,23 +51,28 @@ fn test_pbpr_stage1_and_stage2() {
         Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
     let mut bucket_sum_y_limbs =
         Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
-    let mut bucket_sum_z_limbs =
+    let mut bucket_sum_zz_limbs =
+        Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
+    let mut bucket_sum_zzz_limbs =
         Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
 
+    // Buckets are XYZZ points; z = 1 so ZZ = ZZZ = 1 (Montgomery form).
+    let one_limbs = BaseField::one().0.to_limbs(num_limbs, log_limb_size);
     for pt in &bucket_points {
         let x_limbs = pt.x.0.to_limbs(num_limbs, log_limb_size);
         let y_limbs = pt.y.0.to_limbs(num_limbs, log_limb_size);
-        let z_limbs = pt.z.0.to_limbs(num_limbs, log_limb_size);
         bucket_sum_x_limbs.extend_from_slice(&x_limbs);
         bucket_sum_y_limbs.extend_from_slice(&y_limbs);
-        bucket_sum_z_limbs.extend_from_slice(&z_limbs);
+        bucket_sum_zz_limbs.extend_from_slice(&one_limbs);
+        bucket_sum_zzz_limbs.extend_from_slice(&one_limbs);
     }
 
     // g_points buffers (filled with zeros, will be overwritten by GPU)
     let g_points_size = num_subtasks * workgroup_size as usize * num_limbs;
     let g_points_x_limbs = vec![0u32; g_points_size];
     let g_points_y_limbs = vec![0u32; g_points_size];
-    let g_points_z_limbs = vec![0u32; g_points_size];
+    let g_points_zz_limbs = vec![0u32; g_points_size];
+    let g_points_zzz_limbs = vec![0u32; g_points_size];
 
     //----------------------------------------------
     // Create Metal buffers & run stage 1 and 2 in subtask chunks
@@ -76,11 +81,13 @@ fn test_pbpr_stage1_and_stage2() {
 
     let bucket_sum_x_buf = helper.create_buffer(&bucket_sum_x_limbs);
     let bucket_sum_y_buf = helper.create_buffer(&bucket_sum_y_limbs);
-    let bucket_sum_z_buf = helper.create_buffer(&bucket_sum_z_limbs);
+    let bucket_sum_zz_buf = helper.create_buffer(&bucket_sum_zz_limbs);
+    let bucket_sum_zzz_buf = helper.create_buffer(&bucket_sum_zzz_limbs);
 
     let g_points_x_buf = helper.create_buffer(&g_points_x_limbs);
     let g_points_y_buf = helper.create_buffer(&g_points_y_limbs);
-    let g_points_z_buf = helper.create_buffer(&g_points_z_limbs);
+    let g_points_zz_buf = helper.create_buffer(&g_points_zz_limbs);
+    let g_points_zzz_buf = helper.create_buffer(&g_points_zzz_limbs);
 
     let thread_group_count = helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
     let thread_group_size = helper.create_thread_group_size(workgroup_size as u64, 1, 1);
@@ -113,10 +120,12 @@ fn test_pbpr_stage1_and_stage2() {
             &[
                 &bucket_sum_x_buf,
                 &bucket_sum_y_buf,
-                &bucket_sum_z_buf,
+                &bucket_sum_zz_buf,
+                &bucket_sum_zzz_buf,
                 &g_points_x_buf,
                 &g_points_y_buf,
-                &g_points_z_buf,
+                &g_points_zz_buf,
+                &g_points_zzz_buf,
                 &params_buf,
             ],
             &thread_group_count,
@@ -135,10 +144,12 @@ fn test_pbpr_stage1_and_stage2() {
             &[
                 &bucket_sum_x_buf,
                 &bucket_sum_y_buf,
-                &bucket_sum_z_buf,
+                &bucket_sum_zz_buf,
+                &bucket_sum_zzz_buf,
                 &g_points_x_buf,
                 &g_points_y_buf,
-                &g_points_z_buf,
+                &g_points_zz_buf,
+                &g_points_zzz_buf,
                 &params_buf,
             ],
             &thread_group_count,
@@ -151,7 +162,8 @@ fn test_pbpr_stage1_and_stage2() {
     // ----------------------------------------------
     let gpu_gx_limbs = helper.read_results(&g_points_x_buf, g_points_size);
     let gpu_gy_limbs = helper.read_results(&g_points_y_buf, g_points_size);
-    let gpu_gz_limbs = helper.read_results(&g_points_z_buf, g_points_size);
+    let gpu_gzz_limbs = helper.read_results(&g_points_zz_buf, g_points_size);
+    let gpu_gzzz_limbs = helper.read_results(&g_points_zzz_buf, g_points_size);
 
     helper.drop_all_buffers();
 
@@ -237,8 +249,15 @@ fn test_pbpr_stage1_and_stage2() {
             let end = (thread_id + 1) * num_limbs;
             let gx = decode_mont(&gpu_gx_limbs[start..end]);
             let gy = decode_mont(&gpu_gy_limbs[start..end]);
-            let gz = decode_mont(&gpu_gz_limbs[start..end]);
-            let gpu_point = G::new(gx, gy, gz);
+            let gzz = decode_mont(&gpu_gzz_limbs[start..end]);
+            let gzzz = decode_mont(&gpu_gzzz_limbs[start..end]);
+            // XYZZ -> Jacobian: (X*ZZ*ZZZ^2, Y*ZZ^3*ZZZ^2, ZZ*ZZZ)
+            let gpu_point = if gzz.is_zero() {
+                G::zero()
+            } else {
+                let zzz2 = gzzz * gzzz;
+                G::new(gx * gzz * zzz2, gy * gzz * gzz * gzz * zzz2, gzz * gzzz)
+            };
             let gpu_affine = gpu_point.into_affine();
             let cpu_affine = g_expected[thread_id].into_affine();
             assert_eq!(gpu_affine, cpu_affine, "Mismatch at thread {}", thread_id);

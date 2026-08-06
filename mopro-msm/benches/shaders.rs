@@ -3,6 +3,7 @@ use ark_ff::{BigInt, PrimeField};
 use ark_std::{One, UniformRand};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use num_bigint::BigUint;
+use num_bigint::RandBigInt;
 use rand::{thread_rng, Rng};
 
 use ark_ec::CurveGroup;
@@ -14,85 +15,48 @@ use mopro_msm::msm::metal_msm::utils::mont_params::calc_mont_radix;
 fn bench_shaders(c: &mut Criterion) {
     let mut group = c.benchmark_group("metal_msm_shaders");
 
-    // Points and Scalar Decomposition (varying limb counts)
+    // Scalar decomposition
     {
-        const LIMB_COUNTS: &[usize] = &[8, 16, 32];
-        for &num_limbs in LIMB_COUNTS {
-            let log_limb_size = 16;
+        let num_limbs = 8;
+        let log_limb_size = 32;
 
-            let config = MetalConfig {
-                log_limb_size,
-                num_limbs,
-                shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-                kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
-            };
+        let config = MetalConfig {
+            log_limb_size,
+            num_limbs,
+            shader_file: "cuzk/decompose_scalars.metal".to_string(),
+            kernel_name: "decompose_scalars".to_string(),
+        };
 
-            let mut helper = MetalHelper::new();
+        let mut helper = MetalHelper::new();
 
-            // We only need one scalar for the kernel call, but we won't test it here
-            // So let's just supply zeros for the scalar array
-            let scalars = vec![0u32; num_limbs];
+        let window_size = 13u32;
+        let num_columns = 1u32 << window_size;
+        let num_subtasks = (256f32 / window_size as f32).ceil() as u32;
 
-            // Generate a random point on BN254 for testing
-            let mut rng = thread_rng();
-            let point = G::rand(&mut rng).into_affine();
-            let x: BigUint = point.x.into_bigint().try_into().unwrap();
-            let y: BigUint = point.y.into_bigint().try_into().unwrap();
+        let mut rng = thread_rng();
+        let scalar: BigUint = rng.gen_biguint(254);
+        let scalar_ark: BigInt<4> = scalar.try_into().unwrap();
+        let scalars = scalar_ark.to_limbs(num_limbs, log_limb_size);
 
-            // Convert unreduced x,y into `num_limbs` limbs of size `log_limb_size`
-            let x_in_ark: BigInt<4> = x.clone().try_into().unwrap();
-            let y_in_ark: BigInt<4> = y.clone().try_into().unwrap();
-            let x_limb = x_in_ark.to_limbs(num_limbs, log_limb_size);
-            let y_limb = y_in_ark.to_limbs(num_limbs, log_limb_size);
+        let scalars_buf = helper.create_buffer(&scalars);
+        let chunks_buf = helper.create_empty_buffer(num_subtasks as usize);
+        let params_buf = helper.create_buffer(&vec![1u32, window_size, num_columns, num_subtasks]);
 
-            let x_packed = pack_limbs(&x_limb);
-            let y_packed = pack_limbs(&y_limb);
+        let thread_group_count = helper.create_thread_group_size(1, 1, 1);
+        let thread_group_size = helper.create_thread_group_size(1, 1, 1);
 
-            // The coords buffer: x + y
-            let coords = [x_packed, y_packed].concat();
-
-            // Setup Metal buffers
-            let coords_buf = helper.create_buffer(&coords);
-            let scalars_buf = helper.create_buffer(&scalars);
-            let params_buf =
-                helper.create_buffer(&vec![1u32, log_limb_size, num_limbs as u32, 1u32]);
-
-            // Prepare output buffers for the kernel
-            let point_x_buf = helper.create_empty_buffer(num_limbs);
-            let point_y_buf = helper.create_empty_buffer(num_limbs);
-            let chunks_buf = helper.create_empty_buffer(num_limbs);
-
-            // Setup thread group sizes
-            let thread_group_count = helper.create_thread_group_size(1, 1, 1);
-            let thread_group_size = helper.create_thread_group_size(1, 1, 1);
-
-            group.throughput(Throughput::Elements(num_limbs as u64));
-            group.bench_with_input(
-                BenchmarkId::new("Points and Scalar Decomposition", num_limbs),
-                &num_limbs,
-                |b, &_num_limbs| {
-                    b.iter(|| {
-                        helper.execute_shader(
-                            &config,
-                            &[
-                                &coords_buf,
-                                &scalars_buf,
-                                &point_x_buf,
-                                &point_y_buf,
-                                &chunks_buf,
-                                &params_buf,
-                            ],
-                            &thread_group_count,
-                            &thread_group_size,
-                        );
-
-                        // Read back X,Y results
-                        let _x_result = helper.read_results(&point_x_buf, num_limbs);
-                        let _y_result = helper.read_results(&point_y_buf, num_limbs);
-                    })
-                },
-            );
-        }
+        group.throughput(Throughput::Elements(1));
+        group.bench_function("scalar decomposition", |b| {
+            b.iter(|| {
+                helper.execute_shader(
+                    &config,
+                    &[&scalars_buf, &chunks_buf, &params_buf],
+                    &thread_group_count,
+                    &thread_group_size,
+                );
+                let _ = helper.read_results(&chunks_buf, num_subtasks as usize);
+            })
+        });
     }
 
     // Transpose shader (varying tasks, columns, and input size)
@@ -167,8 +131,8 @@ fn bench_shaders(c: &mut Criterion) {
 
     // SMVP shader (varying input sizes)
     {
-        let log_limb_size: u32 = 16;
-        let num_limbs: usize = 16;
+        let log_limb_size: u32 = 32;
+        let num_limbs: usize = 8;
 
         // Constants that must match the shader build-time constants
         let num_columns: u32 = 1u32 << 16; // CHUNK_SIZE = 16 -> 65536 columns
@@ -183,8 +147,7 @@ fn bench_shaders(c: &mut Criterion) {
             let mut rng = rand::thread_rng();
 
             let mut points: Vec<G> = Vec::with_capacity(input_size);
-            let mut point_x_limbs: Vec<u32> = Vec::with_capacity(input_size * num_limbs);
-            let mut point_y_limbs: Vec<u32> = Vec::with_capacity(input_size * num_limbs);
+            let mut point_limbs: Vec<u32> = Vec::with_capacity(input_size * num_limbs * 2);
 
             // Calculate Montgomery radix for conversion
             let r = calc_mont_radix(num_limbs, log_limb_size);
@@ -207,8 +170,8 @@ fn bench_shaders(c: &mut Criterion) {
                 let x_limbs = x_mont_bigint.to_limbs(num_limbs, log_limb_size);
                 let y_limbs = y_mont_bigint.to_limbs(num_limbs, log_limb_size);
 
-                point_x_limbs.extend(x_limbs);
-                point_y_limbs.extend(y_limbs);
+                point_limbs.extend(x_limbs);
+                point_limbs.extend(y_limbs);
             }
 
             // ---------------------------------------------------------------------------
@@ -254,8 +217,7 @@ fn bench_shaders(c: &mut Criterion) {
                             &smvp_config,
                             &row_ptr,
                             &val_idx,
-                            &point_x_limbs,
-                            &point_y_limbs,
+                            &point_limbs,
                             input_size,
                             num_subtasks,
                             num_columns,
@@ -269,8 +231,8 @@ fn bench_shaders(c: &mut Criterion) {
 
     // PBPR shader (varying number of columns)
     {
-        let log_limb_size: u32 = 16;
-        let num_limbs: usize = 16;
+        let log_limb_size: u32 = 32;
+        let num_limbs: usize = 8;
 
         const NUM_COLUMNS: &[u32] = &[8, 16, 32];
         for &num_columns in NUM_COLUMNS {
@@ -293,23 +255,28 @@ fn bench_shaders(c: &mut Criterion) {
                 Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
             let mut bucket_sum_y_limbs =
                 Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
-            let mut bucket_sum_z_limbs =
+            let mut bucket_sum_zz_limbs =
+                Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
+            let mut bucket_sum_zzz_limbs =
                 Vec::with_capacity(num_subtasks * num_buckets_per_subtask * num_limbs);
 
+            // Buckets are XYZZ points; z = 1 so ZZ = ZZZ = 1 (Montgomery form)
+            let one_limbs = BaseField::one().0.to_limbs(num_limbs, log_limb_size);
             for pt in &bucket_points {
                 let x_limbs = pt.x.0.to_limbs(num_limbs, log_limb_size);
                 let y_limbs = pt.y.0.to_limbs(num_limbs, log_limb_size);
-                let z_limbs = pt.z.0.to_limbs(num_limbs, log_limb_size);
                 bucket_sum_x_limbs.extend_from_slice(&x_limbs);
                 bucket_sum_y_limbs.extend_from_slice(&y_limbs);
-                bucket_sum_z_limbs.extend_from_slice(&z_limbs);
+                bucket_sum_zz_limbs.extend_from_slice(&one_limbs);
+                bucket_sum_zzz_limbs.extend_from_slice(&one_limbs);
             }
 
             // g_points buffers (filled with zeros, will be overwritten by GPU)
             let g_points_size = num_subtasks * workgroup_size as usize * num_limbs;
             let g_points_x_limbs = vec![0u32; g_points_size];
             let g_points_y_limbs = vec![0u32; g_points_size];
-            let g_points_z_limbs = vec![0u32; g_points_size];
+            let g_points_zz_limbs = vec![0u32; g_points_size];
+            let g_points_zzz_limbs = vec![0u32; g_points_size];
 
             //----------------------------------------------
             // Create Metal buffers & run stage 1 and 2 in subtask chunks
@@ -318,11 +285,13 @@ fn bench_shaders(c: &mut Criterion) {
 
             let bucket_sum_x_buf = helper.create_buffer(&bucket_sum_x_limbs);
             let bucket_sum_y_buf = helper.create_buffer(&bucket_sum_y_limbs);
-            let bucket_sum_z_buf = helper.create_buffer(&bucket_sum_z_limbs);
+            let bucket_sum_zz_buf = helper.create_buffer(&bucket_sum_zz_limbs);
+            let bucket_sum_zzz_buf = helper.create_buffer(&bucket_sum_zzz_limbs);
 
             let g_points_x_buf = helper.create_buffer(&g_points_x_limbs);
             let g_points_y_buf = helper.create_buffer(&g_points_y_limbs);
-            let g_points_z_buf = helper.create_buffer(&g_points_z_limbs);
+            let g_points_zz_buf = helper.create_buffer(&g_points_zz_limbs);
+            let g_points_zzz_buf = helper.create_buffer(&g_points_zzz_limbs);
 
             let thread_group_count =
                 helper.create_thread_group_size(num_subtasks_per_bpr as u64, 1, 1);
@@ -364,10 +333,12 @@ fn bench_shaders(c: &mut Criterion) {
                                 &[
                                     &bucket_sum_x_buf,
                                     &bucket_sum_y_buf,
-                                    &bucket_sum_z_buf,
+                                    &bucket_sum_zz_buf,
+                                    &bucket_sum_zzz_buf,
                                     &g_points_x_buf,
                                     &g_points_y_buf,
-                                    &g_points_z_buf,
+                                    &g_points_zz_buf,
+                                    &g_points_zzz_buf,
                                     &params_buf,
                                 ],
                                 &thread_group_count,
@@ -386,10 +357,12 @@ fn bench_shaders(c: &mut Criterion) {
                                 &[
                                     &bucket_sum_x_buf,
                                     &bucket_sum_y_buf,
-                                    &bucket_sum_z_buf,
+                                    &bucket_sum_zz_buf,
+                                    &bucket_sum_zzz_buf,
                                     &g_points_x_buf,
                                     &g_points_y_buf,
-                                    &g_points_z_buf,
+                                    &g_points_zz_buf,
+                                    &g_points_zzz_buf,
                                     &params_buf,
                                 ],
                                 &thread_group_count,
@@ -402,7 +375,8 @@ fn bench_shaders(c: &mut Criterion) {
                         // ----------------------------------------------
                         let _gpu_gx_limbs = helper.read_results(&g_points_x_buf, g_points_size);
                         let _gpu_gy_limbs = helper.read_results(&g_points_y_buf, g_points_size);
-                        let _gpu_gz_limbs = helper.read_results(&g_points_z_buf, g_points_size);
+                        let _gpu_gzz_limbs = helper.read_results(&g_points_zz_buf, g_points_size);
+                        let _gpu_gzzz_limbs = helper.read_results(&g_points_zzz_buf, g_points_size);
 
                         helper.drop_all_buffers();
                     })
@@ -430,8 +404,7 @@ fn smvp_gpu(
     config: &MetalConfig,
     gpu_csc_col_ptr: &Vec<u32>,
     gpu_csc_val_idxs: &Vec<u32>,
-    gpu_point_x: &Vec<u32>,
-    gpu_point_y: &Vec<u32>,
+    gpu_points: &Vec<u32>,
     input_size: usize,
     num_subtasks: usize,
     num_columns: u32,
@@ -465,11 +438,11 @@ fn smvp_gpu(
 
     let row_ptr_buf = helper.create_buffer(gpu_csc_col_ptr);
     let val_idx_buf = helper.create_buffer(gpu_csc_val_idxs);
-    let point_x_buf = helper.create_buffer(gpu_point_x);
-    let point_y_buf = helper.create_buffer(gpu_point_y);
+    let points_buf = helper.create_buffer(gpu_points);
     let bucket_x_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
     let bucket_y_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
-    let bucket_z_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_zz_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
+    let bucket_zzz_buf = helper.create_empty_buffer(bucket_sum_coord_bytelength);
 
     // Launch shader for each subtask chunk
     for offset in (0..num_subtasks as u32).step_by(num_subtask_chunk_size as usize) {
@@ -505,11 +478,11 @@ fn smvp_gpu(
             &[
                 &row_ptr_buf,
                 &val_idx_buf,
-                &point_x_buf,
-                &point_y_buf,
+                &points_buf,
                 &bucket_x_buf,
                 &bucket_y_buf,
-                &bucket_z_buf,
+                &bucket_zz_buf,
+                &bucket_zzz_buf,
                 &params_buf,
             ],
             &thread_group_count,
@@ -520,14 +493,7 @@ fn smvp_gpu(
     // Read back results
     let out_x = helper.read_results(&bucket_x_buf, bucket_sum_coord_bytelength);
     let out_y = helper.read_results(&bucket_y_buf, bucket_sum_coord_bytelength);
-    let out_z = helper.read_results(&bucket_z_buf, bucket_sum_coord_bytelength);
+    let out_z = helper.read_results(&bucket_zz_buf, bucket_sum_coord_bytelength);
 
     (out_x, out_y, out_z)
-}
-
-fn pack_limbs(limbs: &[u32]) -> Vec<u32> {
-    limbs
-        .chunks(2)
-        .map(|chunk| (chunk[1] << 16) | chunk[0])
-        .collect()
 }

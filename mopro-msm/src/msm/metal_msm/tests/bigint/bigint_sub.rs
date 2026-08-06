@@ -20,8 +20,8 @@ fn test_bigint_sub_underflow() {
 
 fn run_bigint_sub_test(a: BigInt<4>, b: BigInt<4>, expected: BigInt<4>) {
     let config = MetalConfig {
-        log_limb_size: 16,
-        num_limbs: 16,
+        log_limb_size: 32,
+        num_limbs: 8,
         shader_file: "bigint/bigint_sub.metal".to_string(),
         kernel_name: "test_bigint_sub".to_string(),
     };

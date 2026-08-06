@@ -9,8 +9,8 @@ use ark_std::rand;
 #[serial_test::serial]
 pub fn test_ff_sub() {
     let config = MetalConfig {
-        log_limb_size: 16,
-        num_limbs: 16,
+        log_limb_size: 32,
+        num_limbs: 8,
         shader_file: "field/ff_sub.metal".to_string(),
         kernel_name: "test_ff_sub".to_string(),
     };

@@ -43,8 +43,8 @@ pub struct MSMConstants {
 impl Default for MetalConfig {
     fn default() -> Self {
         Self {
-            log_limb_size: 16,
-            num_limbs: 16,
+            log_limb_size: 32,
+            num_limbs: 8,
             shader_file: "".to_string(),
             kernel_name: "".to_string(),
         }
@@ -92,6 +92,17 @@ impl MetalHelper {
     /// Create an empty buffer and track it
     pub fn create_empty_buffer(&mut self, size: usize) -> Buffer {
         let buffer = create_empty_buffer(&self.device, size);
+        self.buffers.push(buffer.clone());
+        buffer
+    }
+
+    /// Create a zero-filled buffer of `size` u32 elements without a host-side
+    /// staging allocation (Metal zero-fills fresh buffer allocations).
+    pub fn create_zeroed_buffer(&mut self, size: usize) -> Buffer {
+        let buffer = self.device.new_buffer(
+            (size * std::mem::size_of::<u32>()) as u64,
+            MTLResourceOptions::CPUCacheModeDefaultCache,
+        );
         self.buffers.push(buffer.clone());
         buffer
     }
@@ -187,6 +198,50 @@ impl MetalHelper {
     /// Get command queue reference
     pub fn command_queue(&self) -> &CommandQueue {
         &self.command_queue
+    }
+
+    /// Encode each operation into its own command buffer, commit them all
+    /// back-to-back and only block on the last one. The queue executes them
+    /// serially on the GPU with no CPU round-trip between stages.
+    pub fn execute_shaders_pipelined(&self, operations: Vec<ShaderOperation>) {
+        // With MSM_PROFILE=1, run each dispatch synchronously and print its time.
+        if std::env::var("MSM_PROFILE").map_or(false, |v| v == "1") {
+            for (i, operation) in operations.into_iter().enumerate() {
+                let start = std::time::Instant::now();
+                self.execute_shader_with_pipeline(
+                    &operation.pipeline_state,
+                    &operation.buffers.iter().copied().collect::<Vec<_>>(),
+                    &operation.thread_group_count,
+                    &operation.threads_per_threadgroup,
+                );
+                println!("  op[{}]: {:.2?}", i, start.elapsed());
+            }
+            return;
+        }
+        let mut command_buffers = Vec::with_capacity(operations.len());
+        for operation in operations {
+            let command_buffer = self.command_queue.new_command_buffer().to_owned();
+            let compute_pass_descriptor = ComputePassDescriptor::new();
+            let encoder =
+                command_buffer.compute_command_encoder_with_descriptor(compute_pass_descriptor);
+
+            encoder.set_compute_pipeline_state(&operation.pipeline_state);
+
+            for (i, buffer) in operation.buffers.iter().enumerate() {
+                encoder.set_buffer(i as u64, Some(buffer), 0);
+            }
+
+            encoder.dispatch_thread_groups(
+                operation.thread_group_count,
+                operation.threads_per_threadgroup,
+            );
+            encoder.end_encoding();
+            command_buffer.commit();
+            command_buffers.push(command_buffer);
+        }
+        if let Some(last) = command_buffers.last() {
+            last.wait_until_completed();
+        }
     }
 
     /// Execute multiple compute shaders in sequence with shared command buffer

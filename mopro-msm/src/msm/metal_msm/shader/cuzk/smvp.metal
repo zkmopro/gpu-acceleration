@@ -1,5 +1,4 @@
-#include "../curve/jacobian.metal"
-#include "barrett_reduction.metal"
+#include "../curve/xyzz.metal"
 #include <metal_stdlib>
 using namespace metal;
 
@@ -14,11 +13,11 @@ constant os_log smvp_logger_kernel(/*subsystem=*/"smvp", /*category=*/"metal");
 kernel void smvp(
     device const uint* row_ptr [[buffer(0), access(read)]],
     device const uint* val_idx [[buffer(1), access(read)]],
-    device const BigInt* new_point_x [[buffer(2), access(read)]],
-    device const BigInt* new_point_y [[buffer(3), access(read)]],
-    device BigInt* bucket_x [[buffer(4), access(read_write)]],
-    device BigInt* bucket_y [[buffer(5), access(read_write)]],
-    device BigInt* bucket_z [[buffer(6), access(read_write)]],
+    device const Affine* points [[buffer(2), access(read)]],
+    device BigInt* bucket_x [[buffer(3), access(read_write)]],
+    device BigInt* bucket_y [[buffer(4), access(read_write)]],
+    device BigInt* bucket_zz [[buffer(5), access(read_write)]],
+    device BigInt* bucket_zzz [[buffer(6), access(read_write)]],
     constant uint4& params [[buffer(7), access(read)]],
     uint3 tgid [[threadgroup_position_in_grid]],
     uint3 tid [[thread_position_in_threadgroup]],
@@ -37,8 +36,6 @@ kernel void smvp(
 
     const uint subtask_idx = id / half_columns;
 
-    Jacobian inf = get_bn254_zero_mont();
-
     // an offset for each subtask's row_ptr
     const uint rp_offset = (subtask_idx + subtask_offset) * (num_columns + 1);
 
@@ -56,26 +53,22 @@ kernel void smvp(
         const uint row_end = row_ptr[rp_offset + row_idx + 1];
 
         // Accumulate all the points for that bucket
-        Jacobian sum = inf;
+        XYZZ sum = get_xyzz_zero();
 
         for (uint k = row_begin; k < row_end; k++) {
             const uint val_idx_offset = (subtask_idx + subtask_offset) * input_size + k;
             const uint idx = val_idx[val_idx_offset];
 
-            Jacobian b = {
-                .x = new_point_x[idx],
-                .y = new_point_y[idx],
-                .z = get_bn254_one_mont().z
-            };
-            sum = sum + b;
+            // Input points are affine (z = 1) in Montgomery form: mixed addition
+            sum = xyzz_madd_safe(sum, points[idx]);
         }
 
-        // In short Weierstrass, negation = flip sign of Y mod p: jacobian_neg.
+        // In short Weierstrass, negation = flip sign of Y mod p.
         uint bucket_idx = 0;
         // Negative bucket
         if (half_columns > row_idx) {
             bucket_idx = half_columns - row_idx;
-            sum = -sum;
+            sum = xyzz_neg(sum);
         }
         // Positive bucket
         else {
@@ -86,22 +79,21 @@ kernel void smvp(
         // The final 1D index for the bucket is id + subtask_offset * half_columns
         const uint bi = id + subtask_offset * half_columns;
 
-        // Add bounds checking for bucket array access
-        const uint bucket_size = half_columns * NUM_LIMBS * num_subtasks;
         if (bucket_idx > 0) {
             // If j == 1, add to the existing bucket at index `bi`.
             if (j == 1) {
-                // Load the previous partial sum from bucket_{x,y,z}, interpret as Jacobian
-                Jacobian bucket_val = {
+                XYZZ bucket_val = {
                     .x = bucket_x[bi],
                     .y = bucket_y[bi],
-                    .z = bucket_z[bi]
+                    .zz = bucket_zz[bi],
+                    .zzz = bucket_zzz[bi]
                 };
-                sum = bucket_val + sum;
+                sum = xyzz_add_safe(bucket_val, sum);
             }
             bucket_x[bi] = sum.x;
             bucket_y[bi] = sum.y;
-            bucket_z[bi] = sum.z;
+            bucket_zz[bi] = sum.zz;
+            bucket_zzz[bi] = sum.zzz;
         }
     }
 }

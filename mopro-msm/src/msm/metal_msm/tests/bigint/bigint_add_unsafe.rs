@@ -7,8 +7,8 @@ use ark_ff::{BigInt, BigInteger, UniformRand};
 #[serial_test::serial]
 pub fn test_bigint_add_unsafe() {
     let config = MetalConfig {
-        log_limb_size: 16,
-        num_limbs: 16,
+        log_limb_size: 32,
+        num_limbs: 8,
         shader_file: "bigint/bigint_add_unsafe.metal".to_string(),
         kernel_name: "test_bigint_add_unsafe".to_string(),
     };

@@ -20,9 +20,15 @@ static PIPELINE_CACHE: Lazy<Mutex<HashMap<String, ComputePipelineState>>> =
 pub enum ShaderType {
     ConvertPointAndDecompose,
     Transpose,
+    TransposeHistogram,
+    TransposePrefixSum,
+    TransposeScatter,
     SMVP,
+    SMVPAccumulate,
+    SMVPMerge,
     BPRStage1,
     BPRStage2,
+    BPRReduce,
 }
 
 impl ShaderType {
@@ -31,8 +37,8 @@ impl ShaderType {
             ShaderType::ConvertPointAndDecompose => MetalConfig {
                 log_limb_size,
                 num_limbs,
-                shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-                kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
+                shader_file: "cuzk/decompose_scalars.metal".to_string(),
+                kernel_name: "decompose_scalars".to_string(),
             },
             ShaderType::Transpose => MetalConfig {
                 log_limb_size,
@@ -40,11 +46,41 @@ impl ShaderType {
                 shader_file: "cuzk/transpose.metal".to_string(),
                 kernel_name: "transpose".to_string(),
             },
+            ShaderType::TransposeHistogram => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/transpose.metal".to_string(),
+                kernel_name: "transpose_histogram".to_string(),
+            },
+            ShaderType::TransposePrefixSum => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/transpose.metal".to_string(),
+                kernel_name: "transpose_prefix_sum".to_string(),
+            },
+            ShaderType::TransposeScatter => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/transpose.metal".to_string(),
+                kernel_name: "transpose_scatter".to_string(),
+            },
             ShaderType::SMVP => MetalConfig {
                 log_limb_size,
                 num_limbs,
                 shader_file: "cuzk/smvp.metal".to_string(),
                 kernel_name: "smvp".to_string(),
+            },
+            ShaderType::SMVPAccumulate => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/smvp_segmented.metal".to_string(),
+                kernel_name: "smvp_accumulate".to_string(),
+            },
+            ShaderType::SMVPMerge => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/smvp_segmented.metal".to_string(),
+                kernel_name: "smvp_merge".to_string(),
             },
             ShaderType::BPRStage1 => MetalConfig {
                 log_limb_size,
@@ -57,6 +93,12 @@ impl ShaderType {
                 num_limbs,
                 shader_file: "cuzk/pbpr.metal".to_string(),
                 kernel_name: "bpr_stage_2".to_string(),
+            },
+            ShaderType::BPRReduce => MetalConfig {
+                log_limb_size,
+                num_limbs,
+                shader_file: "cuzk/pbpr.metal".to_string(),
+                kernel_name: "bpr_reduce".to_string(),
             },
         }
     }
@@ -72,8 +114,8 @@ pub struct ShaderManagerConfig {
 impl Default for ShaderManagerConfig {
     fn default() -> Self {
         Self {
-            num_limbs: 16,
-            log_limb_size: 16,
+            num_limbs: 8,
+            log_limb_size: 32,
         }
     }
 }
@@ -111,9 +153,15 @@ impl ShaderManager {
         for shader_type in [
             ShaderType::ConvertPointAndDecompose,
             ShaderType::Transpose,
+            ShaderType::TransposeHistogram,
+            ShaderType::TransposePrefixSum,
+            ShaderType::TransposeScatter,
             ShaderType::SMVP,
+            ShaderType::SMVPAccumulate,
+            ShaderType::SMVPMerge,
             ShaderType::BPRStage1,
             ShaderType::BPRStage2,
+            ShaderType::BPRReduce,
         ] {
             let conf =
                 shader_type.get_config(manager.config.num_limbs, manager.config.log_limb_size);
@@ -121,6 +169,14 @@ impl ShaderManager {
             let ps = manager
                 .device
                 .new_compute_pipeline_state_with_function(&kernel)?;
+            if std::env::var("MSM_PROFILE").map_or(false, |v| v == "1") {
+                println!(
+                    "pipeline {}: max_threads/tg={} simd_width={}",
+                    conf.kernel_name,
+                    ps.max_total_threads_per_threadgroup(),
+                    ps.thread_execution_width()
+                );
+            }
             manager.shaders.insert(
                 shader_type,
                 PrecompiledShader {
@@ -198,8 +254,8 @@ impl ShaderManagerBuilder {
 
     pub fn build(self) -> Result<ShaderManager, Box<dyn std::error::Error>> {
         let config = ShaderManagerConfig {
-            num_limbs: self.num_limbs.unwrap_or(16),
-            log_limb_size: self.log_limb_size.unwrap_or(16),
+            num_limbs: self.num_limbs.unwrap_or(8),
+            log_limb_size: self.log_limb_size.unwrap_or(32),
         };
         ShaderManager::new(config)
     }
@@ -213,21 +269,21 @@ mod tests {
     #[serial_test::serial]
     fn test_shader_manager_creation() {
         let manager = ShaderManager::with_default_config().unwrap();
-        assert_eq!(manager.config().num_limbs, 16);
-        assert_eq!(manager.config().log_limb_size, 16);
+        assert_eq!(manager.config().num_limbs, 8);
+        assert_eq!(manager.config().log_limb_size, 32);
     }
 
     #[test]
     #[serial_test::serial]
     fn test_shader_manager_builder() {
         let manager = ShaderManagerBuilder::new()
-            .num_limbs(16)
-            .log_limb_size(16)
+            .num_limbs(8)
+            .log_limb_size(32)
             .build()
             .unwrap();
 
-        assert_eq!(manager.config().num_limbs, 16);
-        assert_eq!(manager.config().log_limb_size, 16);
+        assert_eq!(manager.config().num_limbs, 8);
+        assert_eq!(manager.config().log_limb_size, 32);
     }
 
     #[test]

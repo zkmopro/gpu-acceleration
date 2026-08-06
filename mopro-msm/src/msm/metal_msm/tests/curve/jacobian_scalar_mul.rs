@@ -8,7 +8,7 @@ use crate::msm::metal_msm::host::metal_wrapper::*;
 use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 
 fn jacobian_scalar_mul_kernel(point: G, scalar: u32) -> G {
-    let log_limb_size = 16;
+    let log_limb_size = 32;
     let modulus_bits = BaseField::MODULUS_BIT_SIZE as u32;
     let num_limbs = ((modulus_bits + log_limb_size - 1) / log_limb_size) as usize;
 

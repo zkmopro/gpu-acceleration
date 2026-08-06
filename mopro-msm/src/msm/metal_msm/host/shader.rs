@@ -34,15 +34,9 @@ macro_rules! write_constant_array {
     };
 }
 
-pub fn write_constants(
-    filepath: &str,
-    num_limbs: usize,
-    log_limb_size: u32,
-    n0: u32,
-    nsafe: usize,
-) {
-    let two_pow_word_size = 2u32.pow(log_limb_size);
-    let mask = two_pow_word_size - 1u32;
+pub fn write_constants(filepath: &str, num_limbs: usize, log_limb_size: u32) {
+    let two_pow_word_size = 2u64.pow(log_limb_size);
+    let mask = (two_pow_word_size - 1) as u32;
     let slack = num_limbs as u32 * log_limb_size - BaseField::MODULUS_BIT_SIZE;
     let num_limbs_wide = num_limbs + 1;
     let num_limbs_extra_wide = num_limbs * 2;
@@ -50,10 +44,20 @@ pub fn write_constants(
     let basefield_modulus = BaseField::MODULUS.to_limbs(num_limbs, log_limb_size);
     let r = calc_mont_radix(num_limbs, log_limb_size);
     let p: BigUint = BaseField::MODULUS.try_into().unwrap();
+    let (_, n0) =
+        crate::msm::metal_msm::utils::mont_params::calc_rinv_and_n0(&p, &r, log_limb_size);
+    let nsafe = crate::msm::metal_msm::utils::mont_params::calc_nsafe(log_limb_size);
     let mu_in_ark: BigInt<4> = calc_barrett_mu(&p).try_into().unwrap();
     let mont_radix_limbs: Vec<u32> = {
         let mont_radix_limbs: BigInt<6> = r.clone().try_into().unwrap();
         mont_radix_limbs.to_limbs(num_limbs_wide, log_limb_size) // num_limbs_wide because mont_radix is 257 bits
+    };
+    // R^2 mod p, used to convert values into Montgomery form via mont_mul(x, R2)
+    let r2_limbs: Vec<u32> = {
+        let r2 = (&r * &r) % &p;
+        BigInt::<4>::try_from(r2)
+            .unwrap()
+            .to_limbs(num_limbs, log_limb_size)
     };
     let (bn254_zero, bn254_one) = {
         let bn254_zero = G::zero();
@@ -67,9 +71,8 @@ pub fn write_constants(
     data += format!("#define NUM_LIMBS_WIDE {}\n", num_limbs_wide).as_str();
     data += format!("#define NUM_LIMBS_EXTRA_WIDE {}\n", num_limbs_extra_wide).as_str();
     data += format!("#define LOG_LIMB_SIZE {}\n", log_limb_size).as_str();
-    data += format!("#define TWO_POW_WORD_SIZE {}\n", two_pow_word_size).as_str();
-    data += format!("#define MASK {}\n", mask).as_str();
-    data += format!("#define N0 {}\n", n0).as_str();
+    data += format!("#define MASK {}u\n", mask).as_str();
+    data += format!("#define N0 {}u\n", n0).as_str();
     data += format!("#define NSAFE {}\n", nsafe).as_str();
     data += format!("#define SLACK {}\n", slack).as_str();
 
@@ -83,6 +86,7 @@ pub fn write_constants(
         "NUM_LIMBS"
     );
     write_constant_array!(data, "MONT_RADIX", mont_radix_limbs, "NUM_LIMBS_WIDE");
+    write_constant_array!(data, "BN254_R2", r2_limbs, "NUM_LIMBS");
 
     let bn254_zero_limbs = |c: &ark_ff::BigInt<4>| c.to_limbs(num_limbs, log_limb_size);
     write_constant_array!(
@@ -184,6 +188,6 @@ pub mod tests {
     #[test]
     #[serial_test::serial]
     pub fn test_write_constants() {
-        write_constants("../mopro-msm/src/msm/metal_msm/shader", 16, 16, 25481, 1);
+        write_constants("../mopro-msm/src/msm/metal_msm/shader", 8, 32);
     }
 }

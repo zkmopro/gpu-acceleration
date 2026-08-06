@@ -35,8 +35,8 @@ fn generate_test_values(require_overflow: bool) -> (BigInt<4>, BigInt<4>, BigInt
 
 fn run_bigint_add_test(a: &BigInt<4>, b: &BigInt<4>, expected: &BigInt<4>) {
     let config = MetalConfig {
-        log_limb_size: 16,
-        num_limbs: 16,
+        log_limb_size: 32,
+        num_limbs: 8,
         shader_file: "bigint/bigint_add_wide.metal".to_string(),
         kernel_name: "test_bigint_add_wide".to_string(),
     };

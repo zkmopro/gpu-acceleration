@@ -1,7 +1,6 @@
-use ark_bn254::{Fr as ScalarField, G1Projective as G};
-use ark_ec::CurveGroup;
-use ark_ff::{BigInt, PrimeField, UniformRand};
-use num_bigint::{BigUint, RandBigInt};
+use ark_bn254::Fr as ScalarField;
+use ark_ff::PrimeField;
+use num_bigint::RandBigInt;
 use rand::thread_rng;
 
 use crate::msm::metal_msm::host::metal_wrapper::*;
@@ -9,102 +8,10 @@ use crate::msm::metal_msm::utils::limbs_conversion::GenericLimbConversion;
 
 #[test]
 #[serial_test::serial]
-fn test_point_coords_conversion() {
-    // Setup test config
-    let log_limb_size = 16;
-    let num_limbs = 16;
-
-    let config = MetalConfig {
-        log_limb_size,
-        num_limbs,
-        shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-        kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
-    };
-
-    let mut helper = MetalHelper::new();
-    let constants = get_or_calc_constants(num_limbs, log_limb_size);
-    let p = &constants.p;
-    let r = &constants.r;
-
-    // We only need one scalar for the kernel call, but we won't test it here
-    // So let's just supply zeros for the scalar array
-    let scalars = vec![0u32; num_limbs];
-
-    // Generate a random point on BN254 for testing
-    let mut rng = thread_rng();
-    let point = G::rand(&mut rng).into_affine();
-    let x: BigUint = point.x.into_bigint().try_into().unwrap();
-    let y: BigUint = point.y.into_bigint().try_into().unwrap();
-
-    // Host-side: compute x_mont, y_mont
-    let x_mont = (&x * r) % p;
-    let y_mont = (&y * r) % p;
-
-    // Convert them to ark_ff BigInt<4>, then to limbs
-    let x_mont_in_ark: BigInt<4> = x_mont.clone().try_into().unwrap();
-    let y_mont_in_ark: BigInt<4> = y_mont.clone().try_into().unwrap();
-    let x_mont_in_ark_limbs = x_mont_in_ark.to_limbs(num_limbs, log_limb_size);
-    let y_mont_in_ark_limbs = y_mont_in_ark.to_limbs(num_limbs, log_limb_size);
-
-    // Convert unreduced x,y into `num_limbs` "halfword" limbs
-    let x_in_ark: BigInt<4> = x.clone().try_into().unwrap();
-    let y_in_ark: BigInt<4> = y.clone().try_into().unwrap();
-    let x_limb = x_in_ark.to_limbs(num_limbs, log_limb_size);
-    let y_limb = y_in_ark.to_limbs(num_limbs, log_limb_size);
-
-    let x_packed = pack_limbs(&x_limb);
-    let y_packed = pack_limbs(&y_limb);
-
-    // The coords buffer: x + y, each is 8 packed u32 => total 16
-    let coords = [x_packed, y_packed].concat();
-
-    // Setup Metal buffers
-    let coords_buf = helper.create_buffer(&coords);
-    let scalars_buf = helper.create_buffer(&scalars);
-    let params_buf = helper.create_buffer(&vec![1u32, 16u32, 16u32, 1u32]);
-
-    // Prepare output buffers for the kernel
-    let point_x_buf = helper.create_empty_buffer(num_limbs);
-    let point_y_buf = helper.create_empty_buffer(num_limbs);
-    let chunks_buf = helper.create_empty_buffer(num_limbs);
-
-    // Setup thread group sizes
-    let thread_group_count = helper.create_thread_group_size(1, 1, 1);
-    let thread_group_size = helper.create_thread_group_size(1, 1, 1);
-
-    // Execute the shader
-    helper.execute_shader(
-        &config,
-        &[
-            &coords_buf,
-            &scalars_buf,
-            &point_x_buf,
-            &point_y_buf,
-            &chunks_buf,
-            &params_buf,
-        ],
-        &thread_group_count,
-        &thread_group_size,
-    );
-
-    // Read back X,Y results and compare
-    let x_result = helper.read_results(&point_x_buf, num_limbs);
-    let y_result = helper.read_results(&point_y_buf, num_limbs);
-
-    // Clean up resources
-    helper.drop_all_buffers();
-
-    // Verify results
-    assert_eq!(x_result, x_mont_in_ark_limbs, "X conversion mismatch");
-    assert_eq!(y_result, y_mont_in_ark_limbs, "Y conversion mismatch");
-}
-
-#[test]
-#[serial_test::serial]
 fn test_scalar_decomposition() {
     // Setup test config
-    let log_limb_size = 16;
-    let num_limbs = 16;
+    let log_limb_size = 32;
+    let num_limbs = 8;
     let window_size = 16;
     let num_subtasks = (256f32 / window_size as f32).ceil() as usize;
     let num_columns = 1 << window_size; // 2^window_size
@@ -112,14 +19,11 @@ fn test_scalar_decomposition() {
     let config = MetalConfig {
         log_limb_size,
         num_limbs,
-        shader_file: "cuzk/convert_point_coords_and_decompose_scalars.metal".to_string(),
-        kernel_name: "convert_point_coords_and_decompose_scalars".to_string(),
+        shader_file: "cuzk/decompose_scalars.metal".to_string(),
+        kernel_name: "decompose_scalars".to_string(),
     };
 
     let mut helper = MetalHelper::new();
-
-    // For scalar test, we can provide dummy coords (X=0, Y=0)
-    let coords = vec![0u32; 16]; // 16 zeros
 
     // Generate a random 254-bit scalar
     let mut rng = thread_rng();
@@ -133,7 +37,6 @@ fn test_scalar_decomposition() {
     let packed_scalars = pack_limbs(&scalars);
 
     // Setup Metal buffers
-    let coords_buf = helper.create_buffer(&coords);
     let scalars_buf = helper.create_buffer(&packed_scalars);
     let params_buf = helper.create_buffer(&vec![
         1u32,
@@ -142,9 +45,6 @@ fn test_scalar_decomposition() {
         num_subtasks as u32,
     ]);
 
-    // We'll ignore X,Y outputs, but we must pass them
-    let point_x_buf = helper.create_empty_buffer(num_limbs);
-    let point_y_buf = helper.create_empty_buffer(num_limbs);
     let chunks_buf = helper.create_empty_buffer(num_subtasks);
 
     // Setup thread group sizes
@@ -154,14 +54,7 @@ fn test_scalar_decomposition() {
     // Execute the shader
     helper.execute_shader(
         &config,
-        &[
-            &coords_buf,
-            &scalars_buf,
-            &point_x_buf,
-            &point_y_buf,
-            &chunks_buf,
-            &params_buf,
-        ],
+        &[&scalars_buf, &chunks_buf, &params_buf],
         &thread_group_count,
         &thread_group_size,
     );
@@ -244,10 +137,8 @@ fn test_scalar_decomposition() {
     );
 }
 
-/// Helper function to pack every pair of 16-bit limbs into one 32-bit word
+/// With 32-bit limbs the GPU buffer layout is simply the little-endian
+/// 32-bit words of the value, so packing is the identity.
 fn pack_limbs(limbs: &[u32]) -> Vec<u32> {
-    limbs
-        .chunks(2)
-        .map(|chunk| (chunk[1] << 16) | chunk[0])
-        .collect()
+    limbs.to_vec()
 }
